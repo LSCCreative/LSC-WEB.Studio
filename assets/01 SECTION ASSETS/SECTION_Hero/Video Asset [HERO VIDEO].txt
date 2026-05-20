@@ -1,0 +1,6 @@
+{
+  "section_name": "Hero Section",
+  "thumbnail_url": "https://vz-2d3e9bef-866.b-cdn.net/6c906ad4-9642-4b1e-9a56-51500020b81f/thumbnail.jpg",
+  "preview_webp_url": "https://vz-2d3e9bef-866.b-cdn.net/6c906ad4-9642-4b1e-9a56-51500020b81f/preview.webp?v=1779321200",
+  "direct_play_url": "https://player.mediadelivery.net/play/662936/6c906ad4-9642-4b1e-9a56-51500020b81f"
+}

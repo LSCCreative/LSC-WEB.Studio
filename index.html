@@ -1,0 +1,1653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="LSC Creative — Documentary-style brand films and editorial photography. We don't make ads, we make films that tell the truth about great brands.">
+    <title>LSC Creative | Cinematic Video Production</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        /* ============================================================
+           LSC CREATIVE — DESIGN SYSTEM V3.0 + KVS STUDIO AESTHETIC
+           ============================================================ */
+
+        /* --- GLOBAL TOKENS --- */
+        :root {
+            --lsc-black:     #0E0E0E;
+            --lsc-surface:   #1C1F24;
+            --lsc-white:     #F0EDE8;
+            --lsc-terra:     #C0603C;
+            --lsc-sage:      #8FA89B;
+            --lsc-rule:      rgba(240, 237, 232, 0.07);
+            --lsc-muted:     rgba(240, 237, 232, 0.45);
+
+            /* Legacy aliases */
+            --bg-primary:    var(--lsc-black);
+            --bg-secondary:  var(--lsc-surface);
+            --text-primary:  var(--lsc-white);
+            --accent-color:  var(--lsc-sage);
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body.dark-theme {
+            background-color: var(--lsc-black);
+            color: var(--lsc-white);
+            font-family: 'FunnelSans', 'Outfit', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* ============================================================
+           CINEMATIC LOADER MASK
+           ============================================================ */
+        .cinematic-loader-mask {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: var(--lsc-black);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: cinematicFadeOut 0.8s ease-in-out 1.2s forwards;
+        }
+
+        .loader-typography {
+            font-family: 'Delight', Georgia, serif;
+            font-weight: 700;
+            font-size: 42px;
+            color: var(--lsc-white);
+            letter-spacing: -0.02em;
+            opacity: 0;
+            animation: textFadeIn 0.5s ease-out 0.2s forwards;
+        }
+
+        .loader-typography em {
+            color: var(--lsc-terra);
+            font-style: normal;
+        }
+
+        @keyframes textFadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes cinematicFadeOut {
+            0%   { opacity: 1; pointer-events: all; }
+            99%  { opacity: 0; pointer-events: none; }
+            100% { opacity: 0; pointer-events: none; visibility: hidden; }
+        }
+
+        /* ============================================================
+           ABOUT MODAL
+           ============================================================ */
+        .about-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background-color: rgba(14, 14, 14, 0.92);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            z-index: 8000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 5vw;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease;
+        }
+
+        .about-modal-overlay.is-open {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .about-modal {
+            background-color: var(--lsc-surface);
+            border: 1px solid var(--lsc-rule);
+            max-width: 1000px;
+            width: 100%;
+            display: grid;
+            grid-template-columns: 1fr 1.4fr;
+            gap: 0;
+            transform: translateY(24px);
+            transition: transform 0.4s ease;
+            overflow: hidden;
+        }
+
+        .about-modal-overlay.is-open .about-modal {
+            transform: translateY(0);
+        }
+
+        .about-photo-placeholder {
+            background-color: var(--lsc-black);
+            min-height: 520px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .about-photo-placeholder::after {
+            content: 'LSC';
+            position: absolute;
+            bottom: 32px;
+            left: 32px;
+            font-family: 'Delight', Georgia, serif;
+            font-weight: 700;
+            font-size: 72px;
+            color: rgba(240, 237, 232, 0.04);
+            letter-spacing: -0.04em;
+            line-height: 1;
+        }
+
+        /* Thin film-style vertical rule on right edge of photo */
+        .about-photo-placeholder::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 1px;
+            height: 100%;
+            background: var(--lsc-rule);
+        }
+
+        .about-modal-body {
+            padding: 56px 48px 56px 48px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .about-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 48px;
+        }
+
+        .about-eyebrow {
+            font-family: 'FunnelSans', sans-serif;
+            font-size: 10px;
+            letter-spacing: 0.28em;
+            text-transform: uppercase;
+            color: var(--lsc-terra);
+        }
+
+        .about-close-btn {
+            background: none;
+            border: none;
+            color: var(--lsc-white);
+            font-size: 20px;
+            cursor: pointer;
+            line-height: 1;
+            opacity: 0.5;
+            transition: opacity 0.2s ease, color 0.2s ease;
+            padding: 4px;
+        }
+
+        .about-close-btn:hover {
+            opacity: 1;
+            color: var(--lsc-sage);
+        }
+
+        .about-modal-title {
+            font-family: 'Delight', Georgia, serif;
+            font-weight: 700;
+            font-size: 38px;
+            letter-spacing: -0.025em;
+            line-height: 0.95;
+            color: var(--lsc-white);
+            margin-bottom: 32px;
+        }
+
+        .about-modal-title em {
+            font-style: italic;
+            font-weight: 400;
+            color: var(--lsc-terra);
+        }
+
+        .about-modal-copy {
+            font-family: 'FunnelSans', sans-serif;
+            font-size: 16px;
+            font-weight: 300;
+            line-height: 1.7;
+            color: var(--lsc-muted);
+            letter-spacing: 0.01em;
+            max-width: 420px;
+        }
+
+        .about-modal-footer {
+            margin-top: 48px;
+            padding-top: 32px;
+            border-top: 1px solid var(--lsc-rule);
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+
+        .about-modal-tag {
+            font-family: 'FunnelSans', sans-serif;
+            font-size: 10px;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            color: var(--lsc-muted);
+        }
+
+        /* ============================================================
+           RAINBOW TEXT (NAVBAR HOVER)
+           ============================================================ */
+        .rainbow-text span {
+            color: var(--lsc-white);
+        }
+        .brand-logo:hover .rainbow-text span {
+            animation: rainbowCascade 2.5s infinite ease-in-out;
+        }
+        @keyframes rainbowCascade {
+            0%, 80%, 100% { color: var(--lsc-white); }
+            20%, 40%      { color: var(--rc, var(--lsc-white)); }
+        }
+
+        /* ============================================================
+           PROJECT TILES (Portfolio)
+           ============================================================ */
+        .project-tile, .playable-tile, .portfolio-hover-bg {
+            background-color: var(--lsc-surface);
+        }
+
+        /* ============================================================
+           HERO CANVAS — FULL-BLEED IFRAME ENGINE
+           ============================================================ */
+        .hero-canvas {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            background-color: var(--lsc-black);
+            overflow: hidden;
+        }
+
+        .hero-video-mask {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
+            overflow: hidden;
+        }
+
+        .hero-video-mask iframe {
+            width: 100vw;
+            height: 56.25vw;
+            min-height: 100vh;
+            min-width: 177.77vh;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border: 0;
+        }
+
+        .hero-interface-layer {
+            position: relative;
+            z-index: 2;
+            padding: 60px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            height: 100%;
+        }
+
+        .hero-interface-layer .eyebrow-accent {
+            color: var(--lsc-terra);
+            text-transform: uppercase;
+            letter-spacing: 0.28em;
+            font-family: 'FunnelSans', sans-serif;
+            font-size: 11px;
+            margin-bottom: 0.75rem;
+            display: block;
+        }
+
+        .hero-interface-layer .display-title {
+            color: var(--lsc-white);
+            font-family: 'Delight', sans-serif;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+            line-height: 0.92;
+            font-size: 6rem;
+            margin: 0;
+        }
+
+        .hero-interface-layer .display-title em {
+            font-style: italic;
+            font-weight: 400;
+        }
+
+        /* ============================================================
+           KVS-STYLE SECTION ARCHITECTURE — SHARED UTILITIES
+           ============================================================ */
+
+        /* Thin architectural rule — KVS signature */
+        .kvs-rule {
+            width: 100%;
+            height: 1px;
+            background-color: var(--lsc-rule);
+        }
+
+        .section-eyebrow {
+            font-family: 'FunnelSans', sans-serif;
+            font-size: 10px;
+            letter-spacing: 0.28em;
+            text-transform: uppercase;
+            color: var(--lsc-terra);
+            display: block;
+        }
+
+        .section-eyebrow.bracket::before { content: '{ '; }
+        .section-eyebrow.bracket::after  { content: ' }'; }
+
+        /* ============================================================
+           CINEMATIC ACCORDION — SERVICES SECTION
+           ============================================================ */
+        .lsc-services-section {
+            padding: 100px 5vw;
+            background-color: var(--lsc-black);
+            border-top: 1px solid var(--lsc-rule);
+        }
+
+        .services-header {
+            margin-bottom: 64px;
+        }
+
+        .eyebrow-accent {
+            font-family: 'FunnelSans', sans-serif;
+            font-size: 10px;
+            color: var(--lsc-terra);
+            letter-spacing: 0.28em;
+            text-transform: uppercase;
+            display: block;
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-family: 'Delight', Georgia, serif;
+            font-weight: 700;
+            font-size: clamp(36px, 4vw, 52px);
+            color: var(--lsc-white);
+            letter-spacing: -0.025em;
+            line-height: 0.95;
+        }
+
+        .accordion-container {
+            max-width: 900px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .cinematic-accordion {
+            background-color: var(--lsc-surface);
+            border-radius: 4px;
+            overflow: hidden;
+            transition: background-color 0.3s ease;
+            border: 1px solid transparent;
+            transition: border-color 0.3s ease;
+        }
+
+        .cinematic-accordion[open] {
+            border-color: var(--lsc-rule);
+        }
+
+        .accordion-trigger {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 32px 40px;
+            cursor: pointer;
+            list-style: none;
+        }
+
+        .accordion-trigger::-webkit-details-marker { display: none; }
+
+        .trigger-content {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+
+        .accordion-icon {
+            width: 26px;
+            height: 26px;
+            color: var(--lsc-terra);
+            opacity: 0.75;
+            flex-shrink: 0;
+            transition: color 0.3s ease, opacity 0.3s ease;
+        }
+
+        .trigger-title {
+            font-family: 'Delight', Georgia, serif;
+            font-weight: 700;
+            font-size: 30px;
+            color: var(--lsc-white);
+            letter-spacing: -0.015em;
+            transition: color 0.3s ease;
+        }
+
+        .trigger-indicator {
+            width: 14px;
+            height: 2px;
+            background-color: var(--lsc-white);
+            position: relative;
+            flex-shrink: 0;
+            transition: background-color 0.3s ease;
+        }
+
+        .trigger-indicator::after {
+            content: '';
+            position: absolute;
+            width: 2px;
+            height: 14px;
+            background-color: var(--lsc-white);
+            top: -6px;
+            left: 6px;
+            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease;
+        }
+
+        .accordion-trigger:hover .trigger-title       { color: var(--lsc-sage); }
+        .accordion-trigger:hover .accordion-icon      { color: var(--lsc-sage); opacity: 1; }
+        .accordion-trigger:hover .trigger-indicator,
+        .accordion-trigger:hover .trigger-indicator::after { background-color: var(--lsc-sage); }
+
+        .cinematic-accordion[open] .trigger-indicator::after {
+            transform: rotate(90deg) scaleY(0);
+        }
+
+        .accordion-content {
+            padding: 0 40px 36px 90px;
+        }
+
+        .accordion-content p {
+            font-family: 'FunnelSans', sans-serif;
+            font-size: 15px;
+            font-weight: 300;
+            line-height: 1.7;
+            color: var(--lsc-muted);
+            letter-spacing: 0.015em;
+            max-width: 560px;
+            animation: slideDownFade 0.35s ease-out forwards;
+        }
+
+        @keyframes slideDownFade {
+            from { opacity: 0; transform: translateY(-8px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ============================================================
+           PROCESS SECTION — KVS 3-COLUMN BRACKETED LAYOUT
+           ============================================================ */
+        .lsc-process-section {
+            padding: 120px 5vw;
+            background-color: var(--lsc-black);
+            border-top: 1px solid var(--lsc-rule);
+        }
+
+        .process-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-bottom: 80px;
+            padding-bottom: 40px;
+            border-bottom: 1px solid var(--lsc-rule);
+        }
+
+        .process-header-left .section-title {
+            margin-top: 16px;
+        }
+
+        .process-header-meta {
+            font-family: 'FunnelSans', sans-serif;
+            font-size: 10px;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            color: var(--lsc-muted);
+            text-align: right;
+        }
+
+        .process-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0;
+        }
+
+        .process-phase {
+            padding: 48px 48px 48px 0;
+            border-right: 1px solid var(--lsc-rule);
+            padding-right: 48px;
+            position: relative;
+        }
+
+        .process-phase:last-child {
+            border-right: none;
+            padding-right: 0;
+            padding-left: 48px;
+        }
+
+        .process-phase:nth-child(2) {
+            padding-left: 48px;
+        }
+
+        .process-phase-eyebrow {
+            font-family: 'FunnelSans', sans-serif;
+            font-size: 10px;
+            letter-spacing: 0.28em;
+            text-transform: uppercase;
+            color: var(--lsc-terra);
+            margin-bottom: 28px;
+            display: block;
+        }
+
+        /* KVS bracketed numbering */
+        .process-phase-eyebrow::before { content: '{ '; }
+        .process-phase-eyebrow::after  { content: ' }'; }
+
+        .process-phase-title {
+            font-family: 'Delight', Georgia, serif;
+            font-weight: 700;
+            font-size: clamp(24px, 2.4vw, 32px);
+            color: var(--lsc-white);
+            letter-spacing: -0.02em;
+            line-height: 1;
+            margin-bottom: 20px;
+        }
+
+        .process-phase-body {
+            font-family: 'FunnelSans', sans-serif;
+            font-size: 14px;
+            font-weight: 300;
+            line-height: 1.75;
+            color: var(--lsc-muted);
+            letter-spacing: 0.01em;
+            max-width: 280px;
+        }
+
+        /* ============================================================
+           FOOTER — KVS MINIMAL STRUCTURAL FOOTER
+           ============================================================ */
+        .footer {
+            background-color: var(--lsc-black);
+            border-top: 1px solid var(--lsc-rule);
+            padding: 32px 5vw;
+        }
+
+        .footer-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .footer-left p,
+        .footer-right a {
+            font-family: 'FunnelSans', sans-serif;
+            font-size: 11px;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--lsc-muted);
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+
+        .footer-right {
+            display: flex;
+            gap: 32px;
+        }
+
+        .footer-right a:hover {
+            color: var(--lsc-sage);
+        }
+
+        /* ============================================================
+           CINEMATIC VIDEO MODAL SYSTEM (Zero-Green V3.0)
+           ============================================================ */
+        .video-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background-color: rgba(14, 14, 14, 0.85); /* Semi-transparent midnight canvas */
+            backdrop-filter: blur(20px); /* Premium heavy obscure blur */
+            -webkit-backdrop-filter: blur(20px);
+            z-index: 9000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        .video-modal-overlay.is-active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .video-modal-container {
+            width: 90%;
+            max-width: 1200px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            transform: translateY(40px) scale(0.95);
+            transition: transform 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        .video-modal-overlay.is-active .video-modal-container {
+            transform: translateY(0) scale(1);
+        }
+
+        .video-modal-player-wrapper {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background-color: var(--lsc-black);
+            border: 1px solid var(--lsc-rule); /* Thin architectural rule matching KVS */
+            box-shadow: 0 30px 100px rgba(0, 0, 0, 0.8);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .video-modal-player-wrapper iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        .video-modal-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            padding: 0 8px;
+            border-bottom: 1px solid var(--lsc-rule);
+            padding-bottom: 16px;
+        }
+
+        .video-modal-eyebrow {
+            font-family: 'FunnelSans', sans-serif;
+            font-size: 10px;
+            letter-spacing: 0.28em;
+            text-transform: uppercase;
+            color: var(--lsc-terra);
+        }
+
+        .video-modal-title {
+            font-family: 'Delight', Georgia, serif;
+            font-weight: 700;
+            font-size: 28px;
+            letter-spacing: -0.02em;
+            color: var(--lsc-white);
+            line-height: 1;
+        }
+
+        .video-modal-close {
+            position: absolute;
+            top: 40px;
+            right: 40px;
+            background: none;
+            border: none;
+            color: var(--lsc-white);
+            font-size: 28px;
+            cursor: pointer;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0.5;
+            transition: opacity 0.3s ease, color 0.3s ease, transform 0.3s ease;
+            z-index: 9100;
+        }
+
+        .video-modal-close:hover {
+            opacity: 1;
+            color: var(--lsc-sage); /* Premium sage compliant hover state */
+            transform: rotate(90deg);
+        }
+
+        /* ============================================================
+           PORTFOLIO OVERHAUL — NATIVE SWAP & PLAY ENGINE
+           ============================================================ */
+        .playable-tile {
+            cursor: pointer;
+        }
+
+        .tile-thumbnail {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            transition: transform 0.6s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.5s ease;
+        }
+
+        .tile-preview {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            position: absolute;
+            inset: 0;
+            z-index: 2;
+            opacity: 0;
+            transition: opacity 0.4s ease, transform 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+            pointer-events: none;
+        }
+
+        .custom-play-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.8);
+            width: 72px;
+            height: 72px;
+            background: rgba(14, 14, 14, 0.45);
+            border: 1.5px solid var(--lsc-white);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.4s cubic-bezier(0.25, 1, 0.5, 1), transform 0.4s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.3s ease, background 0.3s ease, color 0.3s ease;
+            z-index: 25; /* Renders securely on top of resting tint layer */
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            color: var(--lsc-white);
+        }
+
+        .custom-play-indicator svg {
+            width: 22px;
+            height: 22px;
+            margin-left: 4px; /* Optical adjustment for play shape */
+            transition: fill 0.3s ease;
+        }
+
+        /* Hover Interaction Loop overrides */
+        .playable-tile:hover .tile-thumbnail {
+            transform: scale(1.05);
+            opacity: 0;
+        }
+
+        .playable-tile:hover .tile-preview {
+            opacity: 1;
+            transform: scale(1.05);
+        }
+
+        .playable-tile:hover .custom-play-indicator {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+            border-color: var(--lsc-sage); /* Compliant Sage */
+            background: rgba(14, 14, 14, 0.7);
+            color: var(--lsc-sage);
+        }
+
+        .playable-tile:hover .tile-media::after {
+            opacity: 0.15 !important; /* Retain aesthetic film contrast on active focus */
+        }
+
+        /* ============================================================
+           CINEMATIC FORM MODAL SYSTEM (Zero-Green V3.0)
+           ============================================================ */
+        .form-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background-color: rgba(14, 14, 14, 0.8); /* Premium dark tint overlay */
+            backdrop-filter: blur(16px); /* Heavy obscure blur */
+            -webkit-backdrop-filter: blur(16px);
+            z-index: 9000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        .form-modal-overlay.is-active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .form-modal-container {
+            width: 90%;
+            max-width: 800px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            transform: translateY(40px) scale(0.95);
+            transition: transform 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        .form-modal-overlay.is-active .form-modal-container {
+            transform: translateY(0) scale(1);
+        }
+
+        .form-modal-body {
+            width: 100%;
+            height: 75vh;
+            background-color: #1C1F24; /* Sleek Dark Charcoal background behind transparent iframe */
+            border: 1px solid var(--lsc-rule); /* Thin architectural rule matching KVS */
+            box-shadow: 0 30px 100px rgba(0, 0, 0, 0.8);
+            position: relative;
+            overflow: hidden;
+            border-radius: 4px;
+        }
+
+        .form-modal-body iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none !important; /* Aggressively override ClickUp's inline borders */
+        }
+
+        .form-modal-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            padding: 0 8px;
+            border-bottom: 1px solid var(--lsc-rule);
+            padding-bottom: 12px;
+        }
+
+        .form-modal-eyebrow {
+            font-family: 'FunnelSans', sans-serif;
+            font-size: 10px;
+            letter-spacing: 0.28em;
+            text-transform: uppercase;
+            color: var(--lsc-terra);
+        }
+
+        .form-modal-title {
+            font-family: 'Delight', Georgia, serif;
+            font-weight: 700;
+            font-size: 24px;
+            letter-spacing: -0.02em;
+            color: var(--lsc-white);
+            line-height: 1;
+        }
+
+        .form-modal-close {
+            position: absolute;
+            top: 40px;
+            right: 40px;
+            background: none;
+            border: none;
+            color: var(--lsc-white);
+            font-size: 28px;
+            cursor: pointer;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0.5;
+            transition: opacity 0.3s ease, color 0.3s ease, transform 0.3s ease;
+            z-index: 9100;
+        }
+
+        .form-modal-close:hover {
+            opacity: 1;
+            color: var(--lsc-sage); /* Premium sage compliant hover state */
+            transform: rotate(90deg);
+        }
+
+        /* ============================================================
+           CONTACT SECTION — HORIZONTAL ASYMMETRIC GRID & MOTION
+           ============================================================ */
+        .lsc-contact-section {
+            padding: 160px 5vw 140px;
+            background-color: var(--lsc-black);
+            border-top: 1px solid var(--lsc-rule);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Large ghosted background lettermark — KVS depth trick */
+        .lsc-contact-section::before {
+            content: 'LSC';
+            position: absolute;
+            bottom: -40px;
+            right: 5vw;
+            font-family: 'Delight', Georgia, serif;
+            font-weight: 700;
+            font-size: clamp(120px, 18vw, 260px);
+            color: rgba(240, 237, 232, 0.025);
+            letter-spacing: -0.06em;
+            line-height: 1;
+            pointer-events: none;
+            user-select: none;
+            z-index: 0;
+        }
+
+        .contact-inner {
+            max-width: 1200px;
+            width: 100%;
+            position: relative;
+            z-index: 1;
+        }
+
+        .contact-asymmetric-layout {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            margin-top: 40px;
+        }
+
+        .contact-left-column {
+            flex-shrink: 0;
+            max-width: 450px;
+            text-align: left;
+        }
+
+        .contact-eyebrow {
+            font-family: 'FunnelSans', sans-serif;
+            font-size: 10px;
+            letter-spacing: 0.28em;
+            text-transform: uppercase;
+            color: var(--lsc-terra);
+            display: block;
+            margin-bottom: 24px;
+        }
+
+        .contact-eyebrow::before { content: '{ '; }
+        .contact-eyebrow::after  { content: ' }'; }
+
+        .contact-headline {
+            font-family: 'Delight', Georgia, serif;
+            font-weight: 700;
+            font-size: clamp(48px, 5.5vw, 76px); /* Massive Delight Serif */
+            color: #F0EDE8; /* Muted Platinum */
+            text-align: left;
+            letter-spacing: -0.03em;
+            line-height: 0.95;
+            margin: 0;
+        }
+
+        .contact-connector {
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            margin: 0 40px;
+            height: 10px;
+            overflow: hidden;
+        }
+
+        .connector-line {
+            stroke: rgba(240, 237, 232, 0.2);
+            stroke-width: 2px;
+            stroke-linecap: round;
+            stroke-dasharray: 1px 8px;
+            stroke-dashoffset: 0;
+            animation: marchingAnts 2s linear infinite;
+        }
+
+        @keyframes marchingAnts {
+            to {
+                stroke-dashoffset: -18px;
+            }
+        }
+
+        .contact-right-column {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 16px;
+            flex-shrink: 0;
+        }
+
+        /* Scaled Action Buttons */
+        .contact-cta-btn.massive-btn {
+            font-size: 16px;
+            padding: 22px 44px;
+            letter-spacing: 0.15em;
+            font-weight: 600;
+            background-color: var(--lsc-terra);
+            border: 1px solid var(--lsc-terra);
+            color: var(--lsc-white);
+            cursor: pointer;
+            outline: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 14px;
+            text-transform: uppercase;
+            text-decoration: none;
+            transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, transform 0.25s ease;
+        }
+
+        .contact-cta-btn.secondary-contact-btn {
+            font-size: 11px;
+            padding: 14px 28px;
+            letter-spacing: 0.1em;
+            font-weight: 400;
+            background-color: transparent;
+            border: 1px solid var(--lsc-terra);
+            color: var(--lsc-white);
+            cursor: pointer;
+            outline: none;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 14px;
+            text-transform: uppercase;
+            transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, transform 0.25s ease;
+        }
+
+        .contact-cta-btn.massive-btn:hover,
+        .contact-cta-btn.secondary-contact-btn:hover {
+            background-color: transparent;
+            border-color: var(--lsc-sage);
+            color: var(--lsc-sage);
+            transform: translateY(-2px);
+        }
+
+        .contact-cta-btn.massive-btn svg,
+        .contact-cta-btn.secondary-contact-btn svg {
+            width: 14px;
+            height: 14px;
+            transition: transform 0.25s ease;
+        }
+
+        .contact-cta-btn.massive-btn:hover svg,
+        .contact-cta-btn.secondary-contact-btn:hover svg {
+            transform: translateX(4px);
+        }
+
+        @media (max-width: 992px) {
+            .contact-asymmetric-layout {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 40px;
+            }
+            .contact-connector {
+                display: none;
+            }
+            .contact-right-column {
+                align-items: flex-start;
+                width: 100%;
+            }
+            .contact-cta-btn.massive-btn,
+            .contact-cta-btn.secondary-contact-btn {
+                width: 100%;
+                justify-content: space-between;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .video-modal-meta {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }
+            .video-modal-close {
+                top: 20px;
+                right: 20px;
+            }
+            .form-modal-meta {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }
+            .form-modal-close {
+                top: 20px;
+                right: 20px;
+            }
+            .form-modal-body {
+                height: 70vh;
+            }
+        }
+
+    </style>
+</head>
+<body class="dark-theme">
+
+    <!-- ============================================================
+         CINEMATIC LOADER MASK
+         ============================================================ -->
+    <div class="cinematic-loader-mask" id="cinematicLoader">
+        <div class="loader-typography">LSC <em>Creative.</em></div>
+    </div>
+
+    <!-- ============================================================
+         ABOUT MODAL
+         ============================================================ -->
+    <div class="about-modal-overlay" id="aboutModal" role="dialog" aria-modal="true" aria-label="About LSC Creative">
+        <div class="about-modal">
+            <div class="about-photo-placeholder"></div>
+            <div class="about-modal-body">
+                <div>
+                    <div class="about-modal-header">
+                        <span class="about-eyebrow">{ About Us }</span>
+                        <button class="about-close-btn" id="aboutCloseBtn" aria-label="Close About modal">✕</button>
+                    </div>
+                    <h2 class="about-modal-title">Real stories.<br><em>Cinematic truth.</em></h2>
+                    <p class="about-modal-copy">Real stories told with cinematic precision. We don't make ads—we make films that tell the truth about great brands. Every frame is earned. Every cut is intentional. No stock footage. No studio gloss. Just the raw, honest reality of what your brand actually is.</p>
+                </div>
+                <div class="about-modal-footer">
+                    <span class="about-modal-tag">Est. 2022</span>
+                    <span class="about-modal-tag">·</span>
+                    <span class="about-modal-tag">Documentary Cinema</span>
+                    <span class="about-modal-tag">·</span>
+                    <span class="about-modal-tag">Brand Films</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================
+         CINEMATIC VIDEO MODAL
+         ============================================================ -->
+    <div class="video-modal-overlay" id="videoModal" role="dialog" aria-modal="true" aria-label="Project Video Player">
+        <button class="video-modal-close" id="videoModalCloseBtn" aria-label="Close video player">✕</button>
+        <div class="video-modal-container">
+            <div class="video-modal-player-wrapper">
+                <iframe 
+                    id="videoModalIframe"
+                    src=""
+                    allow="autoplay; encrypted-media; fullscreen"
+                    allowfullscreen
+                    title="Project Video Player">
+                </iframe>
+            </div>
+            <div class="video-modal-meta">
+                <span class="video-modal-eyebrow">{ Selected Work }</span>
+                <h2 class="video-modal-title" id="videoModalTitle">Project Film</h2>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================
+         CINEMATIC FORM MODAL
+         ============================================================ -->
+    <div class="form-modal-overlay" id="contactFormModal" role="dialog" aria-modal="true" aria-label="Visual Project Enquiry Form">
+        <button class="form-modal-close" id="contactFormCloseBtn" aria-label="Close enquiry form">✕</button>
+        <div class="form-modal-container">
+            <div class="form-modal-body">
+                <iframe class="clickup-embed clickup-dynamic-height" src="https://forms.clickup.com/9016951473/p/f/8cq7gnh-13096/6XYJVYBY8ZLH6CWDUR/project-intake-form" onwheel="" width="100%" height="100%" style="background: transparent; border: none;"></iframe>
+            </div>
+            <div class="form-modal-meta">
+                <span class="form-modal-eyebrow">{ Project Intake }</span>
+                <h2 class="form-modal-title">Intake Form</h2>
+            </div>
+        </div>
+    </div>
+    <script async src="https://app-cdn.clickup.com/assets/js/forms-embed/v1.js"></script>
+
+    <!-- ============================================================
+         NAVIGATION
+         ============================================================ -->
+    <nav class="navbar" id="navbar">
+        <div class="nav-container">
+            <a href="#home" class="brand-logo absolute-logo animate-entrance delay-nav logo-hover-container">
+                <div class="logo-icons">
+                    <img src="assets/LSC Logo [Transparent]/Logo Light_ No Text.png" alt="LSC Creative Logo" class="nav-logo default-icon">
+                    <svg class="nav-logo hover-icon" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
+                    </svg>
+                </div>
+                <div class="logo-text-stack">
+                    <div class="logo-text-lsc">LSC</div>
+                    <div class="logo-text-creative rainbow-text">
+                        <span style="--rc: #FF0000; animation-delay: 0.0s;">C</span><span style="--rc: #FF7F00; animation-delay: 0.1s;">r</span><span style="--rc: #FFFF00; animation-delay: 0.2s;">e</span><span style="--rc: var(--lsc-sage); animation-delay: 0.3s;">a</span><span style="--rc: #0000FF; animation-delay: 0.4s;">t</span><span style="--rc: #4B0082; animation-delay: 0.5s;">i</span><span style="--rc: #9400D3; animation-delay: 0.6s;">v</span><span style="--rc: #FF0000; animation-delay: 0.7s;">e</span>
+                    </div>
+                </div>
+            </a>
+            <ul class="nav-links absolute-nav animate-entrance delay-nav">
+                <li><a href="#portfolio">WORK</a></li>
+                <li><a href="#" id="aboutNavBtn">ABOUT</a></li>
+                <li><a href="#contact" id="contactNavBtn">CONTACT</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main>
+
+        <!-- ============================================================
+             HERO — FULL-BLEED CINEMATIC SHOWREEL
+             ============================================================ -->
+        <section class="hero-canvas" id="home">
+            <div class="hero-video-mask">
+                <iframe
+                    src="https://player.mediadelivery.net/embed/662936/6c906ad4-9642-4b1e-9a56-51500020b81f?autoplay=true&loop=true&muted=true&preload=true&responsive=true&controls=false"
+                    loading="eager"
+                    allow="autoplay; encrypted-media;"
+                    title="LSC Creative Showreel">
+                </iframe>
+            </div>
+
+            <div class="hero-interface-layer">
+                <span class="eyebrow-accent">Motion Productions</span>
+                <h1 class="display-title">LSC <em>Creative.</em></h1>
+            </div>
+
+            <img src="assets/Igonography/shape_85.png" alt="" class="floating-icon hero-mark" style="position: absolute; z-index: 3; pointer-events: none;" aria-hidden="true">
+
+            <!-- Cinematic Camera HUD -->
+            <div class="hud-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10;" aria-hidden="true">
+                <div class="hud-left-rail animate-entrance delay-hud">
+                    <img src="assets/HUD Ui Elements/Side Messure.png" alt="" class="hud-side-measure">
+                </div>
+                <div class="hud-bottom-left animate-entrance delay-hud" style="bottom: 2.2rem; left: 3rem; position: absolute;">
+                    <span class="rec-indicator"><span class="rec-dot"></span>REC</span>
+                </div>
+                <div class="hud-bottom-right animate-entrance delay-hud" style="bottom: 2.2rem; right: 3rem; position: absolute;">
+                    <span id="timecode">T: 00:00:24:12</span>
+                </div>
+                <div class="frame-guide top-left animate-entrance delay-brackets"></div>
+                <div class="frame-guide top-right animate-entrance delay-brackets"></div>
+                <div class="frame-guide bottom-left animate-entrance delay-brackets"></div>
+                <div class="frame-guide bottom-right animate-entrance delay-brackets"></div>
+            </div>
+
+            <div class="focus-meter-layer animate-entrance delay-nav" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 55;" aria-hidden="true">
+                <div class="focus-meter" id="focusMeter">
+                    <div class="split-prism-inner">
+                        <div class="split-prism-top"></div>
+                        <div class="split-prism-bottom"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================================================
+             CAPABILITIES — CINEMATIC ACCORDION
+             ============================================================ -->
+        <section class="lsc-services-section" id="capabilities">
+            <div class="services-header">
+                <span class="eyebrow-accent">Our Craft</span>
+                <h2 class="section-title">Capabilities.</h2>
+            </div>
+
+            <div class="accordion-container">
+                <details class="cinematic-accordion">
+                    <summary class="accordion-trigger">
+                        <div class="trigger-content">
+                            <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                                <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+                                <line x1="7" y1="2" x2="7" y2="22"></line>
+                                <line x1="17" y1="2" x2="17" y2="22"></line>
+                                <line x1="2" y1="12" x2="22" y2="12"></line>
+                                <line x1="2" y1="7" x2="7" y2="7"></line>
+                                <line x1="2" y1="17" x2="7" y2="17"></line>
+                                <line x1="17" y1="17" x2="22" y2="17"></line>
+                                <line x1="17" y1="7" x2="22" y2="7"></line>
+                            </svg>
+                            <span class="trigger-title">Motion.</span>
+                        </div>
+                        <div class="trigger-indicator" aria-hidden="true"></div>
+                    </summary>
+                    <div class="accordion-content">
+                        <p>Documentary-style brand films. Shot on location. No scripts, no actors, no padding. We capture the truth of your brand with cinematic precision.</p>
+                    </div>
+                </details>
+
+                <details class="cinematic-accordion">
+                    <summary class="accordion-trigger">
+                        <div class="trigger-content">
+                            <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                                <circle cx="12" cy="13" r="4"></circle>
+                            </svg>
+                            <span class="trigger-title">Stills.</span>
+                        </div>
+                        <div class="trigger-indicator" aria-hidden="true"></div>
+                    </summary>
+                    <div class="accordion-content">
+                        <p>Real moments, documented with an editorial eye. We don't stage—we capture the atmospheric reality of your subject.</p>
+                    </div>
+                </details>
+            </div>
+        </section>
+
+        <!-- ============================================================
+             SELECTED WORK — HORIZONTAL SCROLL PORTFOLIO
+             ============================================================ -->
+        <section id="portfolio" class="horizontal-scroll-section">
+            <div id="portfolioBg" class="portfolio-hover-bg"></div>
+            <div class="sticky-track">
+                <div class="horizontal-gallery" id="portfolioGallery">
+
+                    <div class="gallery-intro">
+                        <h2 class="section-title">Selected<br>Work</h2>
+                        <p class="section-subtitle">2024–2025</p>
+                    </div>
+
+                    <div class="film-strip-container">
+                        <div class="film-frames-grid">
+
+                            <!-- Project 01: Marine Vitalities -->
+                            <div class="project-tile playable-tile" data-video-id="89a0b68b-1afe-4c5a-9d83-67fc880a876a" data-project-title="Marine Vitalities">
+                                <div class="film-edge-text top"><span>9</span><span>KODAK EKTAR 100</span></div>
+                                <div class="tile-media native-aspect">
+                                    <img src="https://vz-2d3e9bef-866.b-cdn.net/89a0b68b-1afe-4c5a-9d83-67fc880a876a/thumbnail.jpg" alt="Marine Vitalities Thumbnail" class="tile-thumbnail">
+                                    <img src="https://vz-2d3e9bef-866.b-cdn.net/89a0b68b-1afe-4c5a-9d83-67fc880a876a/preview.webp?v=1779252138" alt="Marine Vitalities Preview" class="tile-preview">
+                                    <div class="custom-play-indicator" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M8 5v14l11-7z"/>
+                                        </svg>
+                                    </div>
+                                </div>
+                                <div class="film-edge-text bottom"><span>9</span><span class="arrow">▶</span><span>9A</span></div>
+                                <div class="tile-meta">
+                                    <h3 class="project-title">Marine Vitalities</h3>
+                                </div>
+                            </div>
+
+                            <!-- Project 02: BNB AutoHaus -->
+                            <div class="project-tile playable-tile" data-video-id="b73539f4-26bd-470d-b658-8b2b0870098b" data-project-title="BNB AutoHaus">
+                                <div class="film-edge-text top"><span>10</span><span>KODAK EKTAR 100</span></div>
+                                <div class="tile-media native-aspect">
+                                    <img src="https://vz-2d3e9bef-866.b-cdn.net/b73539f4-26bd-470d-b658-8b2b0870098b/thumbnail.jpg" alt="BNB AutoHaus Thumbnail" class="tile-thumbnail">
+                                    <img src="https://vz-2d3e9bef-866.b-cdn.net/b73539f4-26bd-470d-b658-8b2b0870098b/preview.webp?v=1779253460" alt="BNB AutoHaus Preview" class="tile-preview">
+                                    <div class="custom-play-indicator" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M8 5v14l11-7z"/>
+                                        </svg>
+                                    </div>
+                                </div>
+                                <div class="film-edge-text bottom"><span>10</span><span class="arrow">▶</span><span>10A</span></div>
+                                <div class="tile-meta">
+                                    <h3 class="project-title">BNB AutoHaus</h3>
+                                </div>
+                            </div>
+
+                            <!-- Project 03: BakeHouse -->
+                            <div class="project-tile playable-tile" data-video-id="0d00bcf5-bf60-4c2c-8513-f8e41b490670" data-project-title="BakeHouse">
+                                <div class="film-edge-text top"><span>11</span><span>KODAK EKTAR 100</span></div>
+                                <div class="tile-media native-aspect">
+                                    <img src="https://vz-2d3e9bef-866.b-cdn.net/0d00bcf5-bf60-4c2c-8513-f8e41b490670/thumbnail.jpg" alt="BakeHouse Thumbnail" class="tile-thumbnail">
+                                    <img src="https://vz-2d3e9bef-866.b-cdn.net/0d00bcf5-bf60-4c2c-8513-f8e41b490670/preview.webp?v=1779253210" alt="BakeHouse Preview" class="tile-preview">
+                                    <div class="custom-play-indicator" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M8 5v14l11-7z"/>
+                                        </svg>
+                                    </div>
+                                </div>
+                                <div class="film-edge-text bottom"><span>11</span><span class="arrow">▶</span><span>11A</span></div>
+                                <div class="tile-meta">
+                                    <h3 class="project-title">BakeHouse</h3>
+                                </div>
+                            </div>
+
+                            <!-- Project 04: HAWKS -->
+                            <div class="project-tile playable-tile" data-video-id="380dcc46-201f-46a1-8157-4e2fb3d88415" data-project-title="HAWKS">
+                                <div class="film-edge-text top"><span>12</span><span>KODAK EKTAR 100</span></div>
+                                <div class="tile-media native-aspect">
+                                    <img src="https://vz-2d3e9bef-866.b-cdn.net/380dcc46-201f-46a1-8157-4e2fb3d88415/thumbnail.jpg" alt="HAWKS Thumbnail" class="tile-thumbnail">
+                                    <img src="https://vz-2d3e9bef-866.b-cdn.net/380dcc46-201f-46a1-8157-4e2fb3d88415/preview.webp?v=1779252990" alt="HAWKS Preview" class="tile-preview">
+                                    <div class="custom-play-indicator" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M8 5v14l11-7z"/>
+                                        </svg>
+                                    </div>
+                                </div>
+                                <div class="film-edge-text bottom"><span>12</span><span class="arrow">▶</span><span>12A</span></div>
+                                <div class="tile-meta">
+                                    <h3 class="project-title">HAWKS</h3>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================================================
+             PROCESS — KVS 3-COLUMN BRACKETED LAYOUT
+             ============================================================ -->
+        <section class="lsc-process-section" id="process">
+            <div class="process-header">
+                <div class="process-header-left">
+                    <span class="section-eyebrow">How We Work</span>
+                    <h2 class="section-title">The Process.</h2>
+                </div>
+                <div class="process-header-meta">
+                    Three phases.<br>Zero compromise.
+                </div>
+            </div>
+
+            <div class="process-grid">
+
+                <div class="process-phase">
+                    <span class="process-phase-eyebrow">01</span>
+                    <h3 class="process-phase-title">Pre-production.</h3>
+                    <p class="process-phase-body">Story architecture. Location scouting. Total alignment. No guesswork.</p>
+                </div>
+
+                <div class="process-phase">
+                    <span class="process-phase-eyebrow">02</span>
+                    <h3 class="process-phase-title">Production.</h3>
+                    <p class="process-phase-body">On location. Cinema cameras. Minimal footprint, maximum visual impact.</p>
+                </div>
+
+                <div class="process-phase">
+                    <span class="process-phase-eyebrow">03</span>
+                    <h3 class="process-phase-title">Post-production.</h3>
+                    <p class="process-phase-body">The cut. Color grading. Sound design. Finding the truth in the footage.</p>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- ============================================================
+             CONTACT / CTA — HORIZONTAL ASYMMETRIC GRID & MOTION
+             ============================================================ -->
+        <section class="lsc-contact-section" id="contact">
+            <div class="contact-inner">
+                <div class="contact-asymmetric-layout">
+                    <div class="contact-left-column">
+                        <span class="contact-eyebrow">Get In Touch</span>
+                        <h2 class="contact-headline">Have a story<br>worth telling?<br>Let's talk.</h2>
+                    </div>
+                    <div class="contact-connector" aria-hidden="true">
+                        <svg width="100%" height="2" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <line x1="0" y1="1" x2="100%" y2="1" class="connector-line"/>
+                        </svg>
+                    </div>
+                    <div class="contact-right-column">
+                        <button class="contact-cta-btn massive-btn" id="contactEnquiryBtn">
+                            <span>Project Enquiries</span>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                                <polyline points="12 5 19 12 12 19"></polyline>
+                            </svg>
+                        </button>
+                        <a href="mailto:lachlan@creativelsc.com" class="contact-cta-btn secondary-contact-btn" id="contactEmailBtn">
+                            <span>LACHLAN@CREATIVELSC.COM</span>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                                <polyline points="12 5 19 12 12 19"></polyline>
+                            </svg>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ============================================================
+         FOOTER — MINIMAL STRUCTURAL
+         ============================================================ -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-left">
+                <p>LSC Creative &copy; 2025</p>
+            </div>
+            <div class="footer-right">
+                <a href="#">Privacy Policy</a>
+                <a href="#">Terms of Service</a>
+                <a href="mailto:hello@lsccreative.studio">Contact</a>
+            </div>
+        </div>
+    </footer>
+
+    <!-- JavaScript Files -->
+    <script src="js/app.js"></script>
+
+    <!-- About Modal Controller -->
+    <script>
+        (function () {
+            const overlay   = document.getElementById('aboutModal');
+            const openBtn   = document.getElementById('aboutNavBtn');
+            const closeBtn  = document.getElementById('aboutCloseBtn');
+
+            function openModal() {
+                overlay.classList.add('is-open');
+                document.body.style.overflow = 'hidden';
+            }
+
+            function closeModal() {
+                overlay.classList.remove('is-open');
+                document.body.style.overflow = '';
+            }
+
+            if (openBtn)  openBtn.addEventListener('click',  function (e) { e.preventDefault(); openModal(); });
+            if (closeBtn) closeBtn.addEventListener('click', closeModal);
+
+            // Close on overlay click (outside modal card)
+            overlay.addEventListener('click', function (e) {
+                if (e.target === overlay) closeModal();
+            });
+
+            // Close on Escape key
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && overlay.classList.contains('is-open')) closeModal();
+            });
+        })();
+    </script>
+
+    <!-- Cinematic Video Modal Controller -->
+    <script>
+        (function () {
+            const videoModal = document.getElementById('videoModal');
+            const videoIframe = document.getElementById('videoModalIframe');
+            const videoTitle = document.getElementById('videoModalTitle');
+            const closeBtn = document.getElementById('videoModalCloseBtn');
+            const projectTiles = document.querySelectorAll('.playable-tile');
+
+            function openVideoModal(videoId, projectTitle) {
+                if (!videoModal || !videoIframe) return;
+                
+                // Construct the Bunny.net embed URL with autoplay enabled
+                const embedUrl = `https://player.mediadelivery.net/embed/662936/${videoId}?autoplay=true`;
+                
+                videoIframe.src = embedUrl;
+                if (videoTitle) {
+                    videoTitle.textContent = projectTitle;
+                }
+                
+                videoModal.classList.add('is-active');
+                document.body.style.overflow = 'hidden'; // Lock background scrolling
+            }
+
+            function closeVideoModal() {
+                if (!videoModal || !videoIframe) return;
+                
+                videoModal.classList.remove('is-active');
+                videoIframe.src = ''; // Instantly destroy iframe source to stop stream/audio
+                document.body.style.overflow = ''; // Restore scrolling
+            }
+
+            // Bind click events on all project tiles
+            projectTiles.forEach(tile => {
+                tile.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    const videoId = this.getAttribute('data-video-id');
+                    const projectTitle = this.getAttribute('data-project-title') || 'Project Film';
+                    
+                    if (videoId) {
+                        openVideoModal(videoId, projectTitle);
+                    }
+                });
+            });
+
+            // Close actions
+            if (closeBtn) closeBtn.addEventListener('click', closeVideoModal);
+
+            // Close on overlay click (outside container)
+            videoModal.addEventListener('click', function (e) {
+                if (e.target === videoModal) {
+                    closeVideoModal();
+                }
+            });
+
+            // Close on Escape key
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && videoModal.classList.contains('is-active')) {
+                    closeVideoModal();
+                }
+            });
+        })();
+    </script>
+
+    <!-- Cinematic Contact Form Modal Controller -->
+    <script>
+        (function () {
+            const formModal   = document.getElementById('contactFormModal');
+            const openBtn     = document.getElementById('contactEnquiryBtn');
+            const closeBtn    = document.getElementById('contactFormCloseBtn');
+
+            function openModal() {
+                if (!formModal) return;
+                formModal.classList.add('is-active');
+                document.body.style.overflow = 'hidden'; // Lock background scrolling
+            }
+
+            function closeModal() {
+                if (!formModal) return;
+                formModal.classList.remove('is-active');
+                document.body.style.overflow = ''; // Restore background scrolling
+            }
+
+            if (openBtn) openBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                openModal();
+            });
+
+            if (closeBtn) closeBtn.addEventListener('click', closeModal);
+
+            // Close on overlay backdrop click
+            formModal.addEventListener('click', function (e) {
+                if (e.target === formModal) {
+                    closeModal();
+                }
+            });
+
+            // Close on Escape key press (safely check if open)
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && formModal.classList.contains('is-active')) {
+                    closeModal();
+                }
+            });
+        })();
+    </script>
+
+</body>
+</html>
