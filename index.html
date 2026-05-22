@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="LSC Creative — Documentary-style brand films and editorial photography. We don't make ads, we make films that tell the truth about great brands.">
     <title>LSC Creative | Cinematic Video Production</title>
+    <link rel="icon" type="image/png" href="assets/01 SECTION ASSETS/icon.png">
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,6 +23,9 @@
             --lsc-white:     #F0EDE8;
             --lsc-terra:     #C0603C;
             --lsc-sage:      #8FA89B;
+            --lsc-charcoal:  #252930;
+            --lsc-slate:     #3A4756;
+            --lsc-mid:       #7A7470;
             --lsc-rule:      rgba(240, 237, 232, 0.07);
             --lsc-muted:     rgba(240, 237, 232, 0.45);
 
@@ -96,12 +100,15 @@
         /* ============================================================
            ABOUT MODAL
            ============================================================ */
+        /* ── GLOBAL DIMMING LAYER ────────────────────────────────────────────
+           50% black dim only — NO backdrop-filter. Background content
+           (hero video, filmstrip) remains fully visible and sharp,
+           just darkened 50% so the glass modal reads cleanly against it.
+           ─────────────────────────────────────────────────────────────── */
         .about-modal-overlay {
             position: fixed;
             inset: 0;
-            background-color: rgba(14, 14, 14, 0.92);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
+            background-color: rgba(0, 0, 0, 0.5);
             z-index: 8000;
             display: flex;
             align-items: center;
@@ -117,9 +124,17 @@
             pointer-events: all;
         }
 
+        /* ── GLASS SLATE MODAL SURFACE ──────────────────────────────────────
+           Translucent dark charcoal tint (0.45 alpha) + Gaussian diffusion
+           backdrop blur. No gradient slashes. No specular highlights.
+           Polished catch-light border + wide diffuse drop shadow for depth.
+           ─────────────────────────────────────────────────────────────── */
         .about-modal {
-            background-color: var(--lsc-surface);
-            border: 1px solid var(--lsc-rule);
+            background: rgba(30, 34, 40, 0.35);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 40px 80px rgba(0, 0, 0, 0.6);
             max-width: 1000px;
             width: 100%;
             display: grid;
@@ -135,10 +150,23 @@
         }
 
         .about-photo-placeholder {
-            background-color: var(--lsc-black);
+            background-color: #1C1F24;
+            border: 1px solid rgba(240, 237, 232, 0.05);
             min-height: 520px;
             position: relative;
             overflow: hidden;
+        }
+
+        /* Cinematic editorial portrait */
+        .about-photo-img {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: center top;
+            display: block;
+            aspect-ratio: 3 / 4;
         }
 
         .about-photo-placeholder::after {
@@ -248,20 +276,6 @@
         }
 
         /* ============================================================
-           RAINBOW TEXT (NAVBAR HOVER)
-           ============================================================ */
-        .rainbow-text span {
-            color: var(--lsc-white);
-        }
-        .brand-logo:hover .rainbow-text span {
-            animation: rainbowCascade 2.5s infinite ease-in-out;
-        }
-        @keyframes rainbowCascade {
-            0%, 80%, 100% { color: var(--lsc-white); }
-            20%, 40%      { color: var(--rc, var(--lsc-white)); }
-        }
-
-        /* ============================================================
            PROJECT TILES (Portfolio)
            ============================================================ */
         .project-tile, .playable-tile, .portfolio-hover-bg {
@@ -275,17 +289,17 @@
             position: relative;
             width: 100vw;
             height: 100vh;
-            background-color: var(--lsc-black);
-            overflow: hidden;
+            /* background is transparent so the pinned video layer bleeds through */
+            background-color: transparent;
         }
 
         .hero-video-mask {
-            position: absolute;
+            position: fixed;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 1;
+            width: 100vw;
+            height: 100vh;
+            z-index: 0;
             pointer-events: none;
             overflow: hidden;
         }
@@ -361,16 +375,20 @@
         .section-eyebrow.bracket::after  { content: ' }'; }
 
         /* ============================================================
-           CINEMATIC ACCORDION — SERVICES SECTION
+           EDITORIAL CAPABILITIES — RAW TYPOGRAPHIC LIST
+           Designed to brand guide v4: negative space canvas, hairline
+           dividers, massive Delight headings, bracket numbering.
            ============================================================ */
         .lsc-services-section {
             padding: 100px 5vw;
-            background-color: var(--lsc-black);
-            border-top: 1px solid var(--lsc-rule);
+            background-color: #E8E2D9;
+            border-top: 1px solid rgba(14, 14, 14, 0.08);
+            position: relative;
+            z-index: 3;
         }
 
         .services-header {
-            margin-bottom: 64px;
+            margin-bottom: 72px;
         }
 
         .eyebrow-accent {
@@ -392,108 +410,160 @@
             line-height: 0.95;
         }
 
+        /* Capabilities section: scoped light-palette overrides */
+        .lsc-services-section .section-title {
+            color: var(--lsc-black);
+        }
+
+        /* ── Accordion container: sits on raw #0E0E0E canvas ── */
         .accordion-container {
-            max-width: 900px;
+            max-width: 960px;
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 0;
+            border-top: 1px solid rgba(14, 14, 14, 0.1);
         }
 
+        /* ── Each row: hairline bottom, no surface fill ── */
         .cinematic-accordion {
-            background-color: var(--lsc-surface);
-            border-radius: 4px;
-            overflow: hidden;
+            border-bottom: 1px solid rgba(14, 14, 14, 0.1);
             transition: background-color 0.3s ease;
-            border: 1px solid transparent;
-            transition: border-color 0.3s ease;
         }
 
-        .cinematic-accordion[open] {
-            border-color: var(--lsc-rule);
-        }
-
+        /* ── Trigger: flex row — number | title | toggle ── */
         .accordion-trigger {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            padding: 32px 40px;
+            gap: 32px;
+            padding: 36px 0;
             cursor: pointer;
             list-style: none;
         }
 
         .accordion-trigger::-webkit-details-marker { display: none; }
 
-        .trigger-content {
-            display: flex;
-            align-items: center;
-            gap: 24px;
-        }
-
-        .accordion-icon {
-            width: 26px;
-            height: 26px;
+        /* ── { 01 } bracket number — terracotta, fixed width ── */
+        .trigger-number {
+            font-family: 'FunnelSans', sans-serif;
+            font-size: 11px;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
             color: var(--lsc-terra);
-            opacity: 0.75;
+            width: 72px;
             flex-shrink: 0;
-            transition: color 0.3s ease, opacity 0.3s ease;
+            transition: color 0.25s ease;
         }
 
+        /* ── Massive editorial title — Delight Bold ── */
         .trigger-title {
             font-family: 'Delight', Georgia, serif;
-            font-weight: 700;
-            font-size: 30px;
-            color: var(--lsc-white);
-            letter-spacing: -0.015em;
-            transition: color 0.3s ease;
+            font-weight: 600;
+            font-size: clamp(40px, 5vw, 68px);
+            color: var(--lsc-black);
+            letter-spacing: -0.025em;
+            line-height: 1;
+            flex: 1;
+            transition: color 0.25s ease;
         }
 
+        /* ── Capability icon: sits between number and title ── */
+        .capability-icon {
+            width: 22px;
+            height: 22px;
+            color: rgba(14, 14, 14, 0.3);
+            flex-shrink: 0;
+            transition: color 0.25s ease;
+        }
+
+        .accordion-trigger:hover .capability-icon { color: var(--lsc-sage); }
+
+        /* ── Architectural + / − toggle: 1px hairline cross ── */
         .trigger-indicator {
-            width: 14px;
-            height: 2px;
-            background-color: var(--lsc-white);
+            width: 18px;
+            height: 1px;
+            background-color: rgba(14, 14, 14, 0.3);
             position: relative;
             flex-shrink: 0;
-            transition: background-color 0.3s ease;
+            transition: background-color 0.25s ease;
         }
 
-        .trigger-indicator::after {
+        /* Vertical arm of the + */
+        .trigger-indicator::before {
             content: '';
             position: absolute;
-            width: 2px;
-            height: 14px;
-            background-color: var(--lsc-white);
-            top: -6px;
-            left: 6px;
-            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease;
+            width: 1px;
+            height: 18px;
+            background-color: rgba(14, 14, 14, 0.3);
+            top: -8.5px;
+            left: 8.5px;
+            transition: transform 0.4s cubic-bezier(0.65, 0, 0.35, 1),
+                        opacity  0.4s cubic-bezier(0.65, 0, 0.35, 1),
+                        background-color 0.25s ease;
         }
 
-        .accordion-trigger:hover .trigger-title       { color: var(--lsc-sage); }
-        .accordion-trigger:hover .accordion-icon      { color: var(--lsc-sage); opacity: 1; }
+        /* When open: vertical arm fades + rotates away → becomes − */
+        .cinematic-accordion[open] .trigger-indicator::before {
+            transform: rotate(90deg);
+            opacity: 0;
+        }
+
+        /* ── Hover states — brand guide: sage = interactive token ── */
+        .accordion-trigger:hover .trigger-title   { color: var(--lsc-sage); }
+        .accordion-trigger:hover .trigger-number  { color: var(--lsc-sage); }
         .accordion-trigger:hover .trigger-indicator,
-        .accordion-trigger:hover .trigger-indicator::after { background-color: var(--lsc-sage); }
-
-        .cinematic-accordion[open] .trigger-indicator::after {
-            transform: rotate(90deg) scaleY(0);
+        .accordion-trigger:hover .trigger-indicator::before {
+            background-color: var(--lsc-sage);
         }
 
+        /* ── Open state: container lifts to sage tint, title + icon activate ── */
+        .cinematic-accordion[open] {
+            background-color: rgba(76, 175, 130, 0.07);
+        }
+
+        .cinematic-accordion[open] > .accordion-trigger .trigger-title {
+            color: var(--lsc-sage);
+        }
+
+        .cinematic-accordion[open] > .accordion-trigger .capability-icon {
+            color: var(--lsc-sage);
+        }
+
+        /* ── Body text: indented to align with title, not number ── */
+        /* number-width(72px) + gap(32px) = 104px left offset       */
         .accordion-content {
-            padding: 0 40px 36px 90px;
+            padding: 0 0 44px 104px;
+            overflow: hidden;
         }
 
         .accordion-content p {
             font-family: 'FunnelSans', sans-serif;
             font-size: 15px;
             font-weight: 300;
-            line-height: 1.7;
-            color: var(--lsc-muted);
+            line-height: 1.75;
+            color: rgba(14, 14, 14, 0.6);
             letter-spacing: 0.015em;
-            max-width: 560px;
-            animation: slideDownFade 0.35s ease-out forwards;
+            max-width: 520px;
+            animation: slideDownFade 0.45s cubic-bezier(0.4, 0, 0.2, 1) forwards;
         }
 
         @keyframes slideDownFade {
-            from { opacity: 0; transform: translateY(-8px); }
-            to   { opacity: 1; transform: translateY(0); }
+            from { opacity: 0; transform: translateY(-10px); }
+            to   { opacity: 1; transform: translateY(0);     }
+        }
+
+        /* ── Mobile: tighten padding, reduce title size ── */
+        @media (max-width: 640px) {
+            .accordion-trigger {
+                gap: 20px;
+                padding: 28px 0;
+            }
+            .trigger-number {
+                width: 52px;
+                font-size: 10px;
+            }
+            .accordion-content {
+                padding: 0 0 32px calc(52px + 20px);
+            }
         }
 
         /* ============================================================
@@ -503,6 +573,8 @@
             padding: 120px 5vw;
             background-color: var(--lsc-black);
             border-top: 1px solid var(--lsc-rule);
+            position: relative;
+            z-index: 3;
         }
 
         .process-header {
@@ -591,6 +663,8 @@
             background-color: var(--lsc-black);
             border-top: 1px solid var(--lsc-rule);
             padding: 32px 5vw;
+            position: relative;
+            z-index: 3;
         }
 
         .footer-content {
@@ -915,6 +989,33 @@
         }
 
         /* ============================================================
+           CINEMATIC VIDEO STRIP — PROCESS / CONTACT INTERSTITIAL
+           ============================================================ */
+        .cinematic-video-strip {
+            position: relative;
+            width: 100vw;
+            height: clamp(250px, 35vh, 450px);
+            overflow: hidden;
+            pointer-events: none;
+            border-top: 1px solid rgba(240, 237, 232, 0.05);
+            border-bottom: 1px solid rgba(240, 237, 232, 0.05);
+            background-color: var(--lsc-black, #0E0E0E);
+            z-index: 3; /* sits above the fixed hero video layer */
+        }
+
+        .cinematic-video-strip iframe {
+            width: 100vw;
+            height: 56.25vw;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            min-height: 100%;
+            min-width: 177.77vh;
+            border: 0;
+        }
+
+        /* ============================================================
            CONTACT SECTION — HORIZONTAL ASYMMETRIC GRID & MOTION
            ============================================================ */
         .lsc-contact-section {
@@ -922,6 +1023,7 @@
             background-color: var(--lsc-black);
             border-top: 1px solid var(--lsc-rule);
             position: relative;
+            z-index: 3;
             overflow: hidden;
         }
 
@@ -985,6 +1087,72 @@
             letter-spacing: -0.03em;
             line-height: 0.95;
             margin: 0;
+        }
+
+        /* ============================================================
+           DYNAMIC TEXT CAROUSEL — Contact Section
+           Brand compliance: --lsc-terra for rotating accent per brand
+           guide v4 (sage = interactive only, never decorative).
+           ============================================================ */
+
+        /* ─ Stage 2: height locked to 1.1em + fade mask on top/bottom edges ─ */
+        .carousel-mask {
+            display: inline-block;
+            overflow: hidden;
+            height: 1.1em;
+            line-height: 1.1em;
+            vertical-align: bottom;
+            /* Soft fade — incoming/outgoing words dissolve at clip edges */
+            -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+            mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+        }
+
+        /* ─ Stage 3: fluid easing — cubic-bezier(0.65, 0, 0.35, 1) quint ─ */
+        .carousel-track {
+            display: flex;
+            flex-direction: column;
+            animation: textCarousel 5s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+            will-change: transform;
+        }
+
+        /* Each word: height locked to 1.1em — contains all Delight ascenders */
+        .carousel-word {
+            display: block;
+            height: 1.1em;
+            line-height: 1.1;
+            color: var(--lsc-terra);   /* Terracotta — brand section accent */
+            font-style: normal;
+        }
+
+        /*
+         * 5 words × 1 second each = 5s total.
+         * Structure per word: 15% hold (0.75s) + 5% fluid transition (0.25s).
+         * 1.1em translateY per step — locked to updated word height.
+         * 6th span = duplicate of word 1 for seamless loop reset.
+         * cubic-bezier(0.65, 0, 0.35, 1): sharp acceleration, soft landing.
+         */
+        @keyframes textCarousel {
+            /* story ─────────────────────────────────────────── */
+            0%      { transform: translateY(0); }
+            15%     { transform: translateY(0); }
+            /* ↓ fluid slide to idea (5% = 0.25s) */
+            20%     { transform: translateY(-1.1em); }
+            /* idea ──────────────────────────────────────────── */
+            35%     { transform: translateY(-1.1em); }
+            /* ↓ fluid slide to message */
+            40%     { transform: translateY(-2.2em); }
+            /* message ───────────────────────────────────────── */
+            55%     { transform: translateY(-2.2em); }
+            /* ↓ fluid slide to product */
+            60%     { transform: translateY(-3.3em); }
+            /* product ───────────────────────────────────────── */
+            75%     { transform: translateY(-3.3em); }
+            /* ↓ fluid slide to event */
+            80%     { transform: translateY(-4.4em); }
+            /* event ─────────────────────────────────────────── */
+            95%     { transform: translateY(-4.4em); }
+            /* ↓ fluid slide to duplicate story — loop resets cleanly */
+            100%    { transform: translateY(-5.5em); }
         }
 
         .contact-connector {
@@ -1120,9 +1288,355 @@
             }
         }
 
+
+        /* ============================================================
+           GLOBAL CAMERA HUD — Fixed cinematic overlay
+           z-index: 9990 — above all content, below KVS curtain loader
+           ============================================================ */
+
+        .global-camera-hud {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 9990;
+            mix-blend-mode: difference;
+            color: var(--lsc-white, #F0EDE8);
+        }
+
+        /* 1. Corner crop marks — 50px, 2px solid rgba(255,255,255,0.4), % positioning */
+        .hud-corner {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            border: 2px solid var(--lsc-white, #F0EDE8);
+            mix-blend-mode: difference;
+        }
+
+        .hud-corner.top-left     { top: 24px;    left: 24px;  border-right: none; border-bottom: none; }
+        .hud-corner.top-right    { top: 24px;    right: 24px; border-left: none;  border-bottom: none; }
+        .hud-corner.bottom-left  { bottom: 24px; left: 24px;  border-right: none; border-top: none;    }
+        .hud-corner.bottom-right { bottom: 24px; right: 24px; border-left: none;  border-top: none;    }
+
+        /* 2. Left measure rail — PNG image, rotated -90deg, 40vh height, opacity 0.5 */
+        .hud-measure-guide {
+            position: absolute;
+            left: 1.5rem;
+            top: 50%;
+            width: 20px;
+            height: 40vh;
+            transform: translateY(-50%);
+            overflow: visible;
+        }
+
+        .hud-measure-guide img {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 40vh;
+            height: auto;
+            transform: translate(-50%, -50%) rotate(-90deg);
+            transform-origin: center;
+            opacity: 0.5;
+        }
+
+        /* 3. REC indicator — bottom left, original typography */
+        .hud-rec-indicator {
+            position: absolute;
+            bottom: 36px;
+            left: 36px;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-family: var(--font-primary);
+            font-size: 0.65rem;
+            color: var(--lsc-white, #F0EDE8);
+            letter-spacing: 2px;
+            mix-blend-mode: difference;
+        }
+
+        .hud-rec-indicator .rec-dot {
+            width: 6px;
+            height: 6px;
+            background-color: var(--accent-color);
+            border-radius: 50%;
+            animation: blink 2s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0; }
+        }
+
+        /* 4. Live timecode — bottom right, original typography */
+        .hud-timecode {
+            position: absolute;
+            bottom: 38px;
+            right: 38px;
+            font-family: var(--font-primary);
+            font-size: 16px;
+            font-weight: 400;
+            color: var(--lsc-white, #F0EDE8);
+            letter-spacing: 2px;
+            mix-blend-mode: difference;
+        }
+
+        /* Mobile overrides */
+        @media (max-width: 768px) {
+            .hud-measure-guide { display: none; }
+            .hud-corner { width: 30px; height: 30px; }
+            .hud-corner.top-left     { top: 5%;    left: 3%;  }
+            .hud-corner.top-right    { top: 5%;    right: 3%; }
+            .hud-corner.bottom-left  { bottom: 5%; left: 3%;  }
+            .hud-corner.bottom-right { bottom: 5%; right: 3%; }
+            .hud-rec-indicator { bottom: 20px; left: 20px; }
+            .hud-timecode      { bottom: 20px; right: 20px; }
+        }
+
+
+        /* ============================================================
+           SELECTED WORKS — EXTERNAL DATA OVERLAY SYSTEM V2.0
+           Stage 1–3 reconciliation: overlay lives BELOW the filmstrip,
+           connected by the sage leader line. Viewport is clean.
+           ============================================================ */
+
+        /* ── Override sticky-track overflow: clip x / visible y ──
+           clip does not create a scroll container, so overflow-y: visible
+           is honoured by the browser (CSS spec §overflow-2) ── */
+        .sticky-track {
+            overflow-x: clip !important;
+            overflow-y: visible !important;
+        }
+
+        /* ── Filmstrip: scale down + rise to clear viewport for overlay ── */
+        .film-strip-container {
+            transition: transform 0.5s cubic-bezier(0.65, 0, 0.35, 1);
+            transform-origin: center top;
+        }
+        .film-strip-container:has(.playable-tile:hover) {
+            transform: scale(0.85) translateY(-8%);
+        }
+
+        /* ── Parent tile: overflow visible so the external panel isn't clipped ── */
+        .film-frames-grid .project-tile,
+        .film-frames-grid .portfolio-video-wrapper {
+            overflow: visible !important;
+        }
+
+        /* ══════════════════════════════════════════════════════════════════════
+           THE CINEMATIC FILM CAPSULE
+           A single, frozen piece of geometry. Sprockets + video frame + tile meta
+           travel as one unified mass. When the capsule scales or rises on hover,
+           every child element moves with it — nothing detaches, nothing splits.
+           The .project-info-overlay calculates its clearance from this capsule's
+           bottom edge via top: calc(100% + 90px).
+           ══════════════════════════════════════════════════════════════════════ */
+        .cinematic-film-capsule {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            overflow: visible;
+        }
+
+        /* ── External overlay container — positioned BELOW the tile ── */
+        .project-info-overlay {
+            white-space: normal;   /* breaks .film-strip-container white-space:nowrap cascade */
+            position: absolute;
+            top: calc(100% + 90px); /* clears full film-edge-text.bottom zone + breathing room */
+            left: 0;
+            width: 100%;
+            max-width: 460px;       /* prevents runaway line lengths on wide tiles */
+            padding: 0 0 32px;
+            opacity: 0;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            transition: opacity 0.3s cubic-bezier(0.65, 0, 0.35, 1) 0s;
+            z-index: 35;
+        }
+
+        /* Reveal on hover — fades in, instant snap-off on mouse-out */
+        .playable-tile:hover .project-info-overlay {
+            opacity: 1;
+        }
+
+        /* connector line removed — overlay fades in directly */
+
+        /* ── Data heading: editorial large — Delight Bold, blur-to-focus ── */
+        .data-heading {
+            font-family: 'Delight', Georgia, serif;
+            font-size: clamp(20px, 2.4vw, 28px);
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            text-transform: none;
+            line-height: 1;
+            color: var(--lsc-charcoal, #252930);
+            margin: 0 0 14px;
+            opacity: 0;
+            filter: blur(8px);
+            transform: translateY(4px);
+        }
+
+        .playable-tile:hover .data-heading {
+            animation: dataClarify 0.4s ease-in-out 0.25s forwards;
+        }
+
+        @keyframes dataClarify {
+            from { opacity: 0; filter: blur(8px); transform: translateY(3px); }
+            to   { opacity: 1; filter: blur(0);   transform: translateY(0);   }
+        }
+
+        /* ── Measuring graphic: architectural ruler with tick marks ── */
+        .data-measuring-graphic {
+            width: 100%;
+            height: 22px;
+            margin-bottom: 14px;
+            opacity: 0;
+            transform: scaleX(0);
+            transform-origin: left center;
+            flex-shrink: 0;
+            /* Layer 1: minor ticks — 1px wide every 8px, 35% element height tall, from bottom */
+            /* Layer 2: major ticks — 1px wide every 32px, 65% element height tall, from bottom */
+            /* Layer 3: baseline — 1px sage line at very bottom */
+            background-image:
+                repeating-linear-gradient(
+                    90deg,
+                    var(--lsc-mid, #7A7470) 0,
+                    var(--lsc-mid, #7A7470) 1px,
+                    transparent 1px,
+                    transparent 8px
+                ),
+                repeating-linear-gradient(
+                    90deg,
+                    var(--lsc-mid, #7A7470) 0,
+                    var(--lsc-mid, #7A7470) 1px,
+                    transparent 1px,
+                    transparent 32px
+                ),
+                linear-gradient(
+                    var(--lsc-mid, #7A7470),
+                    var(--lsc-mid, #7A7470)
+                );
+            background-size:
+                100% 35%,
+                100% 65%,
+                100% 1px;
+            background-position:
+                0 100%,
+                0 100%,
+                0 100%;
+            background-repeat: repeat-x, repeat-x, no-repeat;
+            /* Fade the right edge out to ghost */
+            -webkit-mask-image: linear-gradient(to right, black 45%, transparent 100%);
+            mask-image:         linear-gradient(to right, black 45%, transparent 100%);
+        }
+
+        .playable-tile:hover .data-measuring-graphic {
+            animation: dataMeasureGrow 0.45s ease-in-out 0.45s forwards;
+        }
+
+        @keyframes dataMeasureGrow {
+            from { transform: scaleX(0); opacity: 0; }
+            to   { transform: scaleX(1); opacity: 1; }
+        }
+
+        /* ── Data text blocks: staggered sequential fade-up ── */
+        .data-text-block {
+            font-family: 'FunnelSans', 'Outfit', sans-serif;
+            font-size: 12px;
+            font-weight: 300;
+            line-height: 1.7;
+            letter-spacing: 0.015em;
+            color: var(--lsc-slate, #3A4756);
+            margin-bottom: 6px;
+            opacity: 0;
+            transform: translateY(5px);
+        }
+
+        /* SCOPE block — primary description, bold + two-line constraint */
+        .data-text-block.seq-1 {
+            font-size: 15px;
+            font-weight: 700;
+            line-height: 1.5;
+            max-width: 500px;
+            margin-bottom: 14px;
+            letter-spacing: 0em;
+            white-space: normal !important;
+        }
+        /* scope body text — inline-block forces its own wrapping context */
+        .data-text-block.seq-1 .scope-body {
+            display: inline-block;
+            white-space: normal !important;
+            max-width: 500px;
+            vertical-align: top;
+        }
+
+        /* Terracotta bracket labels — brand token */
+        .data-label {
+            font-family: 'FunnelSans', 'Outfit', sans-serif;
+            font-size: 10px;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--lsc-terra, #C0603C);
+            margin-right: 7px;
+            font-weight: 500;
+        }
+
+        .playable-tile:hover .data-text-block.seq-1 {
+            animation: dataFadeUp 0.4s ease-in-out 0.60s forwards;
+        }
+        .playable-tile:hover .data-text-block.seq-2 {
+            animation: dataFadeUp 0.4s ease-in-out 0.74s forwards;
+        }
+        .playable-tile:hover .data-text-block.seq-3 {
+            animation: dataFadeUp 0.4s ease-in-out 0.88s forwards;
+        }
+
+        @keyframes dataFadeUp {
+            from { opacity: 0; transform: translateY(5px); }
+            to   { opacity: 1; transform: translateY(0);   }
+        }
+
+        /* ── Project title: bottom-center, scales from center-bottom on hover ── */
+        .film-frames-grid .project-title {
+            transition: color 0.35s ease-in-out, transform 0.35s ease-in-out;
+            transform-origin: center bottom;
+            display: inline-block;
+        }
+
+        .playable-tile:hover .project-title {
+            color: var(--lsc-sage, #4CAF82) !important;
+            transform: scale(1.1);
+        }
+
     </style>
 </head>
 <body class="dark-theme">
+
+    <!-- ============================================================
+         GLOBAL CAMERA HUD — Fixed viewport overlay, persists across
+         all sections. pointer-events: none ensures full click-through.
+         ============================================================ -->
+    <div class="global-camera-hud" aria-hidden="true">
+        <div class="hud-corner top-left"></div>
+        <div class="hud-corner top-right"></div>
+        <div class="hud-corner bottom-left"></div>
+        <div class="hud-corner bottom-right"></div>
+
+        <div class="hud-measure-guide">
+            <img src="assets/HUD Ui Elements/Side Messure.png" alt="" aria-hidden="true">
+        </div>
+
+        <div class="hud-rec-indicator">
+            <div class="rec-dot"></div>
+            <span>REC</span>
+        </div>
+
+        <div class="hud-timecode" id="live-timecode">00:00:00:00</div>
+    </div>
 
     <!-- ============================================================
          CINEMATIC LOADER MASK
@@ -1136,22 +1650,26 @@
          ============================================================ -->
     <div class="about-modal-overlay" id="aboutModal" role="dialog" aria-modal="true" aria-label="About LSC Creative">
         <div class="about-modal">
-            <div class="about-photo-placeholder"></div>
+            <div class="about-photo-placeholder">
+                <img
+                    src="assets/01 SECTION ASSETS/Light.JPG"
+                    alt="LSC Creative"
+                    loading="lazy"
+                    class="about-photo-img"
+                >
+            </div>
             <div class="about-modal-body">
                 <div>
                     <div class="about-modal-header">
-                        <span class="about-eyebrow">{ About Us }</span>
+                        <span class="about-eyebrow">{ About }</span>
                         <button class="about-close-btn" id="aboutCloseBtn" aria-label="Close About modal">✕</button>
                     </div>
-                    <h2 class="about-modal-title">Real stories.<br><em>Cinematic truth.</em></h2>
-                    <p class="about-modal-copy">Real stories told with cinematic precision. We don't make ads—we make films that tell the truth about great brands. Every frame is earned. Every cut is intentional. No stock footage. No studio gloss. Just the raw, honest reality of what your brand actually is.</p>
+                    <h2 class="about-modal-title">COMMERCIAL MEDIA.<br><em>Cinematic Standards.</em></h2>
+                    <p class="about-modal-copy">Vibrant experience with the film industry has led to producing lots of interesting commercial projects and putting real meaning behind them.</p>
+                    <p class="about-modal-copy" style="margin-top: 16px;">Over the years, LSC Creative has visited many different locations to add to the inner workings of many productions &amp; collaborate with some pretty inspiring people.</p>
                 </div>
                 <div class="about-modal-footer">
-                    <span class="about-modal-tag">Est. 2022</span>
-                    <span class="about-modal-tag">·</span>
-                    <span class="about-modal-tag">Documentary Cinema</span>
-                    <span class="about-modal-tag">·</span>
-                    <span class="about-modal-tag">Brand Films</span>
+                    <span class="about-modal-tag" style="font-weight: 700; letter-spacing: 0.22em; font-size: 11px;">EST. 2020</span>
                 </div>
             </div>
         </div>
@@ -1201,19 +1719,8 @@
          ============================================================ -->
     <nav class="navbar" id="navbar">
         <div class="nav-container">
-            <a href="#home" class="brand-logo absolute-logo animate-entrance delay-nav logo-hover-container">
-                <div class="logo-icons">
-                    <img src="assets/LSC Logo [Transparent]/Logo Light_ No Text.png" alt="LSC Creative Logo" class="nav-logo default-icon">
-                    <svg class="nav-logo hover-icon" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
-                    </svg>
-                </div>
-                <div class="logo-text-stack">
-                    <div class="logo-text-lsc">LSC</div>
-                    <div class="logo-text-creative rainbow-text">
-                        <span style="--rc: #FF0000; animation-delay: 0.0s;">C</span><span style="--rc: #FF7F00; animation-delay: 0.1s;">r</span><span style="--rc: #FFFF00; animation-delay: 0.2s;">e</span><span style="--rc: var(--lsc-sage); animation-delay: 0.3s;">a</span><span style="--rc: #0000FF; animation-delay: 0.4s;">t</span><span style="--rc: #4B0082; animation-delay: 0.5s;">i</span><span style="--rc: #9400D3; animation-delay: 0.6s;">v</span><span style="--rc: #FF0000; animation-delay: 0.7s;">e</span>
-                    </div>
-                </div>
+            <a href="#home" class="brand-logo absolute-logo animate-entrance delay-nav">
+                <img src="assets/LSC Logo [Transparent]/3.png" alt="LSC Creative Logo" class="nav-logo default-icon">
             </a>
             <ul class="nav-links absolute-nav animate-entrance delay-nav">
                 <li><a href="#portfolio">WORK</a></li>
@@ -1245,22 +1752,6 @@
 
             <img src="assets/Igonography/shape_85.png" alt="" class="floating-icon hero-mark" style="position: absolute; z-index: 3; pointer-events: none;" aria-hidden="true">
 
-            <!-- Cinematic Camera HUD -->
-            <div class="hud-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10;" aria-hidden="true">
-                <div class="hud-left-rail animate-entrance delay-hud">
-                    <img src="assets/HUD Ui Elements/Side Messure.png" alt="" class="hud-side-measure">
-                </div>
-                <div class="hud-bottom-left animate-entrance delay-hud" style="bottom: 2.2rem; left: 3rem; position: absolute;">
-                    <span class="rec-indicator"><span class="rec-dot"></span>REC</span>
-                </div>
-                <div class="hud-bottom-right animate-entrance delay-hud" style="bottom: 2.2rem; right: 3rem; position: absolute;">
-                    <span id="timecode">T: 00:00:24:12</span>
-                </div>
-                <div class="frame-guide top-left animate-entrance delay-brackets"></div>
-                <div class="frame-guide top-right animate-entrance delay-brackets"></div>
-                <div class="frame-guide bottom-left animate-entrance delay-brackets"></div>
-                <div class="frame-guide bottom-right animate-entrance delay-brackets"></div>
-            </div>
 
             <div class="focus-meter-layer animate-entrance delay-nav" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 55;" aria-hidden="true">
                 <div class="focus-meter" id="focusMeter">
@@ -1282,43 +1773,31 @@
             </div>
 
             <div class="accordion-container">
+
                 <details class="cinematic-accordion">
                     <summary class="accordion-trigger">
-                        <div class="trigger-content">
-                            <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                                <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
-                                <line x1="7" y1="2" x2="7" y2="22"></line>
-                                <line x1="17" y1="2" x2="17" y2="22"></line>
-                                <line x1="2" y1="12" x2="22" y2="12"></line>
-                                <line x1="2" y1="7" x2="7" y2="7"></line>
-                                <line x1="2" y1="17" x2="7" y2="17"></line>
-                                <line x1="17" y1="17" x2="22" y2="17"></line>
-                                <line x1="17" y1="7" x2="22" y2="7"></line>
-                            </svg>
-                            <span class="trigger-title">Motion.</span>
-                        </div>
+                        <span class="trigger-number">{ 01 }</span>
+                        <span class="trigger-title">Motion.</span>
+                        <svg class="capability-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></svg>
                         <div class="trigger-indicator" aria-hidden="true"></div>
                     </summary>
                     <div class="accordion-content">
-                        <p>Documentary-style brand films. Shot on location. No scripts, no actors, no padding. We capture the truth of your brand with cinematic precision.</p>
+                        <p>Documentary-style brand films that are shot on location. Our expertise is capturing the candid, authentic side of your business, product or message. Here, cinematic precision is our standard for you.</p>
                     </div>
                 </details>
 
                 <details class="cinematic-accordion">
                     <summary class="accordion-trigger">
-                        <div class="trigger-content">
-                            <svg class="accordion-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-                                <circle cx="12" cy="13" r="4"></circle>
-                            </svg>
-                            <span class="trigger-title">Stills.</span>
-                        </div>
+                        <span class="trigger-number">{ 02 }</span>
+                        <span class="trigger-title">Stills.</span>
+                        <svg class="capability-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
                         <div class="trigger-indicator" aria-hidden="true"></div>
                     </summary>
                     <div class="accordion-content">
-                        <p>Real moments, documented with an editorial eye. We don't stage—we capture the atmospheric reality of your subject.</p>
+                        <p>Our aim is to capture real moments, real people and real meaning in image format. We seek to provide you with quality stills to show to your audience, whatever your message.</p>
                     </div>
                 </details>
+
             </div>
         </section>
 
@@ -1339,7 +1818,8 @@
                         <div class="film-frames-grid">
 
                             <!-- Project 01: Marine Vitalities -->
-                            <div class="project-tile playable-tile" data-video-id="89a0b68b-1afe-4c5a-9d83-67fc880a876a" data-project-title="Marine Vitalities">
+                            <div class="project-tile playable-tile portfolio-video-wrapper" data-video-id="89a0b68b-1afe-4c5a-9d83-67fc880a876a" data-project-title="Marine Vitalities">
+                                <div class="cinematic-film-capsule">
                                 <div class="film-edge-text top"><span>9</span><span>KODAK EKTAR 100</span></div>
                                 <div class="tile-media native-aspect">
                                     <img src="https://vz-2d3e9bef-866.b-cdn.net/89a0b68b-1afe-4c5a-9d83-67fc880a876a/thumbnail.jpg" alt="Marine Vitalities Thumbnail" class="tile-thumbnail">
@@ -1354,10 +1834,26 @@
                                 <div class="tile-meta">
                                     <h3 class="project-title">Marine Vitalities</h3>
                                 </div>
+                                <div class="project-info-overlay">
+
+                                    <h4 class="data-heading">BRAND DOCUMENTARY</h4>
+                                    <div class="data-measuring-graphic"></div>
+                                    <div class="data-text-block seq-1">
+                                        <span class="data-label">{SCOPE}</span><span class="scope-body"> On-location brand film capturing the relationship between sustainable farming in one of the worlds nutrient rich waters</span>
+                                    </div>
+                                    <div class="data-text-block seq-2">
+                                        <span class="data-label">{SCREENS}</span> Website Hero, Meta ads, Socials
+                                    </div>
+                                    <div class="data-text-block seq-3">
+                                        <span class="data-label">{CAMPAIGN}</span> 03.02.2026
+                                    </div>
+                                </div>
+                                </div>
                             </div>
 
                             <!-- Project 02: BNB AutoHaus -->
-                            <div class="project-tile playable-tile" data-video-id="b73539f4-26bd-470d-b658-8b2b0870098b" data-project-title="BNB AutoHaus">
+                            <div class="project-tile playable-tile portfolio-video-wrapper" data-video-id="b73539f4-26bd-470d-b658-8b2b0870098b" data-project-title="BNB AutoHaus">
+                                <div class="cinematic-film-capsule">
                                 <div class="film-edge-text top"><span>10</span><span>KODAK EKTAR 100</span></div>
                                 <div class="tile-media native-aspect">
                                     <img src="https://vz-2d3e9bef-866.b-cdn.net/b73539f4-26bd-470d-b658-8b2b0870098b/thumbnail.jpg" alt="BNB AutoHaus Thumbnail" class="tile-thumbnail">
@@ -1372,10 +1868,26 @@
                                 <div class="tile-meta">
                                     <h3 class="project-title">BNB AutoHaus</h3>
                                 </div>
+                                <div class="project-info-overlay">
+
+                                    <h4 class="data-heading">PRODUCT SHOWCASE</h4>
+                                    <div class="data-measuring-graphic"></div>
+                                    <div class="data-text-block seq-1">
+                                        <span class="data-label">{SCOPE}</span><span class="scope-body"> Feature a factory fresh car interior build - visualising the pinnacle of BNB's high detail work</span>
+                                    </div>
+                                    <div class="data-text-block seq-2">
+                                        <span class="data-label">{SCREENS}</span> Advertisement, YouTube, Social Media
+                                    </div>
+                                    <div class="data-text-block seq-3">
+                                        <span class="data-label">{CAMPAIGN}</span> 05.03.2025
+                                    </div>
+                                </div>
+                                </div>
                             </div>
 
                             <!-- Project 03: BakeHouse -->
-                            <div class="project-tile playable-tile" data-video-id="0d00bcf5-bf60-4c2c-8513-f8e41b490670" data-project-title="BakeHouse">
+                            <div class="project-tile playable-tile portfolio-video-wrapper" data-video-id="0d00bcf5-bf60-4c2c-8513-f8e41b490670" data-project-title="BakeHouse">
+                                <div class="cinematic-film-capsule">
                                 <div class="film-edge-text top"><span>11</span><span>KODAK EKTAR 100</span></div>
                                 <div class="tile-media native-aspect">
                                     <img src="https://vz-2d3e9bef-866.b-cdn.net/0d00bcf5-bf60-4c2c-8513-f8e41b490670/thumbnail.jpg" alt="BakeHouse Thumbnail" class="tile-thumbnail">
@@ -1390,10 +1902,26 @@
                                 <div class="tile-meta">
                                     <h3 class="project-title">BakeHouse</h3>
                                 </div>
+                                <div class="project-info-overlay">
+
+                                    <h4 class="data-heading">HERO EXPOSITORY</h4>
+                                    <div class="data-measuring-graphic"></div>
+                                    <div class="data-text-block seq-1">
+                                        <span class="data-label">{SCOPE}</span><span class="scope-body"> An intimate look at the dedication of a world class baker set in his heritage in a small corner of Australia.</span>
+                                    </div>
+                                    <div class="data-text-block seq-2">
+                                        <span class="data-label">{SCREENS}</span> Local Culture Circuit, Pitch Deck, Investor Portal
+                                    </div>
+                                    <div class="data-text-block seq-3">
+                                        <span class="data-label">{CAMPAIGN}</span> 10.05.2025
+                                    </div>
+                                </div>
+                                </div>
                             </div>
 
                             <!-- Project 04: HAWKS -->
-                            <div class="project-tile playable-tile" data-video-id="380dcc46-201f-46a1-8157-4e2fb3d88415" data-project-title="HAWKS">
+                            <div class="project-tile playable-tile portfolio-video-wrapper" data-video-id="380dcc46-201f-46a1-8157-4e2fb3d88415" data-project-title="HAWKS">
+                                <div class="cinematic-film-capsule">
                                 <div class="film-edge-text top"><span>12</span><span>KODAK EKTAR 100</span></div>
                                 <div class="tile-media native-aspect">
                                     <img src="https://vz-2d3e9bef-866.b-cdn.net/380dcc46-201f-46a1-8157-4e2fb3d88415/thumbnail.jpg" alt="HAWKS Thumbnail" class="tile-thumbnail">
@@ -1406,7 +1934,22 @@
                                 </div>
                                 <div class="film-edge-text bottom"><span>12</span><span class="arrow">▶</span><span>12A</span></div>
                                 <div class="tile-meta">
-                                    <h3 class="project-title">HAWKS</h3>
+                                    <h3 class="project-title">ILLAWARRA HAWKS</h3>
+                                </div>
+                                <div class="project-info-overlay">
+
+                                    <h4 class="data-heading">EVENT COVERAGE</h4>
+                                    <div class="data-measuring-graphic"></div>
+                                    <div class="data-text-block seq-1">
+                                        <span class="data-label">{SCOPE}</span><span class="scope-body"> Court side grit and locker room tension. Real moments from the season to the championship finals.</span>
+                                    </div>
+                                    <div class="data-text-block seq-2">
+                                        <span class="data-label">{SCREENS}</span> Broadcast, Stadium Screens, Jumbotron
+                                    </div>
+                                    <div class="data-text-block seq-3">
+                                        <span class="data-label">{CAMPAIGN}</span> 04.09.2024
+                                    </div>
+                                </div>
                                 </div>
                             </div>
 
@@ -1435,22 +1978,37 @@
                 <div class="process-phase">
                     <span class="process-phase-eyebrow">01</span>
                     <h3 class="process-phase-title">Pre-production.</h3>
-                    <p class="process-phase-body">Story architecture. Location scouting. Total alignment. No guesswork.</p>
+                    <p class="process-phase-body">The quality of your project is in the details. I take planning very seriously no matter the scope of the project — depending on what your story needs, scripting, storyboarding, short listing, location scouting and finding the right talent can mean the difference between a clear strong message or a lost audience. I love planning because I'm dictating the end result before anybody gets on set. It's exciting to come to a vision with my clients so that everybody is on the same page.</p>
                 </div>
 
                 <div class="process-phase">
                     <span class="process-phase-eyebrow">02</span>
                     <h3 class="process-phase-title">Production.</h3>
-                    <p class="process-phase-body">On location. Cinema cameras. Minimal footprint, maximum visual impact.</p>
+                    <p class="process-phase-body">Where we hit record on set. What makes LSC Creative different is the standard between executing a single shoot or an ongoing production stays the same — the lighting, cameras and over-caffeinated crew members are coming together to put planning into action.</p>
                 </div>
 
                 <div class="process-phase">
                     <span class="process-phase-eyebrow">03</span>
                     <h3 class="process-phase-title">Post-production.</h3>
-                    <p class="process-phase-body">The cut. Color grading. Sound design. Finding the truth in the footage.</p>
+                    <p class="process-phase-body">Where the magic happens — the rigorous work of editing. Managing the refinement of unique footage and spoken words, compiled under the light of professional colour science and sound design to deliver elevated media.</p>
                 </div>
 
             </div>
+        </section>
+
+        <!-- ============================================================
+             CINEMATIC VIDEO STRIP — PROCESS / CONTACT INTERSTITIAL
+             ============================================================ -->
+        <section class="cinematic-video-strip" aria-hidden="true">
+            <iframe
+                src="https://player.mediadelivery.net/embed/662936/bd34bf23-fe47-4c89-85c7-4bac613b269c?autoplay=true&loop=true&muted=true&preload=true&responsive=true&controls=false"
+                loading="lazy"
+                style="border:0;"
+                allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
+                allowfullscreen="true"
+                muted="muted"
+                playsinline="true">
+            </iframe>
         </section>
 
         <!-- ============================================================
@@ -1461,7 +2019,18 @@
                 <div class="contact-asymmetric-layout">
                     <div class="contact-left-column">
                         <span class="contact-eyebrow">Get In Touch</span>
-                        <h2 class="contact-headline">Have a story<br>worth telling?<br>Let's talk.</h2>
+                        <h2 class="contact-headline">Have a<br>
+                        <span class="carousel-mask">
+                            <span class="carousel-track" aria-hidden="true">
+                                <span class="carousel-word">story?</span>
+                                <span class="carousel-word">idea?</span>
+                                <span class="carousel-word">message?</span>
+                                <span class="carousel-word">product?</span>
+                                <span class="carousel-word">event?</span>
+                                <span class="carousel-word">story?</span><!-- loop duplicate — seamless CSS reset -->
+                            </span>
+                        </span><br>
+                        Let's talk.</h2>
                     </div>
                     <div class="contact-connector" aria-hidden="true">
                         <svg width="100%" height="2" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1476,8 +2045,8 @@
                                 <polyline points="12 5 19 12 12 19"></polyline>
                             </svg>
                         </button>
-                        <a href="mailto:lachlan@creativelsc.com" class="contact-cta-btn secondary-contact-btn" id="contactEmailBtn">
-                            <span>LACHLAN@CREATIVELSC.COM</span>
+                        <a href="mailto:hello@creativelsc.studio" class="contact-cta-btn secondary-contact-btn" id="contactEmailBtn">
+                            <span>HELLO@CREATIVELSC.STUDIO</span>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                 <line x1="5" y1="12" x2="19" y2="12"></line>
                                 <polyline points="12 5 19 12 12 19"></polyline>
@@ -1648,6 +2217,27 @@
             });
         })();
     </script>
+
+    <!-- Live Timecode Engine — LSC Cinematic HUD -->
+    <script>
+        (function () {
+            function updateTimecode() {
+                const el = document.getElementById('live-timecode');
+                if (!el) return;
+                const now    = new Date();
+                const h      = String(now.getHours()).padStart(2, '0');
+                const m      = String(now.getMinutes()).padStart(2, '0');
+                const s      = String(now.getSeconds()).padStart(2, '0');
+                const frames = String(Math.floor(now.getMilliseconds() / 40)).padStart(2, '0'); // 24fps simulation
+                el.textContent = h + ':' + m + ':' + s + ':' + frames;
+                requestAnimationFrame(updateTimecode);
+            }
+            updateTimecode();
+        })();
+    </script>
+
+
+
 
 </body>
 </html>

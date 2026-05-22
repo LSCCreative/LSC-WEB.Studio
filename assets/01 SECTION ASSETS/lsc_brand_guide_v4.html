@@ -1,0 +1,655 @@
+
+<style>
+@font-face{font-family:'Delight';src:url('/mnt/user-data/uploads/Delight-VF.ttf') format('truetype');font-weight:700;}
+@font-face{font-family:'FunnelSans';src:url('/mnt/user-data/uploads/FunnelSans-Light.ttf') format('truetype');font-weight:300;}
+*{box-sizing:border-box;margin:0;padding:0;}
+.g{background:#0E0E0E;color:#F0EDE8;font-family:'FunnelSans','Helvetica Neue',sans-serif;font-weight:300;padding:0 0 72px;}
+
+/* HEADER */
+.hdr{padding:52px 40px 44px;border-bottom:1px solid rgba(240,237,232,0.07);}
+.hdr-over{font-size:10px;letter-spacing:0.3em;text-transform:uppercase;color:#C0603C;margin-bottom:14px;}
+.hdr-title{font-family:'Delight',Georgia,serif;font-weight:700;font-size:62px;color:#F0EDE8;line-height:0.92;letter-spacing:-0.025em;}
+.hdr-title em{color:#C0603C;font-style:normal;}
+.hdr-sub{font-size:11px;letter-spacing:0.24em;text-transform:uppercase;color:rgba(240,237,232,0.25);margin-top:18px;}
+.hdr-tags{display:flex;gap:8px;margin-top:22px;flex-wrap:wrap;}
+.htag{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(240,237,232,0.1);border-radius:2px;padding:5px 13px;}
+.htag-dot{width:6px;height:6px;border-radius:50%;}
+.htag-text{font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:rgba(240,237,232,0.38);}
+
+/* SECTIONS */
+.sec{padding:44px 40px 0;}
+.sec-label{font-size:9px;letter-spacing:0.32em;text-transform:uppercase;color:#C0603C;margin-bottom:22px;display:flex;align-items:center;gap:12px;}
+.sec-label::after{content:'';flex:1;height:1px;background:rgba(192,96,60,0.2);}
+.divider{height:1px;background:rgba(240,237,232,0.06);margin:44px 40px 0;}
+
+/* ── TYPEFACE SHOWCASE ── */
+.type-hero{background:#1C1F24;border-radius:10px;overflow:hidden;margin-bottom:10px;}
+.type-hero-top{padding:36px 36px 30px;}
+.type-hero-label{font-size:9px;letter-spacing:0.28em;text-transform:uppercase;color:rgba(240,237,232,0.28);margin-bottom:4px;}
+.type-hero-fname{font-family:'Delight',Georgia,serif;font-weight:700;font-size:13px;letter-spacing:0.06em;color:#C0603C;text-transform:uppercase;margin-bottom:22px;}
+.type-hero-display{font-family:'Delight',Georgia,serif;font-weight:700;line-height:0.92;letter-spacing:-0.025em;color:#F0EDE8;}
+.type-hero-bottom{padding:20px 36px 22px;background:#161819;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;}
+.type-hero-specs{display:flex;gap:6px;flex-wrap:wrap;}
+.tpill{font-size:10px;background:rgba(240,237,232,0.05);border:1px solid rgba(240,237,232,0.1);border-radius:2px;padding:4px 10px;color:rgba(240,237,232,0.38);letter-spacing:0.05em;}
+.type-hero-usage{font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(240,237,232,0.22);}
+
+.type-hero-b{background:#F0EDE8;border-radius:10px;overflow:hidden;margin-bottom:10px;}
+.type-hero-b-top{padding:36px 36px 30px;}
+.type-hero-b-label{font-size:9px;letter-spacing:0.28em;text-transform:uppercase;color:rgba(14,14,14,0.3);margin-bottom:4px;}
+.type-hero-b-fname{font-family:'FunnelSans',sans-serif;font-weight:300;font-size:13px;letter-spacing:0.06em;color:#C0603C;text-transform:uppercase;margin-bottom:18px;}
+.type-hero-b-sample{font-family:'FunnelSans',sans-serif;font-weight:300;font-size:17px;color:#0E0E0E;line-height:1.65;letter-spacing:0.02em;}
+.type-hero-b-bottom{padding:20px 36px 22px;background:#E8E2D9;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;}
+.tpill-lt{font-size:10px;background:rgba(14,14,14,0.06);border:1px solid rgba(14,14,14,0.1);border-radius:2px;padding:4px 10px;color:rgba(14,14,14,0.4);letter-spacing:0.05em;}
+
+/* TYPE SCALE */
+.tscale{display:flex;flex-direction:column;gap:1px;border-radius:8px;overflow:hidden;margin-top:12px;}
+.trow{display:flex;align-items:baseline;gap:16px;padding:13px 18px;}
+.trow:nth-child(odd){background:#161819;}
+.trow:nth-child(even){background:#1C1F24;}
+.trow-meta{width:96px;flex-shrink:0;}
+.trow-name{font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:rgba(240,237,232,0.28);}
+.trow-spec{font-size:9px;font-family:'Courier New',monospace;color:rgba(240,237,232,0.18);margin-top:3px;}
+.trow-sample{flex:1;}
+
+/* RAMPS */
+.ramp{margin-bottom:30px;}
+.ramp-title{font-family:'Delight',Georgia,serif;font-weight:700;font-size:22px;color:#F0EDE8;margin-bottom:3px;letter-spacing:-0.015em;}
+.ramp-desc{font-size:11px;color:rgba(240,237,232,0.3);margin-bottom:11px;letter-spacing:0.03em;}
+.ramp-row{display:flex;gap:3px;border-radius:6px;overflow:hidden;}
+.sw{flex:1;padding:7px 6px 6px;display:flex;flex-direction:column;justify-content:flex-end;}
+.sw-step{font-size:8px;letter-spacing:0.04em;opacity:0.5;margin-bottom:1px;}
+.sw-hex{font-size:8px;font-family:'Courier New',monospace;line-height:1.3;}
+.rtoks{display:flex;gap:5px;flex-wrap:wrap;margin-top:9px;}
+.tok{font-size:10px;font-family:'Courier New',monospace;background:rgba(240,237,232,0.04);border:1px solid rgba(240,237,232,0.08);border-radius:2px;padding:3px 9px;color:rgba(240,237,232,0.36);}
+.tok b{color:#C0603C;font-weight:400;}
+
+/* SAGE DETAIL */
+.ig-outer{background:#1C1F24;border-radius:8px;overflow:hidden;margin-top:4px;}
+.ig-head{padding:22px 26px 18px;border-bottom:1px solid rgba(240,237,232,0.07);}
+.ig-title{font-family:'Delight',Georgia,serif;font-weight:700;font-size:20px;color:#F0EDE8;letter-spacing:-0.015em;margin-bottom:8px;}
+.ig-badge{display:inline-block;font-size:9px;letter-spacing:0.14em;text-transform:uppercase;padding:3px 10px;border-radius:2px;background:rgba(76,175,130,0.1);color:#4CAF82;border:1px solid rgba(76,175,130,0.22);margin-bottom:10px;}
+.ig-desc{font-size:11px;color:rgba(240,237,232,0.35);line-height:1.6;letter-spacing:0.02em;}
+.ig-demos{padding:20px 26px;}
+.demos-label{font-size:9px;letter-spacing:0.22em;text-transform:uppercase;color:rgba(240,237,232,0.25);margin-bottom:14px;}
+.demo-row{display:flex;gap:18px;align-items:flex-start;padding:12px 0;border-bottom:1px solid rgba(240,237,232,0.06);}
+.demo-row:last-child{border-bottom:none;padding-bottom:0;}
+.demo-row-label{font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(240,237,232,0.25);width:100px;flex-shrink:0;padding-top:2px;}
+.demo-examples{display:flex;gap:14px;align-items:center;flex-wrap:wrap;}
+.state-pair{display:flex;flex-direction:column;gap:5px;}
+.state-lbl{font-size:9px;letter-spacing:0.1em;color:rgba(240,237,232,0.2);}
+.arr{color:rgba(240,237,232,0.14);font-size:16px;}
+.ex-link-off{font-size:13px;color:#F0EDE8;text-decoration:underline;text-decoration-color:rgba(240,237,232,0.22);text-underline-offset:3px;}
+.ex-link-on{font-size:13px;color:#4CAF82;text-decoration:underline;text-decoration-color:#4CAF82;text-underline-offset:3px;}
+.ex-btn-off{display:inline-flex;align-items:center;gap:6px;font-size:10px;letter-spacing:0.16em;text-transform:uppercase;padding:8px 14px;border-radius:2px;border:1px solid rgba(240,237,232,0.18);color:rgba(240,237,232,0.65);}
+.ex-btn-on{display:inline-flex;align-items:center;gap:6px;font-size:10px;letter-spacing:0.16em;text-transform:uppercase;padding:8px 14px;border-radius:2px;border:1px solid #4CAF82;color:#4CAF82;}
+.ex-nav-off{font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:rgba(240,237,232,0.42);padding-bottom:3px;}
+.ex-nav-on{font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#4CAF82;padding-bottom:3px;border-bottom:1px solid rgba(76,175,130,0.45);}
+.ex-tag-off{font-size:9px;letter-spacing:0.14em;text-transform:uppercase;padding:4px 10px;border-radius:2px;border:1px solid rgba(240,237,232,0.15);color:rgba(240,237,232,0.45);}
+.ex-tag-on{font-size:9px;letter-spacing:0.14em;text-transform:uppercase;padding:4px 10px;border-radius:2px;border:1px solid rgba(76,175,130,0.38);color:#4CAF82;background:rgba(76,175,130,0.07);}
+.ig-rule{padding:16px 26px;background:rgba(76,175,130,0.04);border-top:1px solid rgba(76,175,130,0.1);}
+.ig-rule-head{font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:#4CAF82;margin-bottom:7px;}
+.ig-rule-body{font-size:11px;color:rgba(240,237,232,0.38);line-height:1.65;letter-spacing:0.02em;}
+.ig-rule-body strong{color:rgba(240,237,232,0.65);font-weight:400;}
+.ig-toks{padding:14px 26px 20px;}
+
+/* CONTRAST */
+.matrix{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.cc{border-radius:6px;overflow:hidden;}
+.cc-top{padding:16px 18px 13px;}
+.cc-over{font-size:9px;letter-spacing:0.16em;text-transform:uppercase;margin-bottom:8px;}
+.cc-head{font-family:'Delight',Georgia,serif;font-weight:700;font-size:23px;line-height:1;letter-spacing:-0.015em;}
+.cc-body{font-size:11px;margin-top:5px;line-height:1.45;letter-spacing:0.02em;}
+.cc-foot{padding:9px 18px;display:flex;align-items:center;justify-content:space-between;}
+.cc-ratio{font-family:'Courier New',monospace;font-size:13px;font-weight:700;}
+.badge{font-size:9px;letter-spacing:0.13em;text-transform:uppercase;padding:4px 10px;border-radius:2px;}
+.b-aaa{background:rgba(76,175,130,0.1);color:#4CAF82;border:1px solid rgba(76,175,130,0.25);}
+.b-aa{background:rgba(200,168,75,0.1);color:#C8A84B;border:1px solid rgba(200,168,75,0.25);}
+
+/* USAGE MAP */
+.umap{display:flex;flex-direction:column;gap:1px;border-radius:8px;overflow:hidden;}
+.urow{display:flex;align-items:flex-start;gap:14px;padding:13px 18px;}
+.urow:nth-child(odd){background:#161819;}
+.urow:nth-child(even){background:#1C1F24;}
+.udots{display:flex;gap:4px;padding-top:3px;flex-shrink:0;}
+.udot{width:14px;height:14px;border-radius:2px;}
+.utitle{font-size:12px;color:#F0EDE8;line-height:1.4;}
+.usub{font-family:'Courier New',monospace;font-size:10px;color:rgba(240,237,232,0.25);margin-top:3px;}
+
+/* ── BRAND VOICE ── */
+.voice-hero{background:#F0EDE8;border-radius:10px;padding:40px 36px;margin-bottom:12px;}
+.voice-hero-over{font-size:9px;letter-spacing:0.28em;text-transform:uppercase;color:#C0603C;margin-bottom:14px;}
+.voice-hero-quote{font-family:'Delight',Georgia,serif;font-weight:700;font-size:36px;color:#0E0E0E;line-height:1.0;letter-spacing:-0.02em;margin-bottom:16px;}
+.voice-hero-quote em{color:#C0603C;font-style:normal;}
+.voice-hero-body{font-size:13px;color:#3A4756;line-height:1.65;letter-spacing:0.02em;max-width:520px;}
+
+.voice-attrs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;}
+.vattr{background:#1C1F24;border-radius:8px;padding:22px 24px;}
+.vattr-num{font-family:'Delight',Georgia,serif;font-weight:700;font-size:40px;color:rgba(192,96,60,0.18);line-height:1;letter-spacing:-0.02em;margin-bottom:4px;}
+.vattr-title{font-family:'Delight',Georgia,serif;font-weight:700;font-size:18px;color:#F0EDE8;letter-spacing:-0.01em;margin-bottom:8px;}
+.vattr-body{font-size:11px;color:rgba(240,237,232,0.38);line-height:1.6;letter-spacing:0.02em;}
+.vattr-eg{margin-top:12px;padding-top:12px;border-top:1px solid rgba(240,237,232,0.07);}
+.vattr-eg-label{font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:rgba(240,237,232,0.22);margin-bottom:6px;}
+.vattr-eg-text{font-size:12px;color:#4CAF82;line-height:1.5;font-style:italic;}
+
+.voice-do-dont{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;}
+.vdo{border-radius:8px;padding:22px 24px;}
+.vdo-head{display:flex;align-items:center;gap:8px;margin-bottom:14px;}
+.vdo-marker{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;}
+.vdo-head-text{font-family:'Delight',Georgia,serif;font-weight:700;font-size:16px;letter-spacing:-0.01em;}
+.vdo-item{font-size:12px;line-height:1.5;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;gap:8px;}
+.vdo-item:last-child{border-bottom:none;padding-bottom:0;}
+.vdo-item-mark{flex-shrink:0;margin-top:1px;font-size:11px;}
+
+.word-pairs{background:#1C1F24;border-radius:8px;padding:24px 26px;margin-bottom:12px;}
+.wp-title{font-family:'Delight',Georgia,serif;font-weight:700;font-size:18px;color:#F0EDE8;letter-spacing:-0.01em;margin-bottom:6px;}
+.wp-desc{font-size:11px;color:rgba(240,237,232,0.3);margin-bottom:18px;letter-spacing:0.02em;}
+.wp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+.wp-pair{background:#161819;border-radius:6px;padding:14px 16px;}
+.wp-not{font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(240,237,232,0.2);margin-bottom:6px;text-decoration:line-through;}
+.wp-yes{font-family:'Delight',Georgia,serif;font-weight:700;font-size:17px;color:#F0EDE8;letter-spacing:-0.01em;}
+.wp-yes em{color:#C0603C;font-style:normal;}
+
+.voice-examples{background:#0E0E0E;border:1px solid rgba(240,237,232,0.07);border-radius:8px;overflow:hidden;}
+.ve-head{padding:18px 24px;border-bottom:1px solid rgba(240,237,232,0.07);}
+.ve-head-title{font-family:'Delight',Georgia,serif;font-weight:700;font-size:16px;color:#F0EDE8;letter-spacing:-0.01em;}
+.ve-item{padding:18px 24px;border-bottom:1px solid rgba(240,237,232,0.05);}
+.ve-item:last-child{border-bottom:none;}
+.ve-context{font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:rgba(240,237,232,0.22);margin-bottom:8px;}
+.ve-bad{font-size:12px;color:rgba(240,237,232,0.28);line-height:1.5;margin-bottom:8px;padding:8px 12px;border-left:2px solid rgba(240,237,232,0.1);border-radius:0 3px 3px 0;}
+.ve-bad-label{font-size:9px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(240,237,232,0.18);margin-bottom:4px;}
+.ve-good{font-size:13px;color:#F0EDE8;line-height:1.55;padding:10px 14px;border-left:2px solid #C0603C;border-radius:0 3px 3px 0;background:rgba(192,96,60,0.05);}
+.ve-good-label{font-size:9px;letter-spacing:0.14em;text-transform:uppercase;color:#C0603C;margin-bottom:5px;}
+
+/* DEMO SURFACES */
+.demos{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.ds{border-radius:8px;padding:24px;}
+.ds-over{font-size:9px;letter-spacing:0.24em;text-transform:uppercase;margin-bottom:10px;}
+.ds-head{font-family:'Delight',Georgia,serif;font-weight:700;font-size:28px;line-height:0.97;letter-spacing:-0.02em;margin-bottom:9px;}
+.ds-body{font-size:11px;line-height:1.55;letter-spacing:0.02em;}
+.ds-link{display:inline-block;font-size:10px;letter-spacing:0.16em;text-transform:uppercase;margin-top:14px;}
+.ds-btn-t{display:inline-block;font-size:10px;letter-spacing:0.16em;text-transform:uppercase;padding:9px 18px;border-radius:2px;background:#C0603C;color:#F0EDE8;margin-top:14px;}
+.ds-btn-g{display:inline-flex;align-items:center;gap:6px;font-size:10px;letter-spacing:0.16em;text-transform:uppercase;padding:9px 18px;border-radius:2px;border:1px solid #4CAF82;color:#4CAF82;margin-top:14px;}
+</style>
+
+<div class="g">
+
+  <div class="hdr">
+    <div class="hdr-over">Brand Identity System — v3.0</div>
+    <div class="hdr-title">LSC<br><em>Creative.</em></div>
+    <div class="hdr-sub">Typography · Colour · Voice · AI-Optimised</div>
+    <div class="hdr-tags">
+      <div class="htag"><div class="htag-dot" style="background:#C0603C;"></div><div class="htag-text">Terracotta — CTA</div></div>
+      <div class="htag"><div class="htag-dot" style="background:#4CAF82;"></div><div class="htag-text">Sage — Interactive</div></div>
+      <div class="htag"><div class="htag-dot" style="background:#F0EDE8;"></div><div class="htag-text">Warm White — Canvas</div></div>
+    </div>
+  </div>
+
+  <!-- ── TYPEFACES ── -->
+  <div class="sec">
+    <div class="sec-label">Brand Typefaces</div>
+
+    <div class="type-hero">
+      <div class="type-hero-top">
+        <div class="type-hero-label">Primary typeface</div>
+        <div class="type-hero-fname">Delight Bold</div>
+        <div class="type-hero-display" style="font-size:58px;">We make<br>brands worth<br>watching.</div>
+      </div>
+      <div class="type-hero-bottom">
+        <div class="type-hero-specs">
+          <div class="tpill">Delight-VF.ttf</div>
+          <div class="tpill">Bold / 700</div>
+          <div class="tpill">Tracking −1.5% to −2.5%</div>
+          <div class="tpill">Line height 0.92–1.05</div>
+          <div class="tpill">Fallback: Georgia, serif</div>
+        </div>
+        <div class="type-hero-usage">H1 → Display only</div>
+      </div>
+    </div>
+
+    <div class="type-hero-b">
+      <div class="type-hero-b-top">
+        <div class="type-hero-b-label">Secondary typeface</div>
+        <div class="type-hero-b-fname">Funnel Sans Light</div>
+        <div class="type-hero-b-sample">LSC Creative is a premium production house specialising in documentary-style brand filmmaking. We don't make ads — we make films that tell the truth about great brands.</div>
+      </div>
+      <div class="type-hero-b-bottom">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <div class="tpill-lt">FunnelSans-Light.ttf</div>
+          <div class="tpill-lt">Weight 300</div>
+          <div class="tpill-lt">Body tracking +2%</div>
+          <div class="tpill-lt">Eyebrow tracking +24–30%</div>
+          <div class="tpill-lt">Fallback: Helvetica Neue, sans-serif</div>
+        </div>
+        <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(14,14,14,0.28);">Body → UI</div>
+      </div>
+    </div>
+
+    <div class="tscale">
+      <div class="trow">
+        <div class="trow-meta"><div class="trow-name">Display</div><div class="trow-spec">72px / −2.5%</div></div>
+        <div class="trow-sample" style="font-family:'Delight',Georgia,serif;font-weight:700;font-size:38px;color:#F0EDE8;letter-spacing:-0.025em;line-height:1;">LSC Creative.</div>
+      </div>
+      <div class="trow">
+        <div class="trow-meta"><div class="trow-name">H1</div><div class="trow-spec">48px / −2%</div></div>
+        <div class="trow-sample" style="font-family:'Delight',Georgia,serif;font-weight:700;font-size:27px;color:#F0EDE8;letter-spacing:-0.02em;line-height:1;">Brand Filmmaking</div>
+      </div>
+      <div class="trow">
+        <div class="trow-meta"><div class="trow-name">H2</div><div class="trow-spec">32px / −1.5%</div></div>
+        <div class="trow-sample" style="font-family:'Delight',Georgia,serif;font-weight:700;font-size:21px;color:#F0EDE8;letter-spacing:-0.015em;">Our Work</div>
+      </div>
+      <div class="trow">
+        <div class="trow-meta"><div class="trow-name">H3</div><div class="trow-spec">22px / −1%</div></div>
+        <div class="trow-sample" style="font-family:'Delight',Georgia,serif;font-weight:700;font-size:16px;color:#F0EDE8;letter-spacing:-0.01em;">Documentary Series</div>
+      </div>
+      <div class="trow">
+        <div class="trow-meta"><div class="trow-name">Eyebrow</div><div class="trow-spec">10px / +28% caps</div></div>
+        <div class="trow-sample" style="font-size:11px;color:#C0603C;letter-spacing:0.28em;text-transform:uppercase;">Motion Productions</div>
+      </div>
+      <div class="trow">
+        <div class="trow-meta"><div class="trow-name">Body</div><div class="trow-spec">16px / +2% / lh 1.6</div></div>
+        <div class="trow-sample" style="font-size:13px;color:rgba(240,237,232,0.58);line-height:1.6;letter-spacing:0.02em;">Premium production specialising in cinematic brand storytelling.</div>
+      </div>
+      <div class="trow">
+        <div class="trow-meta"><div class="trow-name">Link</div><div class="trow-spec">body size · sage</div></div>
+        <div class="trow-sample" style="font-size:13px;color:#4CAF82;text-decoration:underline;text-decoration-color:rgba(76,175,130,0.45);text-underline-offset:3px;">View our documentary series →</div>
+      </div>
+      <div class="trow">
+        <div class="trow-meta"><div class="trow-name">Caption</div><div class="trow-spec">12px / +10%</div></div>
+        <div class="trow-sample" style="font-size:11px;color:rgba(240,237,232,0.26);letter-spacing:0.1em;">Director of Photography · Sydney, AU</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ── BRAND VOICE ── -->
+  <div class="sec">
+    <div class="sec-label">Brand Voice</div>
+
+    <div class="voice-hero">
+      <div class="voice-hero-over">The LSC Creative Voice</div>
+      <div class="voice-hero-quote">Cinematic.<br>Direct. <em>Real.</em></div>
+      <div class="voice-hero-body">LSC Creative doesn't use marketing language. We write and speak the way a great documentary filmmaker thinks — with precision, without ego, and always in service of the truth. Every word earns its place.</div>
+    </div>
+
+    <div class="voice-attrs">
+      <div class="vattr">
+        <div class="vattr-num">01</div>
+        <div class="vattr-title">Direct</div>
+        <div class="vattr-body">Say it once, say it well. No padding, no corporate softening, no hedge words. We trust the reader's intelligence.</div>
+        <div class="vattr-eg">
+          <div class="vattr-eg-label">In practice</div>
+          <div class="vattr-eg-text">"We make brand films." Not "We offer comprehensive video production solutions."</div>
+        </div>
+      </div>
+      <div class="vattr">
+        <div class="vattr-num">02</div>
+        <div class="vattr-title">Cinematic</div>
+        <div class="vattr-body">Language that evokes craft and atmosphere. We borrow from the world of film — not the world of marketing decks.</div>
+        <div class="vattr-eg">
+          <div class="vattr-eg-label">In practice</div>
+          <div class="vattr-eg-text">"Shot on location. No scripts." Not "Authentic, human-centred content."</div>
+        </div>
+      </div>
+      <div class="vattr">
+        <div class="vattr-num">03</div>
+        <div class="vattr-title">Confident</div>
+        <div class="vattr-body">We don't qualify. We don't ask permission. The work speaks — our words frame it without apology.</div>
+        <div class="vattr-eg">
+          <div class="vattr-eg-label">In practice</div>
+          <div class="vattr-eg-text">"This is our best work yet." Not "We're proud to share what we feel is a strong project."</div>
+        </div>
+      </div>
+      <div class="vattr">
+        <div class="vattr-num">04</div>
+        <div class="vattr-title">Human</div>
+        <div class="vattr-body">Premium doesn't mean cold. Behind every brand is a person with a real story. We write warmly, not stiffly.</div>
+        <div class="vattr-eg">
+          <div class="vattr-eg-label">In practice</div>
+          <div class="vattr-eg-text">"Tell us your story." Not "Submit your project brief for evaluation."</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="word-pairs">
+      <div class="wp-title">Vocabulary — words we own</div>
+      <div class="wp-desc">Replace generic marketing language with these. The shift is subtle but cumulative — it builds a distinct voice.</div>
+      <div class="wp-grid">
+        <div class="wp-pair">
+          <div class="wp-not">Content</div>
+          <div class="wp-yes">Film<em>.</em></div>
+        </div>
+        <div class="wp-pair">
+          <div class="wp-not">Deliverable</div>
+          <div class="wp-yes">Story<em>.</em></div>
+        </div>
+        <div class="wp-pair">
+          <div class="wp-not">Solutions</div>
+          <div class="wp-yes">Craft<em>.</em></div>
+        </div>
+        <div class="wp-pair">
+          <div class="wp-not">Innovative</div>
+          <div class="wp-yes">Considered<em>.</div>
+        </div>
+        <div class="wp-pair">
+          <div class="wp-not">Leverage</div>
+          <div class="wp-yes">Use<em>.</em></div>
+        </div>
+        <div class="wp-pair">
+          <div class="wp-not">Journey</div>
+          <div class="wp-yes">Scene<em>.</em></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="voice-do-dont">
+      <div class="vdo" style="background:#1C1F24;">
+        <div class="vdo-head">
+          <div class="vdo-marker" style="background:rgba(76,175,130,0.12);color:#4CAF82;">✓</div>
+          <div class="vdo-head-text" style="color:#4CAF82;">Write like this</div>
+        </div>
+        <div class="vdo-item" style="color:rgba(240,237,232,0.7);">
+          <div class="vdo-item-mark" style="color:#4CAF82;">→</div>Short sentences. Hard stops.
+        </div>
+        <div class="vdo-item" style="color:rgba(240,237,232,0.7);">
+          <div class="vdo-item-mark" style="color:#4CAF82;">→</div>Active voice. Subject, verb, done.
+        </div>
+        <div class="vdo-item" style="color:rgba(240,237,232,0.7);">
+          <div class="vdo-item-mark" style="color:#4CAF82;">→</div>Specific details over vague claims.
+        </div>
+        <div class="vdo-item" style="color:rgba(240,237,232,0.7);">
+          <div class="vdo-item-mark" style="color:#4CAF82;">→</div>One idea per sentence.
+        </div>
+        <div class="vdo-item" style="color:rgba(240,237,232,0.7);">
+          <div class="vdo-item-mark" style="color:#4CAF82;">→</div>Fragments are fine. They land harder.
+        </div>
+      </div>
+      <div class="vdo" style="background:#1C1F24;">
+        <div class="vdo-head">
+          <div class="vdo-marker" style="background:rgba(192,96,60,0.12);color:#C0603C;">✕</div>
+          <div class="vdo-head-text" style="color:#C0603C;">Never write like this</div>
+        </div>
+        <div class="vdo-item" style="color:rgba(240,237,232,0.5);">
+          <div class="vdo-item-mark" style="color:#C0603C;">→</div>Buzzwords: "world-class", "synergy", "ecosystem".
+        </div>
+        <div class="vdo-item" style="color:rgba(240,237,232,0.5);">
+          <div class="vdo-item-mark" style="color:#C0603C;">→</div>Passive voice: "films are crafted by our team".
+        </div>
+        <div class="vdo-item" style="color:rgba(240,237,232,0.5);">
+          <div class="vdo-item-mark" style="color:#C0603C;">→</div>Hedging: "we feel", "we believe", "hopefully".
+        </div>
+        <div class="vdo-item" style="color:rgba(240,237,232,0.5);">
+          <div class="vdo-item-mark" style="color:#C0603C;">→</div>Superlatives without proof: "the best", "leading".
+        </div>
+        <div class="vdo-item" style="color:rgba(240,237,232,0.5);">
+          <div class="vdo-item-mark" style="color:#C0603C;">→</div>Exclamation marks. Ever.
+        </div>
+      </div>
+    </div>
+
+    <div class="voice-examples">
+      <div class="ve-head">
+        <div class="ve-head-title">Before & After — real copy rewrites</div>
+      </div>
+      <div class="ve-item">
+        <div class="ve-context">Homepage hero</div>
+        <div class="ve-bad-label" style="color:rgba(240,237,232,0.2);font-size:9px;letter-spacing:0.14em;text-transform:uppercase;margin-bottom:4px;">Not this</div>
+        <div class="ve-bad">"We are a passionate team of creatives delivering innovative video solutions to help your brand achieve its goals."</div>
+        <div class="ve-good-label">This</div>
+        <div class="ve-good">"We make brands worth watching."</div>
+      </div>
+      <div class="ve-item">
+        <div class="ve-context">Services description</div>
+        <div class="ve-bad-label" style="color:rgba(240,237,232,0.2);font-size:9px;letter-spacing:0.14em;text-transform:uppercase;margin-bottom:4px;">Not this</div>
+        <div class="ve-bad">"Our comprehensive suite of video production services leverages cutting-edge storytelling techniques."</div>
+        <div class="ve-good-label">This</div>
+        <div class="ve-good">"Documentary-style films. Shot on location. No scripts, no actors — just your brand as it actually is."</div>
+      </div>
+      <div class="ve-item">
+        <div class="ve-context">CTA / contact prompt</div>
+        <div class="ve-bad-label" style="color:rgba(240,237,232,0.2);font-size:9px;letter-spacing:0.14em;text-transform:uppercase;margin-bottom:4px;">Not this</div>
+        <div class="ve-bad">"Don't hesitate to reach out to our friendly team to discuss your project requirements."</div>
+        <div class="ve-good-label">This</div>
+        <div class="ve-good">"Have a story worth telling? Let's talk."</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ── COLOUR RAMPS ── -->
+  <div class="sec">
+    <div class="sec-label">Colour Ramps</div>
+
+    <div class="ramp">
+      <div class="ramp-title">Neutral</div>
+      <div class="ramp-desc">Base canvas — all UI surfaces, backgrounds and text live on this scale</div>
+      <div class="ramp-row">
+        <div class="sw" style="background:#F0EDE8;height:62px;border:1px solid rgba(0,0,0,0.06);"><div class="sw-step" style="color:rgba(14,14,14,0.32);">50</div><div class="sw-hex" style="color:rgba(14,14,14,0.42);">#F0EDE8</div></div>
+        <div class="sw" style="background:#E8E2D9;height:62px;"><div class="sw-step" style="color:rgba(14,14,14,0.32);">100</div><div class="sw-hex" style="color:rgba(14,14,14,0.42);">#E8E2D9</div></div>
+        <div class="sw" style="background:#C4BDB3;height:62px;"><div class="sw-step" style="color:rgba(14,14,14,0.38);">200</div><div class="sw-hex" style="color:rgba(14,14,14,0.48);">#C4BDB3</div></div>
+        <div class="sw" style="background:#7A7470;height:62px;"><div class="sw-step" style="color:rgba(240,237,232,0.55);">400</div><div class="sw-hex" style="color:rgba(240,237,232,0.65);">#7A7470</div></div>
+        <div class="sw" style="background:#3A4756;height:62px;"><div class="sw-step" style="color:rgba(240,237,232,0.55);">500</div><div class="sw-hex" style="color:rgba(240,237,232,0.65);">#3A4756</div></div>
+        <div class="sw" style="background:#252930;height:62px;"><div class="sw-step" style="color:rgba(240,237,232,0.45);">700</div><div class="sw-hex" style="color:rgba(240,237,232,0.55);">#252930</div></div>
+        <div class="sw" style="background:#1C1F24;height:62px;"><div class="sw-step" style="color:rgba(240,237,232,0.4);">800</div><div class="sw-hex" style="color:rgba(240,237,232,0.5);">#1C1F24</div></div>
+        <div class="sw" style="background:#0E0E0E;height:62px;"><div class="sw-step" style="color:rgba(240,237,232,0.35);">900</div><div class="sw-hex" style="color:rgba(240,237,232,0.45);">#0E0E0E</div></div>
+      </div>
+      <div class="rtoks">
+        <div class="tok"><b>--lsc-white</b>: #F0EDE8</div>
+        <div class="tok"><b>--lsc-surface-lt</b>: #E8E2D9</div>
+        <div class="tok"><b>--lsc-mid</b>: #7A7470</div>
+        <div class="tok"><b>--lsc-slate</b>: #3A4756</div>
+        <div class="tok"><b>--lsc-charcoal</b>: #252930</div>
+        <div class="tok"><b>--lsc-surface-dk</b>: #1C1F24</div>
+        <div class="tok"><b>--lsc-black</b>: #0E0E0E</div>
+      </div>
+    </div>
+
+    <div class="ramp">
+      <div class="ramp-title">Terracotta — Primary CTA</div>
+      <div class="ramp-desc">The brand's warm signal. Buttons, eyebrows, section accents</div>
+      <div class="ramp-row">
+        <div class="sw" style="background:#F7E8E2;height:62px;border:1px solid rgba(0,0,0,0.05);"><div class="sw-step" style="color:rgba(14,14,14,0.28);">50</div><div class="sw-hex" style="color:rgba(14,14,14,0.36);">#F7E8E2</div></div>
+        <div class="sw" style="background:#E8A08A;height:62px;"><div class="sw-step" style="color:rgba(14,14,14,0.35);">200</div><div class="sw-hex" style="color:rgba(14,14,14,0.42);">#E8A08A</div></div>
+        <div class="sw" style="background:#D07555;height:62px;"><div class="sw-step" style="color:rgba(240,237,232,0.8);">400</div><div class="sw-hex" style="color:rgba(240,237,232,0.9);">#D07555</div></div>
+        <div class="sw" style="background:#C0603C;height:62px;"><div class="sw-step" style="color:rgba(240,237,232,0.8);">500</div><div class="sw-hex" style="color:rgba(240,237,232,0.9);">#C0603C</div></div>
+        <div class="sw" style="background:#A84E2E;height:62px;"><div class="sw-step" style="color:rgba(240,237,232,0.78);">600</div><div class="sw-hex" style="color:rgba(240,237,232,0.88);">#A84E2E</div></div>
+        <div class="sw" style="background:#8C4832;height:62px;"><div class="sw-step" style="color:rgba(240,237,232,0.72);">700</div><div class="sw-hex" style="color:rgba(240,237,232,0.82);">#8C4832</div></div>
+        <div class="sw" style="background:#5C2A18;height:62px;"><div class="sw-step" style="color:rgba(240,237,232,0.62);">900</div><div class="sw-hex" style="color:rgba(240,237,232,0.72);">#5C2A18</div></div>
+      </div>
+      <div class="rtoks">
+        <div class="tok"><b>--lsc-terra-tint</b>: #F7E8E2</div>
+        <div class="tok"><b>--lsc-terra-lt</b>: #E8A08A</div>
+        <div class="tok"><b>--lsc-terra</b>: #C0603C</div>
+        <div class="tok"><b>--lsc-terra-dk</b>: #8C4832</div>
+      </div>
+    </div>
+
+    <div class="ramp">
+      <div class="ramp-title">Sage — Interactive States</div>
+      <div class="ramp-desc">Hover, link, and active UI states. Signals interactivity — never used as decoration</div>
+      <div class="ramp-row">
+        <div class="sw" style="background:#E8F5EE;height:62px;border:1px solid rgba(0,0,0,0.05);"><div class="sw-step" style="color:rgba(14,14,14,0.28);">50</div><div class="sw-hex" style="color:rgba(14,14,14,0.36);">#E8F5EE</div></div>
+        <div class="sw" style="background:#A8D9BE;height:62px;"><div class="sw-step" style="color:rgba(14,14,14,0.35);">200</div><div class="sw-hex" style="color:rgba(14,14,14,0.44);">#A8D9BE</div></div>
+        <div class="sw" style="background:#6CC49A;height:62px;"><div class="sw-step" style="color:rgba(14,14,14,0.42);">400</div><div class="sw-hex" style="color:rgba(14,14,14,0.52);">#6CC49A</div></div>
+        <div class="sw" style="background:#4CAF82;height:62px;"><div class="sw-step" style="color:rgba(14,14,14,0.46);">500</div><div class="sw-hex" style="color:rgba(14,14,14,0.56);">#4CAF82</div></div>
+        <div class="sw" style="background:#2E8A5E;height:62px;"><div class="sw-step" style="color:rgba(240,237,232,0.72);">700</div><div class="sw-hex" style="color:rgba(240,237,232,0.82);">#2E8A5E</div></div>
+        <div class="sw" style="background:#1A5C3A;height:62px;"><div class="sw-step" style="color:rgba(240,237,232,0.62);">900</div><div class="sw-hex" style="color:rgba(240,237,232,0.72);">#1A5C3A</div></div>
+      </div>
+      <div class="rtoks">
+        <div class="tok"><b>--lsc-sage-tint</b>: #E8F5EE</div>
+        <div class="tok"><b>--lsc-sage</b>: #4CAF82</div>
+        <div class="tok"><b>--lsc-sage-dk</b>: #2E8A5E</div>
+        <div class="tok"><b>transition</b>: color 180ms ease-out</div>
+      </div>
+    </div>
+
+    <div class="ig-outer">
+      <div class="ig-head">
+        <div class="ig-badge">Hover · Link · Active · Focus</div>
+        <div class="ig-title">Sage in use — interactive states</div>
+        <div class="ig-desc">Sage replaces the default hover colour across all interactive elements. Terracotta initiates action — sage confirms interactivity. They never appear in the same interactive context.</div>
+      </div>
+      <div class="ig-demos">
+        <div class="demos-label">Default → hover — side by side</div>
+        <div class="demo-row">
+          <div class="demo-row-label">Body links</div>
+          <div class="demo-examples">
+            <div class="state-pair"><div class="ex-link-off">View our work</div><div class="state-lbl">Default</div></div>
+            <div class="arr">→</div>
+            <div class="state-pair"><div class="ex-link-on">View our work</div><div class="state-lbl">Hover</div></div>
+          </div>
+        </div>
+        <div class="demo-row">
+          <div class="demo-row-label">Ghost buttons</div>
+          <div class="demo-examples">
+            <div class="state-pair"><div class="ex-btn-off">Learn More →</div><div class="state-lbl">Default</div></div>
+            <div class="arr">→</div>
+            <div class="state-pair"><div class="ex-btn-on">Learn More →</div><div class="state-lbl">Hover</div></div>
+          </div>
+        </div>
+        <div class="demo-row">
+          <div class="demo-row-label">Nav links</div>
+          <div class="demo-examples">
+            <div class="state-pair"><div class="ex-nav-off">Work</div><div class="state-lbl">Default</div></div>
+            <div class="arr">→</div>
+            <div class="state-pair"><div class="ex-nav-on">Work</div><div class="state-lbl">Active</div></div>
+          </div>
+        </div>
+        <div class="demo-row">
+          <div class="demo-row-label">Filter tags</div>
+          <div class="demo-examples">
+            <div class="state-pair"><div class="ex-tag-off">Documentary</div><div class="state-lbl">Default</div></div>
+            <div class="arr">→</div>
+            <div class="state-pair"><div class="ex-tag-on">Documentary</div><div class="state-lbl">Selected</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="ig-rule">
+        <div class="ig-rule-head">Rules for AI models</div>
+        <div class="ig-rule-body"><strong>Use sage for:</strong> all link colours · hover on ghost/outline buttons · nav active underlines · selected filter tags · focus rings · inline text CTAs<br><br><strong>Never use sage for:</strong> primary CTA buttons (terracotta) · backgrounds or large fills · decorative elements · headings · anything non-interactive</div>
+      </div>
+      <div class="ig-toks">
+        <div class="rtoks">
+          <div class="tok"><b>--lsc-sage</b>: #4CAF82</div>
+          <div class="tok"><b>--lsc-sage-bg</b>: rgba(76,175,130,0.07)</div>
+          <div class="tok"><b>--lsc-sage-border</b>: rgba(76,175,130,0.35)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- CONTRAST -->
+  <div class="sec">
+    <div class="sec-label">Contrast Ratios — WCAG Verified</div>
+    <div class="matrix">
+      <div class="cc" style="background:#0E0E0E;">
+        <div class="cc-top">
+          <div class="cc-over" style="color:rgba(240,237,232,0.26);">Warm White on Black</div>
+          <div class="cc-head" style="color:#F0EDE8;">LSC Creative.</div>
+          <div class="cc-body" style="color:#F0EDE8;">Documentary filmmaking.</div>
+        </div>
+        <div class="cc-foot" style="background:#1C1F24;"><div class="cc-ratio" style="color:#F0EDE8;">18.4:1</div><div class="badge b-aaa">AAA Pass</div></div>
+      </div>
+      <div class="cc" style="background:#F0EDE8;">
+        <div class="cc-top">
+          <div class="cc-over" style="color:rgba(14,14,14,0.26);">Black on Warm White</div>
+          <div class="cc-head" style="color:#0E0E0E;">LSC Creative.</div>
+          <div class="cc-body" style="color:#0E0E0E;">Documentary filmmaking.</div>
+        </div>
+        <div class="cc-foot" style="background:#E8E2D9;"><div class="cc-ratio" style="color:#0E0E0E;">18.4:1</div><div class="badge b-aaa">AAA Pass</div></div>
+      </div>
+      <div class="cc" style="background:#0E0E0E;">
+        <div class="cc-top">
+          <div class="cc-over" style="color:rgba(240,237,232,0.26);">Sage on Black — links</div>
+          <div class="cc-head" style="color:#4CAF82;">View our work →</div>
+          <div class="cc-body" style="color:#4CAF82;">Hover · active · linked text</div>
+        </div>
+        <div class="cc-foot" style="background:#1C1F24;"><div class="cc-ratio" style="color:#F0EDE8;">5.1:1</div><div class="badge b-aaa">AA Pass</div></div>
+      </div>
+      <div class="cc" style="background:#F0EDE8;">
+        <div class="cc-top">
+          <div class="cc-over" style="color:rgba(14,14,14,0.26);">Slate on Warm White</div>
+          <div class="cc-head" style="color:#3A4756;">Our Work</div>
+          <div class="cc-body" style="color:#3A4756;">Films that move people.</div>
+        </div>
+        <div class="cc-foot" style="background:#E8E2D9;"><div class="cc-ratio" style="color:#0E0E0E;">4.7:1</div><div class="badge b-aaa">AA Pass</div></div>
+      </div>
+      <div class="cc" style="background:#252930;">
+        <div class="cc-top">
+          <div class="cc-over" style="color:rgba(240,237,232,0.26);">Terracotta on Charcoal</div>
+          <div class="cc-head" style="color:#C0603C;">Motion Productions</div>
+          <div class="cc-body" style="color:#C0603C;">CTA · signal · eyebrows</div>
+        </div>
+        <div class="cc-foot" style="background:#1C1F24;"><div class="cc-ratio" style="color:#F0EDE8;">3.3:1</div><div class="badge b-aa">AA Large</div></div>
+      </div>
+      <div class="cc" style="background:#C0603C;">
+        <div class="cc-top">
+          <div class="cc-over" style="color:rgba(240,237,232,0.38);">White on Terracotta</div>
+          <div class="cc-head" style="color:#F0EDE8;">Get In Touch</div>
+          <div class="cc-body" style="color:#F0EDE8;">Primary CTA button.</div>
+        </div>
+        <div class="cc-foot" style="background:#8C4832;"><div class="cc-ratio" style="color:#F0EDE8;">4.1:1</div><div class="badge b-aaa">AA Pass</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- USAGE MAP -->
+  <div class="sec">
+    <div class="sec-label">Colour Usage Map — For AI Models</div>
+    <div class="umap">
+      <div class="urow"><div class="udots"><div class="udot" style="background:#0E0E0E;border:1px solid rgba(255,255,255,0.1);"></div></div><div><div class="utitle">Page backgrounds (dark), primary nav, full-bleed cinematic sections</div><div class="usub">--lsc-black · #0E0E0E</div></div></div>
+      <div class="urow"><div class="udots"><div class="udot" style="background:#1C1F24;border:1px solid rgba(255,255,255,0.07);"></div></div><div><div class="utitle">Cards on dark, footers, secondary panels, nav hover backgrounds</div><div class="usub">--lsc-surface-dk · #1C1F24</div></div></div>
+      <div class="urow"><div class="udots"><div class="udot" style="background:#252930;"></div></div><div><div class="utitle">Dark UI components, image overlays, blockquotes, featured sections</div><div class="usub">--lsc-charcoal · #252930</div></div></div>
+      <div class="urow"><div class="udots"><div class="udot" style="background:#3A4756;"></div></div><div><div class="utitle">Subheadings on light, secondary text, borders, muted UI elements</div><div class="usub">--lsc-slate · #3A4756 · 4.7:1 on warm white</div></div></div>
+      <div class="urow"><div class="udots"><div class="udot" style="background:#7A7470;"></div></div><div><div class="utitle">Captions, metadata, placeholders, disabled states, dividers</div><div class="usub">--lsc-mid · #7A7470 · 14px+ only</div></div></div>
+      <div class="urow"><div class="udots"><div class="udot" style="background:#E8E2D9;border:1px solid rgba(0,0,0,0.07);"></div></div><div><div class="utitle">Card surfaces on light, input fills, hover backgrounds</div><div class="usub">--lsc-surface-lt · #E8E2D9</div></div></div>
+      <div class="urow"><div class="udots"><div class="udot" style="background:#F0EDE8;border:1px solid rgba(0,0,0,0.07);"></div></div><div><div class="utitle">Page backgrounds (light), text on dark, logo on dark surfaces</div><div class="usub">--lsc-white · #F0EDE8 · Unchanged — the warm anchor</div></div></div>
+      <div class="urow"><div class="udots"><div class="udot" style="background:#C0603C;"></div></div><div><div class="utitle">Primary CTA buttons, eyebrow labels, section rule accents</div><div class="usub">--lsc-terra · #C0603C · Max 15% of any screen's visual weight</div></div></div>
+      <div class="urow"><div class="udots"><div class="udot" style="background:#4CAF82;"></div></div><div><div class="utitle">All hover states, linked text, ghost button hover, nav active, selected tags, focus rings</div><div class="usub">--lsc-sage · #4CAF82 · Interactive only — never decorative</div></div></div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- DEMO SURFACES -->
+  <div class="sec">
+    <div class="sec-label">Palette In Context</div>
+    <div class="demos">
+      <div class="ds" style="background:#0E0E0E;">
+        <div class="ds-over" style="color:#C0603C;">Motion Productions</div>
+        <div class="ds-head" style="color:#F0EDE8;">Stories<br>worth<br>watching.</div>
+        <div class="ds-body" style="color:rgba(240,237,232,0.5);margin-top:10px;">We make brands worth watching through documentary-style filmmaking.</div>
+        <div class="ds-link" style="color:#4CAF82;text-decoration:underline;text-decoration-color:rgba(76,175,130,0.45);text-underline-offset:3px;">View our reel →</div>
+      </div>
+      <div class="ds" style="background:#F0EDE8;">
+        <div class="ds-over" style="color:#C0603C;">Our Services</div>
+        <div class="ds-head" style="color:#0E0E0E;">Brand<br>Filmmaking.</div>
+        <div class="ds-body" style="color:#3A4756;margin-top:10px;">Documentary-style production that captures the truth of your brand.</div>
+        <div class="ds-btn-t">Get Started →</div>
+      </div>
+      <div class="ds" style="background:#252930;">
+        <div class="ds-over" style="color:#C0603C;">Case Study</div>
+        <div class="ds-head" style="color:#F0EDE8;">Project<br>Alpha.</div>
+        <div class="ds-body" style="color:rgba(240,237,232,0.45);margin-top:10px;">Documentary brand film series. 2024 production.</div>
+        <div class="ds-btn-g">Learn More →</div>
+      </div>
+      <div class="ds" style="background:#E8E2D9;">
+        <div class="ds-over" style="color:#C0603C;">About LSC</div>
+        <div class="ds-head" style="color:#0E0E0E;">Cinematic.<br>Authentic.</div>
+        <div class="ds-body" style="color:#3A4756;margin-top:10px;">Real stories told with cinematic precision and craft.</div>
+        <div class="ds-link" style="color:#4CAF82;text-decoration:underline;text-decoration-color:rgba(76,175,130,0.45);text-underline-offset:3px;">Read more →</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin:44px 40px 0;padding:20px 26px;background:#1C1F24;border-radius:6px;display:flex;align-items:center;justify-content:space-between;">
+    <div style="font-family:'Delight',Georgia,serif;font-weight:700;font-size:17px;color:#F0EDE8;letter-spacing:-0.015em;">LSC Creative.</div>
+    <div style="font-size:9px;letter-spacing:0.22em;text-transform:uppercase;color:rgba(240,237,232,0.22);">Brand System v3.0 · AI-Optimised</div>
+  </div>
+
+</div>
