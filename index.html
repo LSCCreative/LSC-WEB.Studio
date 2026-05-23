@@ -1614,325 +1614,336 @@
 
 
         /* ============================================================
-           ╔═══════════════════════════════════════════════════════════╗
-           ║  RESPONSIVE ARCHITECTURE — DESKTOP PRESERVATION LAW      ║
-           ║  All overrides strictly siloed in @media queries.        ║
-           ║  Zero mutations to base desktop CSS. Pure additive.      ║
-           ╚═══════════════════════════════════════════════════════════╝
+           RESPONSIVE — DESKTOP PRESERVATION LAW
+           All overrides live exclusively in @media blocks.
+           Zero desktop CSS is touched here.
            ============================================================ */
 
-        /* ── TABLET (≤ 992px) ──────────────────────────────────────── */
+        /* ── TABLET (≤ 992px) ─────────────────────────────────────── */
         @media (max-width: 992px) {
-            /* Process: 2-column grid before collapsing to 1 */
-            .process-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
+            .process-grid { grid-template-columns: repeat(2, 1fr); }
             .process-phase:last-child {
-                grid-column: 1 / -1;
-                border-right: none;
-                padding-left: 0;
-                border-top: 1px solid var(--lsc-rule);
-                padding-top: 48px;
+                grid-column: 1 / -1; border-right: none;
+                padding-left: 0; border-top: 1px solid var(--lsc-rule); padding-top: 48px;
             }
-
-            /* About modal: portrait single-column layout */
-            .about-modal {
-                grid-template-columns: 1fr;
-                max-width: 580px;
-                max-height: 90vh;
-                overflow-y: auto;
-            }
-            .about-photo-placeholder {
-                min-height: 220px;
-            }
+            .about-modal { grid-template-columns: 1fr; max-width: 580px; max-height: 90vh; overflow-y: auto; }
+            .about-photo-placeholder { min-height: 220px; }
         }
 
-        /* ── MOBILE (≤ 768px) ──────────────────────────────────────── */
+        /* ── MOBILE HAMBURGER — hidden until ≤ 768px ──────────────── */
+        .mobile-menu-toggle { display: none; }
+
+        /* Mobile portfolio section — hidden on desktop ─────────────── */
+        .mobile-portfolio-section { display: none; }
+
+        /* ══════════════════════════════════════════════════════════════
+           MOBILE (≤ 768px) — complete phone layout
+           ══════════════════════════════════════════════════════════════ */
         @media (max-width: 768px) {
 
-            /* ── Hero ─────────────────────────────────────────────── */
-            .hero-interface-layer {
-                padding: 40px 24px;
+            /* ── Global: stop horizontal bleed ───────────────────── */
+            html, body {
+                overflow-x: hidden !important;
+                max-width: 100vw !important;
             }
-            .display-title {
-                font-size: clamp(2.8rem, 13vw, 5rem);
+
+            /* ── Nav: logo small + hamburger on right ────────────── */
+            .absolute-logo {
+                position: fixed !important;
+                top: 16px !important;
+                left: 16px !important;
+                z-index: 9200 !important;
+            }
+            .nav-logo {
+                height: 36px !important;
+                width: auto !important;
+            }
+            .mobile-menu-toggle {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                position: fixed;
+                top: 16px;
+                right: 16px;
+                z-index: 9200;
+                background: rgba(8,8,10,0.7);
+                backdrop-filter: blur(8px);
+                -webkit-backdrop-filter: blur(8px);
+                border: 1px solid rgba(255,255,255,0.15);
+                border-radius: 6px;
+                color: var(--lsc-text, #f0ede8);
+                cursor: pointer;
+                padding: 8px 10px;
+                width: 40px;
+                height: 40px;
+            }
+            /* Nav links: compact dropdown below hamburger button */
+            .nav-links.absolute-nav {
+                display: none !important;
+                position: fixed !important;
+                top: 64px !important;
+                right: 16px !important;
+                left: auto !important;
+                bottom: auto !important;
+                width: auto !important;
+                min-width: 160px !important;
+                background: rgba(8,8,10,0.95) !important;
+                backdrop-filter: blur(16px) !important;
+                -webkit-backdrop-filter: blur(16px) !important;
+                border: 1px solid rgba(255,255,255,0.12) !important;
+                border-radius: 8px !important;
+                flex-direction: column !important;
+                align-items: flex-start !important;
+                justify-content: flex-start !important;
+                gap: 0 !important;
+                padding: 8px 0 !important;
+                margin: 0 !important;
+                list-style: none !important;
+                z-index: 9100 !important;
+                box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important;
+            }
+            .nav-links.absolute-nav.is-active {
+                display: flex !important;
+            }
+            .nav-links.absolute-nav li {
+                width: 100%;
+            }
+            .nav-links.absolute-nav li a {
+                display: block !important;
+                padding: 12px 20px !important;
+                font-size: 0.75rem !important;
+                letter-spacing: 0.2em !important;
+                color: var(--lsc-text, #f0ede8) !important;
+                text-decoration: none !important;
+            }
+
+            /* ── HUD: shrink + hide measure guide ────────────────── */
+            .hud-measure-guide { display: none !important; }
+            .hud-corner { width: 16px !important; height: 16px !important; }
+            .hud-corner.top-left    { top: 8px !important;    left: 8px !important;    }
+            .hud-corner.top-right   { top: 8px !important;    right: 8px !important;   }
+            .hud-corner.bottom-left { bottom: 8px !important; left: 8px !important;    }
+            .hud-corner.bottom-right{ bottom: 8px !important; right: 8px !important;   }
+            .hud-rec-indicator { bottom: 10px !important; left: 10px !important; font-size: 0.4rem !important; }
+            .hud-timecode      { bottom: 10px !important; right: 10px !important; font-size: 8px !important; }
+
+            /* ── Hero ─────────────────────────────────────────────── */
+            .hero-interface-layer { padding: 80px 20px 40px !important; }
+            .display-title { font-size: clamp(2.4rem, 11vw, 4rem) !important; }
+
+            /* ── HIDE desktop scroll section, SHOW mobile feed ─────── */
+            .horizontal-scroll-section { display: none !important; }
+            .mobile-portfolio-section  { display: block !important; }
+
+            /* ── Mobile portfolio feed styles ───────────────────────── */
+            .mobile-portfolio-section {
+                background: rgba(12, 12, 14, 0.80);
+                backdrop-filter: blur(24px);
+                -webkit-backdrop-filter: blur(24px);
+                border-top: 1px solid rgba(255,255,255,0.08);
+                border-bottom: 1px solid rgba(255,255,255,0.08);
+                padding: 60px 20px;
+            }
+            .mobile-portfolio-header {
+                margin-bottom: 40px;
+            }
+            .mobile-portfolio-title {
+                font-family: 'Delight', Georgia, serif;
+                font-size: clamp(2.4rem, 11vw, 3.6rem);
+                font-weight: 700;
+                line-height: 1;
+                color: var(--lsc-text, #f0ede8);
+                margin: 8px 0 4px;
                 letter-spacing: -0.02em;
             }
-
-            /* ── Capabilities accordion ────────────────────────────── */
-            .lsc-services-section {
-                padding: 64px 5vw;
+            .mobile-portfolio-sub {
+                font-size: 11px;
+                letter-spacing: 0.18em;
+                color: var(--lsc-mid, #7a7470);
+                margin: 0;
+                text-transform: uppercase;
             }
-            .trigger-title {
-                font-size: clamp(26px, 9vw, 44px);
-            }
-
-            /* ── Filmstrip: native touch swipe mode ────────────────
-               1. Collapse 400vh sticky section to auto-height.
-               2. De-sticky the track — relative, height auto.
-               3. Enable native overflow-x scroll on gallery.
-               4. Kill JS-applied translateX with !important.
-               5. Strip right-edge mask — irrelevant without pin.
-               6. Each tile becomes a scroll-snap target.
-               ─────────────────────────────────────────────────────── */
-            .horizontal-scroll-section {
-                height: auto !important;
-            }
-            .sticky-track {
-                position: relative !important;
-                height: auto !important;
-                overflow-x: auto !important;
-                overflow-y: visible !important;
-                -webkit-mask-image: none !important;
-                mask-image: none !important;
-                -webkit-overflow-scrolling: touch;
-            }
-            /* Flatten layout nesting so video cards become direct flex items */
-            .film-strip-container,
-            .film-frames-grid {
-                display: contents !important;
-            }
-
-            /* Master gallery: smooth touch track */
-            .horizontal-gallery {
-                display: flex !important;
-                flex-wrap: nowrap !important;
-                overflow-x: auto !important;
-                overflow-y: visible !important;
-                scroll-snap-type: x mandatory !important;
-                -webkit-overflow-scrolling: touch !important;
-                padding: 40px 24px !important;
-                gap: 24px !important;
-                transform: none !important;
-                height: auto;
-                scroll-behavior: smooth;
-                align-items: flex-start;
-            }
-            /* Gallery intro: reveal immediately — JS opacity sync disabled */
-            .gallery-intro {
-                width: 78vw;
-                min-width: 78vw;
-                flex-shrink: 0;
-                padding-right: 0;
-                opacity: 1 !important;
-            }
-            .gallery-intro .section-title {
-                font-size: clamp(3rem, 14vw, 5.5rem);
-                line-height: 1;
-                margin-bottom: 1rem;
-            }
-
-            /* ── Film strip container ───────────────────────────────── */
-            .film-strip-container {
-                margin-left: 0 !important;
-            }
-            /* Nullify desktop scale-up — no cursor on touch */
-            .film-strip-container:has(.playable-tile:hover) {
-                transform: none !important;
-            }
-
-            /* ── Project tiles: snap targets ────────────────────────── */
-            .project-tile {
-                width: 78vw !important;
-                max-width: 320px !important;
-                flex-shrink: 0 !important;
-                scroll-snap-align: center !important;
-            }
-            .film-frames-grid .project-tile,
-            .film-frames-grid .portfolio-video-wrapper {
-                overflow: visible !important;
-            }
-
-            /* ── Project info overlay: permanently visible ───────────
-               On desktop: absolute positioned, opacity 0, hover-revealed.
-               On mobile:  static flow below the video, always visible.
-               ─────────────────────────────────────────────────────── */
-            .project-info-overlay {
-                position: relative !important;
-                top: 20px !important;
-                left: 0 !important;
-                opacity: 1 !important;
-                pointer-events: auto !important;
-                max-width: 100% !important;
-                width: 100% !important;
-                display: block !important;
-                white-space: normal !important;
-                padding: 0 !important;
-                transition: none !important;
-            }
-            /* Reveal all hover-gated overlay children */
-            .data-heading {
-                opacity: 1 !important;
-                filter: blur(0) !important;
-                transform: none !important;
-                animation: none !important;
-            }
-            .data-measuring-graphic {
-                opacity: 1 !important;
-                transform: scaleX(1) !important;
-                animation: none !important;
-            }
-            .data-text-block {
-                opacity: 1 !important;
-                transform: none !important;
-                animation: none !important;
-            }
-            /* Force scope text to wrap within card bounds */
-            .data-text-block.seq-1,
-            .data-text-block.seq-1 .scope-body {
-                display: block !important;
-                white-space: normal !important;
-                max-width: 100% !important;
-                word-wrap: break-word !important;
-            }
-            /* Prevent hover selectors firing on touch (some browsers fire :hover on tap) */
-            .playable-tile:hover .data-heading,
-            .playable-tile:hover .data-measuring-graphic,
-            .playable-tile:hover .data-text-block.seq-1,
-            .playable-tile:hover .data-text-block.seq-2,
-            .playable-tile:hover .data-text-block.seq-3 {
-                animation: none !important;
-            }
-
-            /* ── Tile meta: keep pinned inside the video ─────────── */
-            .film-frames-grid .tile-meta {
-                bottom: 16px;
-            }
-
-            /* ── Process: single column ─────────────────────────── */
-            .lsc-process-section {
-                padding: 64px 5vw;
-            }
-            .process-header {
+            .mobile-portfolio-feed {
+                display: flex;
                 flex-direction: column;
-                align-items: flex-start;
-                gap: 12px;
-                margin-bottom: 48px;
-                padding-bottom: 32px;
+                gap: 0;
             }
-            .process-header-meta {
-                text-align: left;
+            /* Each card: visible by default; JS adds .will-animate before observing */
+            .mobile-card {
+                opacity: 1;
+                transform: none;
+                transition: opacity 0.55s ease, transform 0.55s ease;
+                padding: 28px 0;
+                border-bottom: 1px solid rgba(255,255,255,0.08);
+                cursor: pointer;
             }
-            .process-grid {
-                grid-template-columns: 1fr;
-            }
-            .process-phase {
-                border-right: none;
-                padding-right: 0;
-                padding-left: 0 !important;
-                border-bottom: 1px solid var(--lsc-rule);
-                padding-bottom: 40px;
-            }
-            .process-phase:last-child {
-                border-bottom: none;
-                border-top: none;
-                padding-top: 40px;
-                padding-left: 0 !important;
-            }
-            .process-phase:nth-child(2) {
-                padding-left: 0 !important;
-            }
-            .process-phase-title {
-                font-size: clamp(20px, 5.5vw, 28px);
-            }
-
-            /* ── Contact ──────────────────────────────────────────── */
-            .lsc-contact-section {
-                padding: 80px 5vw;
-            }
-            .contact-headline {
-                font-size: clamp(34px, 10vw, 52px);
-            }
-
-            /* ── About modal: bottom sheet ─────────────────────────
-               Slides up from bottom edge. Full viewport width.
-               Inner body scrolls if content overflows.
-               ─────────────────────────────────────────────────────── */
-            .about-modal-overlay {
-                padding: 0;
-                align-items: flex-end;
-            }
-            .about-modal {
-                grid-template-columns: 1fr;
-                max-width: 100%;
-                width: 100%;
-                max-height: 90vh;
-                overflow-y: auto;
+            .mobile-card.will-animate {
+                opacity: 0;
                 transform: translateY(32px);
             }
-            .about-modal-overlay.is-open .about-modal {
-                transform: translateY(0);
+            .mobile-card:last-child { border-bottom: none; }
+            .mobile-card.will-animate {
+                opacity: 0;
+                transform: translateY(32px);
             }
-            .about-photo-placeholder {
-                min-height: 180px;
+            .mobile-card.in-view {
+                opacity: 1 !important;
+                transform: translateY(0) !important;
             }
-            .about-modal-body {
-                padding: 32px 24px 40px;
+            .mobile-card.past-view {
+                opacity: 0 !important;
+                transform: translateY(-20px) !important;
+                transition: opacity 0.3s ease, transform 0.3s ease !important;
             }
-            .about-modal-title {
-                font-size: clamp(24px, 7vw, 34px);
-                margin-bottom: 24px;
+            /* Thumbnail with play button overlay */
+            .mobile-card-thumb {
+                position: relative;
+                width: 100%;
+                aspect-ratio: 16/9;
+                overflow: hidden;
+                border-radius: 4px;
+                margin-bottom: 16px;
+                background: #111;
             }
-            .about-modal-copy {
-                font-size: 14px;
+            .mobile-card-thumb img {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                display: block;
+            }
+            .mobile-card-play {
+                position: absolute;
+                inset: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: rgba(0,0,0,0.35);
+                color: rgba(255,255,255,0.9);
+                font-size: 2rem;
+            }
+            /* Card info */
+            .mobile-card-info { padding: 0; }
+            .mobile-card-category {
+                display: block;
+                font-size: 9px;
+                letter-spacing: 0.22em;
+                text-transform: uppercase;
+                color: var(--lsc-terra, #C0603C);
+                margin-bottom: 6px;
+                font-family: 'FunnelSans', sans-serif;
+            }
+            .mobile-card-title {
+                font-family: 'Delight', Georgia, serif;
+                font-size: 1.3rem;
+                font-weight: 700;
+                color: var(--lsc-text, #f0ede8);
+                margin: 0 0 8px;
+                letter-spacing: -0.01em;
+                line-height: 1.2;
+            }
+            .mobile-card-scope {
+                font-size: 11px;
+                line-height: 1.6;
+                color: rgba(240,237,232,0.65);
+                margin: 0 0 8px;
+                font-family: 'FunnelSans', sans-serif;
+            }
+            .mobile-card-meta {
+                font-size: 9px;
+                letter-spacing: 0.12em;
+                color: rgba(240,237,232,0.4);
+                margin-bottom: 2px;
+                font-family: 'FunnelSans', sans-serif;
+                text-transform: uppercase;
+            }
+            .mobile-card-label {
+                color: var(--lsc-terra, #C0603C);
+                margin-right: 6px;
             }
 
-            /* ── HUD: tighten for small screens ──────────────────── */
-            .hud-corner            { width: 20px; height: 20px; }
-            .hud-corner.top-left   { top: 14px;    left: 14px;  }
-            .hud-corner.top-right  { top: 14px;    right: 14px; }
-            .hud-corner.bottom-left  { bottom: 14px; left: 14px;  }
-            .hud-corner.bottom-right { bottom: 14px; right: 14px; }
-            .hud-rec-indicator { bottom: 14px; left: 14px; font-size: 0.48rem; }
-            .hud-timecode      { bottom: 14px; right: 14px; font-size: 9px;   }
+            /* ── Capabilities ─────────────────────────────────────── */
+            .lsc-services-section {
+                padding: 60px 20px !important;
+            }
+            .lsc-services-section .section-title,
+            .trigger-title {
+                font-size: clamp(1.6rem, 8vw, 2.4rem) !important;
+                word-break: break-word !important;
+            }
+            .accordion-trigger {
+                padding: 16px 0 !important;
+            }
 
-            /* ── Footer ──────────────────────────────────────────── */
-            .footer-content {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 12px;
+            /* ── Process ─────────────────────────────────────────── */
+            .lsc-process-section { padding: 60px 20px !important; }
+            .section-title {
+                font-size: clamp(2rem, 10vw, 3.2rem) !important;
+                word-break: break-word !important;
             }
-            .footer-right {
-                gap: 16px;
+            .process-header {
+                flex-direction: column !important;
+                align-items: flex-start !important;
+                gap: 12px !important;
+                margin-bottom: 40px !important;
+                padding-bottom: 24px !important;
             }
+            .process-header-meta { text-align: left !important; }
+            .process-grid { grid-template-columns: 1fr !important; }
+            .process-phase {
+                border-right: none !important;
+                padding-right: 0 !important;
+                padding-left: 0 !important;
+                border-bottom: 1px solid var(--lsc-rule) !important;
+                padding-bottom: 32px !important;
+            }
+            .process-phase:last-child {
+                border-bottom: none !important;
+                padding-top: 32px !important;
+                padding-left: 0 !important;
+            }
+            .process-phase:nth-child(2) { padding-left: 0 !important; }
+            .process-phase-title { font-size: clamp(18px, 5vw, 26px) !important; }
+
+            /* ── Contact ─────────────────────────────────────────── */
+            .lsc-contact-section { padding: 60px 20px !important; }
+            .contact-headline { font-size: clamp(2rem, 10vw, 3.2rem) !important; }
+            .contact-asymmetric-layout {
+                flex-direction: column !important;
+                gap: 32px !important;
+            }
+            .contact-right-column { width: 100% !important; }
+            .contact-cta-btn.massive-btn,
+            .contact-cta-btn.secondary-contact-btn {
+                width: 100% !important;
+                max-width: 100% !important;
+                box-sizing: border-box !important;
+                padding: 16px 20px !important;
+                font-size: 0.6rem !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+                white-space: nowrap !important;
+            }
+
+            /* ── About modal: bottom sheet ───────────────────────── */
+            .about-modal-overlay { padding: 0 !important; align-items: flex-end !important; }
+            .about-modal {
+                grid-template-columns: 1fr !important;
+                max-width: 100% !important;
+                width: 100% !important;
+                max-height: 90vh !important;
+                overflow-y: auto !important;
+                transform: translateY(32px) !important;
+            }
+            .about-modal-overlay.is-open .about-modal { transform: translateY(0) !important; }
+            .about-photo-placeholder { min-height: 180px !important; }
+            .about-modal-body { padding: 28px 20px 36px !important; }
+            .about-modal-title { font-size: clamp(1.4rem, 7vw, 2rem) !important; margin-bottom: 20px !important; }
+            .about-modal-copy { font-size: 13px !important; }
         }
 
-        /* ── TOUCH DEVICES — @media (hover: none) ──────────────────
-           Catch-all for any pointer-less device regardless of
-           viewport width. Safely disables hover-gated animations
-           without touching a single line of the desktop CSS.
-           ─────────────────────────────────────────────────────────── */
-        @media (hover: none) {
-            /* No filmstrip scale-punch on touch tap */
-            .film-strip-container:has(.playable-tile:hover) {
-                transform: none !important;
-            }
-            /* Overlay: statically visible — no cursor required */
-            .project-info-overlay {
-                position: static !important;
-                opacity: 1 !important;
-                pointer-events: auto !important;
-                max-width: 100% !important;
-                padding: 20px 0 16px !important;
-                white-space: normal !important;
-                transition: none !important;
-            }
-            .data-heading {
-                opacity: 1 !important;
-                filter: blur(0) !important;
-                transform: none !important;
-                animation: none !important;
-            }
-            .data-measuring-graphic {
-                opacity: 1 !important;
-                transform: scaleX(1) !important;
-                animation: none !important;
-            }
-            .data-text-block {
-                opacity: 1 !important;
-                transform: none !important;
-                animation: none !important;
-            }
+        /* ── TOUCH DEVICES — kill hover-gated animations ──────────── */
+        @media (hover: none) and (pointer: coarse) {
+            .project-tile:hover .project-info-overlay { opacity: 0; }
         }
 
     </style>
@@ -2045,6 +2056,13 @@
             <a href="#home" class="brand-logo absolute-logo animate-entrance delay-nav">
                 <img src="assets/LSC Logo [Transparent]/3.png" alt="LSC Creative Logo" class="nav-logo default-icon">
             </a>
+            <button class="mobile-menu-toggle" id="mobileMenuToggle" aria-label="Open navigation" aria-expanded="false">
+                <svg width="22" height="14" viewBox="0 0 22 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <rect y="0"  width="22" height="1.5" rx="0.75" fill="currentColor"/>
+                    <rect y="6"  width="22" height="1.5" rx="0.75" fill="currentColor"/>
+                    <rect y="12" width="22" height="1.5" rx="0.75" fill="currentColor"/>
+                </svg>
+            </button>
             <ul class="nav-links absolute-nav animate-entrance delay-nav">
                 <li><a href="#portfolio">WORK</a></li>
                 <li><a href="#" id="aboutNavBtn">ABOUT</a></li>
@@ -2279,6 +2297,74 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </section>
+
+        <!-- MOBILE PORTFOLIO — shown only on ≤768px, replaces broken scroll section -->
+        <section class="mobile-portfolio-section" aria-label="Selected Work">
+            <div class="mobile-portfolio-header">
+                <span class="section-eyebrow">Selected Work</span>
+                <h2 class="mobile-portfolio-title">Selected<br>Work.</h2>
+                <p class="mobile-portfolio-sub">2024–2025</p>
+            </div>
+            <div class="mobile-portfolio-feed">
+
+                <div class="mobile-card" data-video-id="89a0b68b-1afe-4c5a-9d83-67fc880a876a" data-project-title="Marine Vitalities">
+                    <div class="mobile-card-thumb">
+                        <img src="https://vz-2d3e9bef-866.b-cdn.net/89a0b68b-1afe-4c5a-9d83-67fc880a876a/thumbnail.jpg" alt="Marine Vitalities">
+                        <div class="mobile-card-play">&#9654;</div>
+                    </div>
+                    <div class="mobile-card-info">
+                        <span class="mobile-card-category">Brand Documentary</span>
+                        <h3 class="mobile-card-title">Marine Vitalities</h3>
+                        <p class="mobile-card-scope">On-location brand film capturing sustainable farming in nutrient-rich waters.</p>
+                        <div class="mobile-card-meta"><span class="mobile-card-label">{SCREENS}</span> Website Hero, Meta Ads, Socials</div>
+                        <div class="mobile-card-meta"><span class="mobile-card-label">{CAMPAIGN}</span> 03.02.2026</div>
+                    </div>
+                </div>
+
+                <div class="mobile-card" data-video-id="b73539f4-26bd-470d-b658-8b2b0870098b" data-project-title="BNB AutoHaus">
+                    <div class="mobile-card-thumb">
+                        <img src="https://vz-2d3e9bef-866.b-cdn.net/b73539f4-26bd-470d-b658-8b2b0870098b/thumbnail.jpg" alt="BNB AutoHaus">
+                        <div class="mobile-card-play">&#9654;</div>
+                    </div>
+                    <div class="mobile-card-info">
+                        <span class="mobile-card-category">Product Showcase</span>
+                        <h3 class="mobile-card-title">BNB AutoHaus</h3>
+                        <p class="mobile-card-scope">Factory fresh car interior build — the pinnacle of BNB's high detail work.</p>
+                        <div class="mobile-card-meta"><span class="mobile-card-label">{SCREENS}</span> Advertisement, YouTube, Social Media</div>
+                        <div class="mobile-card-meta"><span class="mobile-card-label">{CAMPAIGN}</span> 05.03.2025</div>
+                    </div>
+                </div>
+
+                <div class="mobile-card" data-video-id="0d00bcf5-bf60-4c2c-8513-f8e41b490670" data-project-title="BakeHouse">
+                    <div class="mobile-card-thumb">
+                        <img src="https://vz-2d3e9bef-866.b-cdn.net/0d00bcf5-bf60-4c2c-8513-f8e41b490670/thumbnail.jpg" alt="BakeHouse">
+                        <div class="mobile-card-play">&#9654;</div>
+                    </div>
+                    <div class="mobile-card-info">
+                        <span class="mobile-card-category">Hero Expository</span>
+                        <h3 class="mobile-card-title">BakeHouse</h3>
+                        <p class="mobile-card-scope">An intimate look at a world class baker and his heritage in a small corner of Australia.</p>
+                        <div class="mobile-card-meta"><span class="mobile-card-label">{SCREENS}</span> Culture Circuit, Pitch Deck, Investor Portal</div>
+                        <div class="mobile-card-meta"><span class="mobile-card-label">{CAMPAIGN}</span> 10.05.2025</div>
+                    </div>
+                </div>
+
+                <div class="mobile-card" data-video-id="380dcc46-201f-46a1-8157-4e2fb3d88415" data-project-title="Illawarra Hawks">
+                    <div class="mobile-card-thumb">
+                        <img src="https://vz-2d3e9bef-866.b-cdn.net/380dcc46-201f-46a1-8157-4e2fb3d88415/thumbnail.jpg" alt="Illawarra Hawks">
+                        <div class="mobile-card-play">&#9654;</div>
+                    </div>
+                    <div class="mobile-card-info">
+                        <span class="mobile-card-category">Event Coverage</span>
+                        <h3 class="mobile-card-title">Illawarra Hawks</h3>
+                        <p class="mobile-card-scope">Court side grit and locker room tension. Real moments from season to championship finals.</p>
+                        <div class="mobile-card-meta"><span class="mobile-card-label">{SCREENS}</span> Broadcast, Stadium Screens, Jumbotron</div>
+                        <div class="mobile-card-meta"><span class="mobile-card-label">{CAMPAIGN}</span> 04.09.2024</div>
+                    </div>
+                </div>
+
             </div>
         </section>
 
@@ -2561,6 +2647,146 @@
 
 
 
+    <!-- Mobile Navigation Controller -->
+    <script>
+        (function () {
+            var toggle   = document.getElementById('mobileMenuToggle');
+            var navLinks = document.querySelector('.nav-links.absolute-nav');
+            if (!toggle || !navLinks) return;
+
+            function openMenu() {
+                navLinks.classList.add('is-active');
+                toggle.setAttribute('aria-expanded', 'true');
+                // No body scroll lock — it's a small dropdown, not full-screen
+            }
+            function closeMenu() {
+                navLinks.classList.remove('is-active');
+                toggle.setAttribute('aria-expanded', 'false');
+            }
+
+            toggle.addEventListener('click', function (e) {
+                e.stopPropagation();
+                navLinks.classList.contains('is-active') ? closeMenu() : openMenu();
+            });
+
+            // Close when a link is tapped
+            navLinks.querySelectorAll('a').forEach(function (link) {
+                link.addEventListener('click', closeMenu);
+            });
+
+            // Close when tapping outside the dropdown
+            document.addEventListener('click', function (e) {
+                if (!navLinks.contains(e.target) && e.target !== toggle) closeMenu();
+            });
+
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape') closeMenu();
+            });
+        })();
+    </script>
+
+    <!-- Mobile Scroll-Reveal: project tiles appear/disappear on scroll -->
+    <script>
+        (function () {
+            // Only activate on mobile viewports
+            if (window.innerWidth > 768) return;
+
+            var tiles = document.querySelectorAll('.project-tile');
+            if (!tiles.length || !('IntersectionObserver' in window)) {
+                // Fallback: just show all tiles if observer not supported
+                tiles.forEach(function (t) { t.classList.add('in-view'); });
+                return;
+            }
+
+            var observer = new IntersectionObserver(function (entries) {
+                entries.forEach(function (entry) {
+                    if (entry.isIntersecting) {
+                        // Tile entered viewport — reveal it
+                        entry.target.classList.add('in-view');
+                        entry.target.classList.remove('past-view');
+                    } else {
+                        var rect = entry.boundingClientRect;
+                        if (rect.bottom < 0) {
+                            // Tile exited through the top — user scrolled past
+                            entry.target.classList.remove('in-view');
+                            entry.target.classList.add('past-view');
+                        } else {
+                            // Tile is below viewport — not yet reached
+                            entry.target.classList.remove('in-view');
+                            entry.target.classList.remove('past-view');
+                        }
+                    }
+                });
+            }, {
+                threshold: 0.18
+            });
+
+            tiles.forEach(function (tile) { observer.observe(tile); });
+
+            // Re-evaluate on resize in case user rotates device
+            window.addEventListener('resize', function () {
+                if (window.innerWidth > 768) {
+                    observer.disconnect();
+                    tiles.forEach(function (t) {
+                        t.classList.remove('in-view', 'past-view');
+                        t.style.opacity = '';
+                        t.style.transform = '';
+                        t.style.pointerEvents = '';
+                    });
+                }
+            }, { once: true });
+        })();
+    </script>
+
+    <!-- Mobile portfolio: scroll-reveal + video open -->
+    <script>
+        (function () {
+            if (window.innerWidth > 768) return;
+
+            // Wire mobile cards to the existing video modal
+            document.querySelectorAll('.mobile-card').forEach(function (card) {
+                card.addEventListener('click', function () {
+                    var videoId    = card.getAttribute('data-video-id');
+                    var title      = card.getAttribute('data-project-title');
+                    var modal      = document.getElementById('videoModal');
+                    var iframe     = document.getElementById('videoIframe');
+                    var titleEl    = document.getElementById('videoModalTitle');
+                    if (!modal || !iframe || !videoId) return;
+                    iframe.src = 'https://player.mediadelivery.net/embed/662936/' + videoId + '?autoplay=true';
+                    if (titleEl) titleEl.textContent = title || 'Project Film';
+                    modal.classList.add('is-active');
+                    document.body.style.overflow = 'hidden';
+                });
+            });
+
+            // Scroll-reveal via IntersectionObserver
+            if (!('IntersectionObserver' in window)) {
+                // No observer support — leave all cards visible
+                return;
+            }
+            // Mark cards as hidden ONLY now that we know JS + observer are available
+            document.querySelectorAll('.mobile-card').forEach(function (c) {
+                c.classList.add('will-animate');
+            });
+            var observer = new IntersectionObserver(function (entries) {
+                entries.forEach(function (entry) {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('in-view');
+                        entry.target.classList.remove('will-animate', 'past-view');
+                    } else {
+                        if (entry.boundingClientRect.bottom < 0) {
+                            entry.target.classList.remove('in-view');
+                            entry.target.classList.add('past-view');
+                        } else {
+                            entry.target.classList.remove('in-view');
+                            entry.target.classList.add('will-animate');
+                        }
+                    }
+                });
+            }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+            document.querySelectorAll('.mobile-card').forEach(function (c) { observer.observe(c); });
+        })();
+    </script>
 
 </body>
 </html>
