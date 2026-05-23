@@ -54,6 +54,14 @@
             -moz-osx-font-smoothing: grayscale;
         }
 
+        /* ── Reusable fixed grid background for all light/beige sections ── */
+        .light-grid {
+            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22480%22%20height%3D%22360%22%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%2214%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%2214%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3C%2Fsvg%3E");
+            background-attachment: fixed;
+            background-size: 480px 360px;
+            background-repeat: repeat;
+        }
+
         /* ============================================================
            CINEMATIC LOADER MASK
            ============================================================ */
@@ -380,16 +388,96 @@
            dividers, massive Delight headings, bracket numbering.
            ============================================================ */
         .lsc-services-section {
-            padding: 100px 5vw;
+            padding: 0;                              /* horizontal padding lives inside columns */
             background-color: #E8E2D9;
+            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22480%22%20height%3D%22360%22%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%2214%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%2214%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3C%2Fsvg%3E");
+            background-attachment: fixed;
+            background-size: 480px 360px;
+            background-repeat: repeat;
             border-top: 1px solid rgba(14, 14, 14, 0.08);
             position: relative;
             z-index: 3;
+            overflow: hidden;
+            transition: background-color 0.3s ease, border-color 0.3s ease;
         }
 
-        .services-header {
-            margin-bottom: 72px;
+        /* Split two-column layout: zero gap so columns butt up edge-to-edge */
+        .capabilities-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            align-items: stretch;                    /* right panel fills full height */
+            gap: 0;
         }
+
+        /* Left column: inner horizontal padding + vertical breathing room */
+        .capabilities-left {
+            padding: 80px 5vw;
+        }
+
+        /* Right panel: always dark, no gap, stretches full left-column height */
+        .capabilities-right {
+            display: grid;                           /* for header/content overlap */
+            align-content: start;
+            padding: 64px 5vw 64px 48px;
+            background-color: var(--lsc-black);
+        }
+
+        /* Header panel — visible by default, fades out fast on open */
+        .capabilities-header-panel {
+            grid-area: 1 / 1;
+            transition: opacity 0.18s ease, transform 0.18s ease;
+        }
+
+        .lsc-services-section.has-open .capabilities-header-panel {
+            opacity: 0;
+            transform: translateY(-8px);
+            pointer-events: none;
+        }
+
+        /* Display content wrapper — overlaps header in same grid cell */
+        .capabilities-display-content {
+            grid-area: 1 / 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            opacity: 0;
+            transform: translateY(14px);
+            pointer-events: none;
+            transition: opacity 0.28s ease 0.14s, transform 0.28s ease 0.14s;
+        }
+
+        .lsc-services-section.has-open .capabilities-display-content {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Huge display title */
+        .capabilities-display-title {
+            font-family: 'Delight', Georgia, serif;
+            font-weight: 700;
+            font-size: clamp(56px, 8.5vw, 120px);
+            color: var(--lsc-white);
+            letter-spacing: -0.03em;
+            line-height: 0.88;
+            word-break: break-word;
+        }
+
+        /* Editorial body paragraph — large enough to fill the panel */
+        .capabilities-display-body {
+            font-family: 'FunnelSans', sans-serif;
+            font-size: clamp(18px, 1.9vw, 26px);
+            font-weight: 300;
+            line-height: 1.55;
+            color: rgba(240, 237, 232, 0.62);
+            letter-spacing: 0.01em;
+            /* No max-width — fills the full panel with breathing room from padding */
+        }
+
+        /* Right panel header always on dark bg — use light text */
+        .cap-section-title { color: var(--lsc-white); }
+        .capabilities-header-panel .eyebrow-accent { color: var(--lsc-terra); }
+
+        /* .services-header removed — header now inside .capabilities-right */
 
         .eyebrow-accent {
             font-family: 'FunnelSans', sans-serif;
@@ -415,42 +503,65 @@
             color: var(--lsc-black);
         }
 
-        /* ── Accordion container: sits on raw #0E0E0E canvas ── */
+        /* ── Accordion container: card layout, gap between cards ── */
         .accordion-container {
-            max-width: 960px;
             display: flex;
             flex-direction: column;
-            gap: 0;
-            border-top: 1px solid rgba(14, 14, 14, 0.1);
+            gap: 14px;
+            border-top: none;
         }
 
-        /* ── Each row: hairline bottom, no surface fill ── */
+        /* ── Each row: ELEVATED CARD — white surface, drop shadow, rounded ── */
         .cinematic-accordion {
-            border-bottom: 1px solid rgba(14, 14, 14, 0.1);
-            transition: background-color 0.3s ease;
+            background: rgba(255, 255, 255, 0.72);
+            border-radius: 6px;
+            border: none;
+            overflow: hidden;
+            box-shadow:
+                0 1px 3px  rgba(14, 14, 14, 0.05),
+                0 4px 16px rgba(14, 14, 14, 0.09);
+            transition:
+                background-color 0.3s ease,
+                box-shadow       0.3s ease,
+                transform        0.3s ease;
         }
 
-        /* ── Trigger: flex row — number | title | toggle ── */
+        /* Hover: lift + deepen shadow */
+        .cinematic-accordion:not([open]):hover {
+            transform: translateY(-2px);
+            box-shadow:
+                0 2px 6px  rgba(14, 14, 14, 0.07),
+                0 8px 28px rgba(14, 14, 14, 0.13);
+        }
+
+        /* ── Trigger: flex row inside card — horizontal card padding ── */
         .accordion-trigger {
             display: flex;
             align-items: center;
-            gap: 32px;
-            padding: 36px 0;
+            gap: 24px;
+            padding: 28px 28px;
             cursor: pointer;
             list-style: none;
         }
 
         .accordion-trigger::-webkit-details-marker { display: none; }
 
-        /* ── { 01 } bracket number — terracotta, fixed width ── */
+        /* ── Trigger body: stacks { 01 } eyebrow ABOVE icon+title ── */
+        .trigger-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: flex-start;
+        }
+
+        /* ── { 01 } bracket number — terracotta eyebrow, no fixed width ── */
         .trigger-number {
             font-family: 'FunnelSans', sans-serif;
             font-size: 11px;
             letter-spacing: 0.22em;
             text-transform: uppercase;
             color: var(--lsc-terra);
-            width: 72px;
-            flex-shrink: 0;
             transition: color 0.25s ease;
         }
 
@@ -462,15 +573,21 @@
             color: var(--lsc-black);
             letter-spacing: -0.025em;
             line-height: 1;
-            flex: 1;
             transition: color 0.25s ease;
         }
 
-        /* ── Capability icon: sits between number and title ── */
+        /* ── Title+icon group: icon leads (left), 8-pt grid gap ── */
+        .trigger-title-group {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        /* ── Capability icon: 32px (8-pt grid lock), stroke tracks bold title ── */
         .capability-icon {
-            width: 22px;
-            height: 22px;
-            color: rgba(14, 14, 14, 0.3);
+            width: 32px;
+            height: 32px;
+            color: rgba(14, 14, 14, 0.28);
             flex-shrink: 0;
             transition: color 0.25s ease;
         }
@@ -515,23 +632,47 @@
             background-color: var(--lsc-sage);
         }
 
-        /* ── Open state: container lifts to sage tint, title + icon activate ── */
+        /* ── Open card: dark elevated — deep shadow + subtle lift ── */
         .cinematic-accordion[open] {
-            background-color: rgba(76, 175, 130, 0.07);
+            background-color: var(--lsc-black);
+            transform: translateY(-3px);
+            box-shadow:
+                0 4px 12px  rgba(14, 14, 14, 0.18),
+                0 16px 48px rgba(14, 14, 14, 0.28);
         }
 
-        .cinematic-accordion[open] > .accordion-trigger .trigger-title {
+        /* Open row: title inverts to white + capitalised */
+        .cinematic-accordion[open] .trigger-title {
+            color: var(--lsc-white);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .cinematic-accordion[open] .trigger-number {
+            color: var(--lsc-terra);
+        }
+
+        .cinematic-accordion[open] .capability-icon {
             color: var(--lsc-sage);
         }
 
-        .cinematic-accordion[open] > .accordion-trigger .capability-icon {
+        .cinematic-accordion[open] .trigger-indicator,
+        .cinematic-accordion[open] .trigger-indicator::before {
+            background-color: rgba(240, 237, 232, 0.4);
+        }
+
+        .cinematic-accordion[open] .accordion-content p {
+            color: rgba(240, 237, 232, 0.62);
+        }
+
+        /* Hover states on open row */
+        .cinematic-accordion[open] .accordion-trigger:hover .trigger-title {
             color: var(--lsc-sage);
         }
 
-        /* ── Body text: indented to align with title, not number ── */
-        /* number-width(72px) + gap(32px) = 104px left offset       */
+        /* ── Body text: matches card horizontal padding ── */
         .accordion-content {
-            padding: 0 0 44px 104px;
+            padding: 0 28px 28px 28px;
             overflow: hidden;
         }
 
@@ -554,15 +695,14 @@
         /* ── Mobile: tighten padding, reduce title size ── */
         @media (max-width: 640px) {
             .accordion-trigger {
-                gap: 20px;
-                padding: 28px 0;
+                gap: 16px;
+                padding: 24px 0;
             }
             .trigger-number {
-                width: 52px;
                 font-size: 10px;
             }
             .accordion-content {
-                padding: 0 0 32px calc(52px + 20px);
+                padding: 0 20px 20px 20px;
             }
         }
 
@@ -570,90 +710,247 @@
            PROCESS SECTION — KVS 3-COLUMN BRACKETED LAYOUT
            ============================================================ */
         .lsc-process-section {
-            padding: 120px 5vw;
+            padding: 0;
             background-color: var(--lsc-black);
             border-top: 1px solid var(--lsc-rule);
             position: relative;
             z-index: 3;
+            overflow: hidden;
         }
 
-        .process-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-end;
-            margin-bottom: 80px;
-            padding-bottom: 40px;
-            border-bottom: 1px solid var(--lsc-rule);
+        /* ── Split two-column layout (mirrors Capabilities) ── */
+        .process-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            align-items: stretch;
+            gap: 0;
         }
 
-        .process-header-left .section-title {
-            margin-top: 16px;
+        .process-left {
+            padding: 80px 5vw;
         }
 
-        .process-header-meta {
+        .process-right {
+            display: grid;
+            align-content: center;
+            padding: 64px 5vw 64px 48px;
+            background-color: var(--lsc-black);
+            border-left: 1px solid var(--lsc-rule);
+            position: relative;
+            text-align: center;
+        }
+
+        /* ── Right panel: default header ── */
+        .process-header-panel {
+            grid-area: 1/1;
+            transition: opacity 0.18s ease, transform 0.18s ease;
+        }
+        .lsc-process-section.has-open .process-header-panel {
+            opacity: 0;
+            transform: translateY(-8px);
+            pointer-events: none;
+        }
+
+        .process-section-eyebrow {
             font-family: 'FunnelSans', sans-serif;
             font-size: 10px;
             letter-spacing: 0.22em;
             text-transform: uppercase;
-            color: var(--lsc-muted);
-            text-align: right;
-        }
-
-        .process-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 0;
-        }
-
-        .process-phase {
-            padding: 48px 48px 48px 0;
-            border-right: 1px solid var(--lsc-rule);
-            padding-right: 48px;
-            position: relative;
-        }
-
-        .process-phase:last-child {
-            border-right: none;
-            padding-right: 0;
-            padding-left: 48px;
-        }
-
-        .process-phase:nth-child(2) {
-            padding-left: 48px;
-        }
-
-        .process-phase-eyebrow {
-            font-family: 'FunnelSans', sans-serif;
-            font-size: 10px;
-            letter-spacing: 0.28em;
-            text-transform: uppercase;
             color: var(--lsc-terra);
-            margin-bottom: 28px;
             display: block;
+            margin-bottom: 16px;
         }
 
-        /* KVS bracketed numbering */
-        .process-phase-eyebrow::before { content: '{ '; }
-        .process-phase-eyebrow::after  { content: ' }'; }
-
-        .process-phase-title {
+        .process-section-title {
             font-family: 'Delight', Georgia, serif;
             font-weight: 700;
-            font-size: clamp(24px, 2.4vw, 32px);
+            font-size: clamp(56px, 8.5vw, 120px);
             color: var(--lsc-white);
-            letter-spacing: -0.02em;
-            line-height: 1;
-            margin-bottom: 20px;
+            letter-spacing: -0.03em;
+            line-height: 0.88;
+            margin-top: 0;
         }
 
-        .process-phase-body {
-            font-family: 'FunnelSans', sans-serif;
-            font-size: 14px;
+        /* ── Right panel: display content on open ── */
+        .process-display-content {
+            grid-area: 1/1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            opacity: 0;
+            transform: translateY(14px);
+            transition: opacity 0.28s ease 0.14s, transform 0.28s ease 0.14s;
+        }
+        .lsc-process-section.has-open .process-display-content {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .process-display-title {
+            font-family: 'Delight', Georgia, serif;
+            font-weight: 700;
+            font-size: clamp(40px, 6.5vw, 96px);
+            color: var(--lsc-white);
+            letter-spacing: -0.03em;
+            line-height: 0.88;
+        }
+
+        .process-display-body {
+            font-size: clamp(18px, 1.9vw, 26px);
             font-weight: 300;
-            line-height: 1.75;
-            color: var(--lsc-muted);
-            letter-spacing: 0.01em;
-            max-width: 280px;
+            line-height: 1.55;
+            color: rgba(240, 237, 232, 0.62);
+        }
+
+        /* ── Process scroll-reveal (same pattern as Selected Work cards) ── */
+        .proc-reveal {
+            opacity: 0;
+            transform: translateY(28px);
+            transition: opacity 0.55s ease, transform 0.55s ease;
+        }
+        .proc-reveal.in-view {
+            opacity: 1 !important;
+            transform: translateY(0) !important;
+        }
+        .proc-reveal.past-view {
+            opacity: 0 !important;
+            transform: translateY(-16px) !important;
+            transition: opacity 0.3s ease, transform 0.3s ease !important;
+        }
+
+        /* ── Process timeline graphic ── */
+        .process-timeline {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0;
+            grid-area: 2/1;        /* sits in its own row, below the overlapping text panels */
+            margin-top: 28px;
+        }
+
+        .process-timeline-node {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: 1.5px solid rgba(240, 237, 232, 0.22);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: border-color 0.25s ease, background-color 0.25s ease;
+        }
+
+        .process-timeline-node.is-active {
+            border-color: var(--lsc-terra);
+            background-color: var(--lsc-terra);
+        }
+
+        .process-timeline-node.is-active .process-timeline-num {
+            color: var(--lsc-white);
+        }
+
+        .process-timeline-num {
+            font-family: 'FunnelSans', sans-serif;
+            font-size: 9px;
+            letter-spacing: 0.12em;
+            color: rgba(240, 237, 232, 0.45);
+            transition: color 0.25s ease;
+        }
+
+        .process-timeline-line {
+            flex: 1;
+            max-width: 72px;
+            min-width: 32px;
+            height: 1px;
+            background: repeating-linear-gradient(
+                to right,
+                rgba(240, 237, 232, 0.2) 0px,
+                rgba(240, 237, 232, 0.2) 4px,
+                transparent 4px,
+                transparent 8px
+            );
+        }
+
+        /* ── Capabilities hover cards (mirrors process-card) ── */
+        .capabilities-card {
+            background: rgba(255, 255, 255, 0.72);
+            border-radius: 6px;
+            border: none;
+            overflow: hidden;
+            box-shadow:
+                0 1px 3px  rgba(14, 14, 14, 0.05),
+                0 4px 16px rgba(14, 14, 14, 0.09);
+            transition: background-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+            cursor: default;
+        }
+
+        .capabilities-card:hover {
+            transform: translateY(-2px);
+            box-shadow:
+                0 2px 6px  rgba(14, 14, 14, 0.07),
+                0 8px 28px rgba(14, 14, 14, 0.13);
+        }
+
+        .capabilities-card.is-hovered {
+            background-color: var(--lsc-black);
+            transform: translateY(-3px);
+            box-shadow:
+                0 4px 12px  rgba(14, 14, 14, 0.18),
+                0 16px 48px rgba(14, 14, 14, 0.28);
+        }
+
+        .capabilities-card.is-hovered .trigger-title {
+            color: var(--lsc-white);
+        }
+        .capabilities-card.is-hovered .trigger-number {
+            color: var(--lsc-terra);
+        }
+        .capabilities-card.is-hovered .capability-icon {
+            color: var(--lsc-sage);
+        }
+
+        /* ── Process hover cards (no accordion — hover only) ── */
+        .process-card {
+            background: rgba(255, 255, 255, 0.72);
+            border-radius: 6px;
+            border: none;
+            overflow: hidden;
+            box-shadow:
+                0 1px 3px  rgba(14, 14, 14, 0.05),
+                0 4px 16px rgba(14, 14, 14, 0.09);
+            transition: background-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+            cursor: default;
+        }
+
+        .process-card:hover {
+            transform: translateY(-2px);
+            box-shadow:
+                0 2px 6px  rgba(14, 14, 14, 0.07),
+                0 8px 28px rgba(14, 14, 14, 0.13);
+        }
+
+        .process-card.is-hovered {
+            background-color: var(--lsc-black);
+            transform: translateY(-3px);
+            box-shadow:
+                0 4px 12px  rgba(14, 14, 14, 0.18),
+                0 16px 48px rgba(14, 14, 14, 0.28);
+        }
+
+        /* Smaller title so Pre-/Post-production fit one line */
+        .process-card .trigger-title {
+            font-size: clamp(20px, 2.4vw, 34px);
+        }
+
+        /* Inverted state when hovered */
+        .process-card.is-hovered .trigger-title {
+            color: var(--lsc-white);
+        }
+        .process-card.is-hovered .trigger-number {
+            color: var(--lsc-terra);
+        }
+        .process-card.is-hovered .capability-icon {
+            color: var(--lsc-sage);
         }
 
         /* ============================================================
@@ -691,6 +988,45 @@
 
         .footer-right a:hover {
             color: var(--lsc-sage);
+        }
+
+        /* ── Selected Work: beige bg + dark grid fades in as you scroll in ── */
+        .horizontal-scroll-section {
+            background-color: #E8E2D9 !important;   /* match capabilities beige */
+        }
+
+        /* Grid lives on a ::before so we can apply a scroll-reveal mask */
+        .horizontal-scroll-section::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22480%22%20height%3D%22360%22%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%2214%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%2214%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3C%2Fsvg%3E");
+            background-attachment: fixed;
+            background-size: 480px 360px;
+            background-repeat: repeat;
+            /* Fade in over first ~8% of the 400vh section height ≈ 32vh */
+            -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 8%);
+            mask-image:         linear-gradient(to bottom, transparent 0%, black 8%);
+        }
+
+        /* Mobile portfolio: same beige + grid fade */
+        .mobile-portfolio-section {
+            background-color: #E8E2D9 !important;
+        }
+        .mobile-portfolio-section::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22480%22%20height%3D%22360%22%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%2214%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%2214%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3C%2Fsvg%3E");
+            background-attachment: fixed;
+            background-size: 480px 360px;
+            background-repeat: repeat;
+            -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 15%);
+            mask-image:         linear-gradient(to bottom, transparent 0%, black 15%);
         }
 
         /* ============================================================
@@ -1621,11 +1957,7 @@
 
         /* ── TABLET (≤ 992px) ─────────────────────────────────────── */
         @media (max-width: 992px) {
-            .process-grid { grid-template-columns: repeat(2, 1fr); }
-            .process-phase:last-child {
-                grid-column: 1 / -1; border-right: none;
-                padding-left: 0; border-top: 1px solid var(--lsc-rule); padding-top: 48px;
-            }
+            /* Process tablet: columns still side-by-side at 992px+ — no override needed */
             .about-modal { grid-template-columns: 1fr; max-width: 580px; max-height: 90vh; overflow-y: auto; }
             .about-photo-placeholder { min-height: 220px; }
         }
@@ -1737,12 +2069,11 @@
 
             /* ── Mobile portfolio feed styles ───────────────────────── */
             .mobile-portfolio-section {
-                background: rgba(12, 12, 14, 0.80);
-                backdrop-filter: blur(24px);
-                -webkit-backdrop-filter: blur(24px);
-                border-top: 1px solid rgba(255,255,255,0.08);
-                border-bottom: 1px solid rgba(255,255,255,0.08);
+                position: relative;
                 padding: 60px 20px;
+                border-top: 1px solid rgba(14,14,14,0.08);
+                border-bottom: 1px solid rgba(14,14,14,0.08);
+                overflow: hidden;
             }
             .mobile-portfolio-header {
                 margin-bottom: 40px;
@@ -1821,8 +2152,47 @@
                 color: rgba(255,255,255,0.9);
                 font-size: 2rem;
             }
+            /* Card header row: title + chevron */
+            .mobile-card-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                width: 100%;
+                background: none;
+                border: none;
+                padding: 14px 0 0;
+                cursor: pointer;
+                text-align: left;
+                gap: 12px;
+            }
+            .mobile-card-chevron {
+                flex-shrink: 0;
+                color: rgba(240,237,232,0.45);
+                transition: transform 0.3s ease;
+            }
+            .mobile-card.is-open .mobile-card-chevron {
+                transform: rotate(180deg);
+            }
+            /* Drawer: collapsed by default, smooth expand */
+            .mobile-card-drawer {
+                display: grid;
+                grid-template-rows: 0fr;
+                transition: grid-template-rows 0.35s ease;
+                overflow: hidden;
+            }
+            .mobile-card.is-open .mobile-card-drawer {
+                grid-template-rows: 1fr;
+            }
+            .mobile-card-drawer-inner {
+                overflow: hidden;
+                padding-bottom: 0;
+                transition: padding-bottom 0.35s ease;
+            }
+            .mobile-card.is-open .mobile-card-drawer-inner {
+                padding-bottom: 20px;
+            }
+
             /* Card info */
-            .mobile-card-info { padding: 0; }
             .mobile-card-category {
                 display: block;
                 font-size: 9px;
@@ -1862,47 +2232,66 @@
             }
 
             /* ── Capabilities ─────────────────────────────────────── */
-            .lsc-services-section {
-                padding: 60px 20px !important;
+            /* ── Capabilities mobile ───────────────────────────────── */
+            .lsc-services-section { padding: 0 !important; }
+            .capabilities-layout {
+                display: flex !important;
+                flex-direction: column !important;
+                gap: 0 !important;
             }
-            .lsc-services-section .section-title,
-            .trigger-title {
-                font-size: clamp(1.6rem, 8vw, 2.4rem) !important;
-                word-break: break-word !important;
+            /* Right panel (title) above cards on mobile */
+            .capabilities-right {
+                order: -1 !important;
+                padding: 48px 24px 40px !important;
+                border-bottom: 1px solid var(--lsc-rule) !important;
+                text-align: center !important;
             }
-            .accordion-trigger {
-                padding: 16px 0 !important;
+            .capabilities-left {
+                order: 1 !important;
+                padding: 40px 24px 48px !important;
+            }
+            /* Tap activates on mobile — no hover */
+            .capabilities-card .accordion-trigger {
+                padding: 24px 24px 24px 28px !important;
+            }
+            .cap-section-title {
+                font-size: clamp(1.8rem, 9vw, 3rem) !important;
+            }
+            .capabilities-display-title {
+                font-size: clamp(2rem, 10vw, 3.4rem) !important;
             }
 
             /* ── Process ─────────────────────────────────────────── */
-            .lsc-process-section { padding: 60px 20px !important; }
-            .section-title {
-                font-size: clamp(2rem, 10vw, 3.2rem) !important;
-                word-break: break-word !important;
+            /* Stack vertically: title panel first, cards below */
+            .process-layout {
+                grid-template-columns: 1fr !important;
             }
-            .process-header {
-                flex-direction: column !important;
-                align-items: flex-start !important;
-                gap: 12px !important;
-                margin-bottom: 40px !important;
-                padding-bottom: 24px !important;
-            }
-            .process-header-meta { text-align: left !important; }
-            .process-grid { grid-template-columns: 1fr !important; }
-            .process-phase {
-                border-right: none !important;
-                padding-right: 0 !important;
-                padding-left: 0 !important;
+            /* Right panel (title) moves to top on mobile */
+            .process-right {
+                order: -1 !important;
+                padding: 48px 24px 40px !important;
+                border-left: none !important;
                 border-bottom: 1px solid var(--lsc-rule) !important;
-                padding-bottom: 32px !important;
+                text-align: center !important;
             }
-            .process-phase:last-child {
-                border-bottom: none !important;
-                padding-top: 32px !important;
-                padding-left: 0 !important;
+            /* Cards panel sits below */
+            .process-left {
+                order: 1 !important;
+                padding: 40px 24px 48px !important;
             }
-            .process-phase:nth-child(2) { padding-left: 0 !important; }
-            .process-phase-title { font-size: clamp(18px, 5vw, 26px) !important; }
+            /* More breathing room inside each card on mobile */
+            .process-card .accordion-trigger {
+                padding: 24px 24px 24px 28px !important;
+            }
+            .process-section-title {
+                font-size: clamp(2rem, 10vw, 3.2rem) !important;
+            }
+            .process-display-title {
+                font-size: clamp(2.2rem, 10vw, 3.6rem) !important;
+            }
+            .process-display-body {
+                font-size: clamp(15px, 4vw, 18px) !important;
+            }
 
             /* ── Contact ─────────────────────────────────────────── */
             .lsc-contact-section { padding: 60px 20px !important; }
@@ -2108,36 +2497,54 @@
              CAPABILITIES — CINEMATIC ACCORDION
              ============================================================ -->
         <section class="lsc-services-section" id="capabilities">
-            <div class="services-header">
-                <span class="eyebrow-accent">Our Craft</span>
-                <h2 class="section-title">Capabilities.</h2>
-            </div>
+            <div class="capabilities-layout">
 
-            <div class="accordion-container">
+                <!-- LEFT: hover-activated capability cards -->
+                <div class="capabilities-left">
+                    <div class="accordion-container">
 
-                <details class="cinematic-accordion">
-                    <summary class="accordion-trigger">
-                        <span class="trigger-number">{ 01 }</span>
-                        <span class="trigger-title">Motion.</span>
-                        <svg class="capability-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></svg>
-                        <div class="trigger-indicator" aria-hidden="true"></div>
-                    </summary>
-                    <div class="accordion-content">
-                        <p>Documentary-style brand films that are shot on location. Our expertise is capturing the candid, authentic side of your business, product or message. Here, cinematic precision is our standard for you.</p>
+                        <div class="capabilities-card proc-reveal"
+                             data-cap-title="Motion."
+                             data-cap-body="Documentary-style brand films that are shot on location. Our expertise is capturing the candid, authentic side of your business, product or message. Here, cinematic precision is our standard for you.">
+                            <div class="accordion-trigger" style="cursor:default;">
+                                <div class="trigger-body">
+                                    <span class="trigger-number">{ 01 }</span>
+                                    <span class="trigger-title-group">
+                                        <svg class="capability-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></svg>
+                                        <span class="trigger-title">Motion.</span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="capabilities-card proc-reveal" style="transition-delay:0.12s"
+                             data-cap-title="Stills."
+                             data-cap-body="Our aim is to capture real moments, real people and real meaning in image format. We seek to provide you with quality stills to show to your audience, whatever your message.">
+                            <div class="accordion-trigger" style="cursor:default;">
+                                <div class="trigger-body">
+                                    <span class="trigger-number">{ 02 }</span>
+                                    <span class="trigger-title-group">
+                                        <svg class="capability-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                                        <span class="trigger-title">Stills.</span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
-                </details>
+                </div>
 
-                <details class="cinematic-accordion">
-                    <summary class="accordion-trigger">
-                        <span class="trigger-number">{ 02 }</span>
-                        <span class="trigger-title">Stills.</span>
-                        <svg class="capability-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
-                        <div class="trigger-indicator" aria-hidden="true"></div>
-                    </summary>
-                    <div class="accordion-content">
-                        <p>Our aim is to capture real moments, real people and real meaning in image format. We seek to provide you with quality stills to show to your audience, whatever your message.</p>
+                <!-- RIGHT: default header fades out, display title+body fades in on hover -->
+                <div class="capabilities-right proc-reveal" style="transition-delay:0.06s">
+                    <div class="capabilities-header-panel">
+                        <span class="eyebrow-accent">Our Craft</span>
+                        <h2 class="section-title cap-section-title">Capabilities.</h2>
                     </div>
-                </details>
+                    <div class="capabilities-display-content" aria-live="polite">
+                        <div class="capabilities-display-title"></div>
+                        <div class="capabilities-display-body"></div>
+                    </div>
+                </div>
 
             </div>
         </section>
@@ -2314,12 +2721,17 @@
                         <img src="https://vz-2d3e9bef-866.b-cdn.net/89a0b68b-1afe-4c5a-9d83-67fc880a876a/thumbnail.jpg" alt="Marine Vitalities">
                         <div class="mobile-card-play">&#9654;</div>
                     </div>
-                    <div class="mobile-card-info">
-                        <span class="mobile-card-category">Brand Documentary</span>
+                    <button class="mobile-card-header" aria-expanded="false">
                         <h3 class="mobile-card-title">Marine Vitalities</h3>
-                        <p class="mobile-card-scope">On-location brand film capturing sustainable farming in nutrient-rich waters.</p>
-                        <div class="mobile-card-meta"><span class="mobile-card-label">{SCREENS}</span> Website Hero, Meta Ads, Socials</div>
-                        <div class="mobile-card-meta"><span class="mobile-card-label">{CAMPAIGN}</span> 03.02.2026</div>
+                        <svg class="mobile-card-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                    <div class="mobile-card-drawer">
+                        <div class="mobile-card-drawer-inner">
+                            <span class="mobile-card-category">Brand Documentary</span>
+                            <p class="mobile-card-scope">On-location brand film capturing sustainable farming in nutrient-rich waters.</p>
+                            <div class="mobile-card-meta"><span class="mobile-card-label">{SCREENS}</span> Website Hero, Meta Ads, Socials</div>
+                            <div class="mobile-card-meta"><span class="mobile-card-label">{CAMPAIGN}</span> 03.02.2026</div>
+                        </div>
                     </div>
                 </div>
 
@@ -2328,12 +2740,17 @@
                         <img src="https://vz-2d3e9bef-866.b-cdn.net/b73539f4-26bd-470d-b658-8b2b0870098b/thumbnail.jpg" alt="BNB AutoHaus">
                         <div class="mobile-card-play">&#9654;</div>
                     </div>
-                    <div class="mobile-card-info">
-                        <span class="mobile-card-category">Product Showcase</span>
+                    <button class="mobile-card-header" aria-expanded="false">
                         <h3 class="mobile-card-title">BNB AutoHaus</h3>
-                        <p class="mobile-card-scope">Factory fresh car interior build — the pinnacle of BNB's high detail work.</p>
-                        <div class="mobile-card-meta"><span class="mobile-card-label">{SCREENS}</span> Advertisement, YouTube, Social Media</div>
-                        <div class="mobile-card-meta"><span class="mobile-card-label">{CAMPAIGN}</span> 05.03.2025</div>
+                        <svg class="mobile-card-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                    <div class="mobile-card-drawer">
+                        <div class="mobile-card-drawer-inner">
+                            <span class="mobile-card-category">Product Showcase</span>
+                            <p class="mobile-card-scope">Factory fresh car interior build — the pinnacle of BNB's high detail work.</p>
+                            <div class="mobile-card-meta"><span class="mobile-card-label">{SCREENS}</span> Advertisement, YouTube, Social Media</div>
+                            <div class="mobile-card-meta"><span class="mobile-card-label">{CAMPAIGN}</span> 05.03.2025</div>
+                        </div>
                     </div>
                 </div>
 
@@ -2342,12 +2759,17 @@
                         <img src="https://vz-2d3e9bef-866.b-cdn.net/0d00bcf5-bf60-4c2c-8513-f8e41b490670/thumbnail.jpg" alt="BakeHouse">
                         <div class="mobile-card-play">&#9654;</div>
                     </div>
-                    <div class="mobile-card-info">
-                        <span class="mobile-card-category">Hero Expository</span>
+                    <button class="mobile-card-header" aria-expanded="false">
                         <h3 class="mobile-card-title">BakeHouse</h3>
-                        <p class="mobile-card-scope">An intimate look at a world class baker and his heritage in a small corner of Australia.</p>
-                        <div class="mobile-card-meta"><span class="mobile-card-label">{SCREENS}</span> Culture Circuit, Pitch Deck, Investor Portal</div>
-                        <div class="mobile-card-meta"><span class="mobile-card-label">{CAMPAIGN}</span> 10.05.2025</div>
+                        <svg class="mobile-card-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                    <div class="mobile-card-drawer">
+                        <div class="mobile-card-drawer-inner">
+                            <span class="mobile-card-category">Hero Expository</span>
+                            <p class="mobile-card-scope">An intimate look at a world class baker and his heritage in a small corner of Australia.</p>
+                            <div class="mobile-card-meta"><span class="mobile-card-label">{SCREENS}</span> Culture Circuit, Pitch Deck, Investor Portal</div>
+                            <div class="mobile-card-meta"><span class="mobile-card-label">{CAMPAIGN}</span> 10.05.2025</div>
+                        </div>
                     </div>
                 </div>
 
@@ -2356,12 +2778,17 @@
                         <img src="https://vz-2d3e9bef-866.b-cdn.net/380dcc46-201f-46a1-8157-4e2fb3d88415/thumbnail.jpg" alt="Illawarra Hawks">
                         <div class="mobile-card-play">&#9654;</div>
                     </div>
-                    <div class="mobile-card-info">
-                        <span class="mobile-card-category">Event Coverage</span>
+                    <button class="mobile-card-header" aria-expanded="false">
                         <h3 class="mobile-card-title">Illawarra Hawks</h3>
-                        <p class="mobile-card-scope">Court side grit and locker room tension. Real moments from season to championship finals.</p>
-                        <div class="mobile-card-meta"><span class="mobile-card-label">{SCREENS}</span> Broadcast, Stadium Screens, Jumbotron</div>
-                        <div class="mobile-card-meta"><span class="mobile-card-label">{CAMPAIGN}</span> 04.09.2024</div>
+                        <svg class="mobile-card-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                    <div class="mobile-card-drawer">
+                        <div class="mobile-card-drawer-inner">
+                            <span class="mobile-card-category">Event Coverage</span>
+                            <p class="mobile-card-scope">Court side grit and locker room tension. Real moments from season to championship finals.</p>
+                            <div class="mobile-card-meta"><span class="mobile-card-label">{SCREENS}</span> Broadcast, Stadium Screens, Jumbotron</div>
+                            <div class="mobile-card-meta"><span class="mobile-card-label">{CAMPAIGN}</span> 04.09.2024</div>
+                        </div>
                     </div>
                 </div>
 
@@ -2372,34 +2799,104 @@
              PROCESS — KVS 3-COLUMN BRACKETED LAYOUT
              ============================================================ -->
         <section class="lsc-process-section" id="process">
-            <div class="process-header">
-                <div class="process-header-left">
-                    <span class="section-eyebrow">How We Work</span>
-                    <h2 class="section-title">The Process.</h2>
-                </div>
-                <div class="process-header-meta">
-                    Three phases.<br>Zero compromise.
-                </div>
-            </div>
+            <div class="process-layout">
 
-            <div class="process-grid">
+                <!-- LEFT: Hover-activated process cards (no accordion) -->
+                <div class="process-left">
+                    <div class="accordion-container">
 
-                <div class="process-phase">
-                    <span class="process-phase-eyebrow">01</span>
-                    <h3 class="process-phase-title">Pre-production.</h3>
-                    <p class="process-phase-body">The quality of your project is in the details. Planning is taken very seriously no matter the scope of the project — depending on what your project needs, scripting, storyboarding, short listing, location scouting and finding the right talent can mean the difference between a clear strong message or a lost audience.</p>
+                        <!-- 01 Pre-production -->
+                        <div class="process-card proc-reveal"
+                             data-process-title="Pre-production."
+                             data-process-body="The quality of your project is in the details. Planning is taken very seriously no matter the scope of the project — depending on what your project needs, scripting, storyboarding, short listing, location scouting and finding the right talent can mean the difference between a clear strong message or a lost audience.">
+                            <div class="accordion-trigger" style="cursor:default;">
+                                <div class="trigger-body">
+                                    <span class="trigger-number">{ 01 }</span>
+                                    <span class="trigger-title-group">
+                                        <svg class="capability-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                            <rect x="9" y="2" width="6" height="4" rx="1"/>
+                                            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                                            <line x1="12" y1="11" x2="16" y2="11"/>
+                                            <line x1="12" y1="15" x2="16" y2="15"/>
+                                            <line x1="8" y1="11" x2="8.01" y2="11"/>
+                                            <line x1="8" y1="15" x2="8.01" y2="15"/>
+                                        </svg>
+                                        <span class="trigger-title">Pre-production.</span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 02 Production -->
+                        <div class="process-card proc-reveal" style="transition-delay:0.12s"
+                             data-process-title="Production."
+                             data-process-body="Where we hit record on set. What makes LSC Creative different is the standard between executing a single shoot or an ongoing production stays the same — the lighting, cameras and over-caffeinated crew members are coming together to put planning into action.">
+                            <div class="accordion-trigger" style="cursor:default;">
+                                <div class="trigger-body">
+                                    <span class="trigger-number">{ 02 }</span>
+                                    <span class="trigger-title-group">
+                                        <svg class="capability-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                            <polygon points="23 7 16 12 23 17 23 7"/>
+                                            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                                        </svg>
+                                        <span class="trigger-title">Production.</span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 03 Post-production -->
+                        <div class="process-card proc-reveal" style="transition-delay:0.24s"
+                             data-process-title="Post-production."
+                             data-process-body="Where the magic happens — the rigorous work of editing. Managing the refinement of unique footage and spoken words, compiled under the light of professional colour science and sound design to deliver elevated media.">
+                            <div class="accordion-trigger" style="cursor:default;">
+                                <div class="trigger-body">
+                                    <span class="trigger-number">{ 03 }</span>
+                                    <span class="trigger-title-group">
+                                        <svg class="capability-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                            <line x1="4" y1="21" x2="4" y2="14"/>
+                                            <line x1="4" y1="10" x2="4" y2="3"/>
+                                            <line x1="12" y1="21" x2="12" y2="12"/>
+                                            <line x1="12" y1="8"  x2="12" y2="3"/>
+                                            <line x1="20" y1="21" x2="20" y2="16"/>
+                                            <line x1="20" y1="12" x2="20" y2="3"/>
+                                            <line x1="1"  y1="14" x2="7"  y2="14"/>
+                                            <line x1="9"  y1="8"  x2="15" y2="8"/>
+                                            <line x1="17" y1="16" x2="23" y2="16"/>
+                                        </svg>
+                                        <span class="trigger-title">Post-production.</span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
                 </div>
 
-                <div class="process-phase">
-                    <span class="process-phase-eyebrow">02</span>
-                    <h3 class="process-phase-title">Production.</h3>
-                    <p class="process-phase-body">Where we hit record on set. What makes LSC Creative different is the standard between executing a single shoot or an ongoing production stays the same — the lighting, cameras and over-caffeinated crew members are coming together to put planning into action.</p>
-                </div>
-
-                <div class="process-phase">
-                    <span class="process-phase-eyebrow">03</span>
-                    <h3 class="process-phase-title">Post-production.</h3>
-                    <p class="process-phase-body">Where the magic happens — the rigorous work of editing. Managing the refinement of unique footage and spoken words, compiled under the light of professional colour science and sound design to deliver elevated media.</p>
+                <!-- RIGHT: Dark display panel -->
+                <div class="process-right proc-reveal">
+                    <div class="process-header-panel">
+                        <span class="process-section-eyebrow">How We Work</span>
+                        <h2 class="process-section-title">The Process.</h2>
+                    </div>
+                    <div class="process-display-content" aria-live="polite">
+                        <div class="process-display-title"></div>
+                        <div class="process-display-body"></div>
+                    </div>
+                    <!-- Timeline always sits below whichever text is active -->
+                    <div class="process-timeline" aria-hidden="true">
+                        <div class="process-timeline-node" data-step="0">
+                            <span class="process-timeline-num">01</span>
+                        </div>
+                        <div class="process-timeline-line"></div>
+                        <div class="process-timeline-node" data-step="1">
+                            <span class="process-timeline-num">02</span>
+                        </div>
+                        <div class="process-timeline-line"></div>
+                        <div class="process-timeline-node" data-step="2">
+                            <span class="process-timeline-num">03</span>
+                        </div>
+                    </div>
                 </div>
 
             </div>
@@ -2738,19 +3235,153 @@
         })();
     </script>
 
-    <!-- Mobile portfolio: scroll-reveal + video open -->
+    <!-- Capabilities: hover-activated right panel display -->
     <script>
         (function () {
-            if (window.innerWidth > 768) return;
+            var section      = document.querySelector('.lsc-services-section');
+            var displayTitle = section && section.querySelector('.capabilities-display-title');
+            var displayBody  = section && section.querySelector('.capabilities-display-body');
+            var capsLeft     = section && section.querySelector('.capabilities-left');
+            if (!section || !displayTitle || !displayBody || !capsLeft) return;
 
-            // Wire mobile cards to the existing video modal
+            var cards = Array.prototype.slice.call(
+                section.querySelectorAll('.capabilities-card')
+            );
+
+            function activateCard(card) {
+                cards.forEach(function (c) { c.classList.remove('is-hovered'); });
+                card.classList.add('is-hovered');
+                displayTitle.textContent = card.getAttribute('data-cap-title');
+                displayBody.textContent  = card.getAttribute('data-cap-body');
+                section.classList.add('has-open');
+            }
+
+            function clearAll() {
+                cards.forEach(function (c) { c.classList.remove('is-hovered'); });
+                section.classList.remove('has-open');
+                displayTitle.textContent = '';
+                displayBody.textContent  = '';
+            }
+
+            cards.forEach(function (card) {
+                card.addEventListener('mouseenter', function () { activateCard(card); });
+                card.addEventListener('touchstart', function (e) {
+                    e.preventDefault();
+                    if (card.classList.contains('is-hovered')) {
+                        clearAll();
+                    } else {
+                        activateCard(card);
+                    }
+                }, { passive: false });
+            });
+
+            capsLeft.addEventListener('mouseleave', clearAll);
+        })();
+    </script>
+
+    <!-- Process: scroll-reveal for cards + right panel -->
+    <script>
+        (function () {
+            var els = document.querySelectorAll('.proc-reveal');
+            if (!els.length || !('IntersectionObserver' in window)) {
+                els.forEach(function (el) { el.classList.add('in-view'); });
+                return;
+            }
+
+            var observer = new IntersectionObserver(function (entries) {
+                entries.forEach(function (entry) {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('in-view');
+                        entry.target.classList.remove('past-view');
+                    } else {
+                        var rect = entry.boundingClientRect;
+                        if (rect.bottom < 0) {
+                            entry.target.classList.remove('in-view');
+                            entry.target.classList.add('past-view');
+                        } else {
+                            entry.target.classList.remove('in-view', 'past-view');
+                        }
+                    }
+                });
+            }, { threshold: 0.15 });
+
+            els.forEach(function (el) { observer.observe(el); });
+        })();
+    </script>
+
+    <!-- Process: hover-activated right panel display -->
+    <script>
+        (function () {
+            var section      = document.querySelector('.lsc-process-section');
+            var displayTitle = section && section.querySelector('.process-display-title');
+            var displayBody  = section && section.querySelector('.process-display-body');
+            var processLeft  = section && section.querySelector('.process-left');
+            if (!section || !displayTitle || !displayBody || !processLeft) return;
+
+            var cards = Array.prototype.slice.call(
+                section.querySelectorAll('.process-card')
+            );
+
+            var timelineNodes = Array.prototype.slice.call(
+                section.querySelectorAll('.process-timeline-node')
+            );
+
+            function activateCard(card) {
+                cards.forEach(function (c) { c.classList.remove('is-hovered'); });
+                card.classList.add('is-hovered');
+                displayTitle.textContent = card.getAttribute('data-process-title');
+                displayBody.textContent  = card.getAttribute('data-process-body');
+                section.classList.add('has-open');
+                /* Highlight matching timeline node */
+                var idx = cards.indexOf(card);
+                timelineNodes.forEach(function (n, i) {
+                    n.classList.toggle('is-active', i === idx);
+                });
+            }
+
+            function clearAll() {
+                cards.forEach(function (c) { c.classList.remove('is-hovered'); });
+                timelineNodes.forEach(function (n) { n.classList.remove('is-active'); });
+                section.classList.remove('has-open');
+                displayTitle.textContent = '';
+                displayBody.textContent  = '';
+            }
+
+            cards.forEach(function (card) {
+                /* Desktop: hover */
+                card.addEventListener('mouseenter', function () { activateCard(card); });
+                /* Touch: tap toggles */
+                card.addEventListener('touchstart', function (e) {
+                    e.preventDefault();
+                    if (card.classList.contains('is-hovered')) {
+                        clearAll();
+                    } else {
+                        activateCard(card);
+                    }
+                }, { passive: false });
+            });
+
+            /* Clear when mouse leaves the card stack entirely */
+            processLeft.addEventListener('mouseleave', clearAll);
+        })();
+    </script>
+
+    <!-- Mobile portfolio: scroll-reveal + video open + info drawer -->
+    <script>
+        (function () {
+
+            var modal   = document.getElementById('videoModal');
+            var iframe  = document.getElementById('videoModalIframe');
+            var titleEl = document.getElementById('videoModalTitle');
+
+            // ── Thumbnail tap → open video ──────────────────────────────
             document.querySelectorAll('.mobile-card').forEach(function (card) {
-                card.addEventListener('click', function () {
-                    var videoId    = card.getAttribute('data-video-id');
-                    var title      = card.getAttribute('data-project-title');
-                    var modal      = document.getElementById('videoModal');
-                    var iframe     = document.getElementById('videoIframe');
-                    var titleEl    = document.getElementById('videoModalTitle');
+                var thumb = card.querySelector('.mobile-card-thumb');
+                if (!thumb) return;
+                thumb.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    var videoId = card.getAttribute('data-video-id');
+                    var title   = card.getAttribute('data-project-title');
                     if (!modal || !iframe || !videoId) return;
                     iframe.src = 'https://player.mediadelivery.net/embed/662936/' + videoId + '?autoplay=true';
                     if (titleEl) titleEl.textContent = title || 'Project Film';
@@ -2759,12 +3390,27 @@
                 });
             });
 
-            // Scroll-reveal via IntersectionObserver
-            if (!('IntersectionObserver' in window)) {
-                // No observer support — leave all cards visible
-                return;
-            }
-            // Mark cards as hidden ONLY now that we know JS + observer are available
+            // ── Title row tap → toggle info drawer ─────────────────────
+            document.querySelectorAll('.mobile-card-header').forEach(function (btn) {
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    var card = btn.closest('.mobile-card');
+                    var isOpen = card.classList.contains('is-open');
+                    // Close all open drawers first
+                    document.querySelectorAll('.mobile-card.is-open').forEach(function (c) {
+                        c.classList.remove('is-open');
+                        c.querySelector('.mobile-card-header').setAttribute('aria-expanded', 'false');
+                    });
+                    // Toggle this one
+                    if (!isOpen) {
+                        card.classList.add('is-open');
+                        btn.setAttribute('aria-expanded', 'true');
+                    }
+                });
+            });
+
+            // ── Scroll-reveal via IntersectionObserver ──────────────────
+            if (!('IntersectionObserver' in window)) return;
             document.querySelectorAll('.mobile-card').forEach(function (c) {
                 c.classList.add('will-animate');
             });
@@ -2785,6 +3431,7 @@
                 });
             }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
             document.querySelectorAll('.mobile-card').forEach(function (c) { observer.observe(c); });
+
         })();
     </script>
 
