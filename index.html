@@ -21,10 +21,28 @@
            ============================================================ */
 
         @font-face {
+            font-family: 'Delight';
+            src: url('assets/fonts/delight/Delight-Regular.woff2') format('woff2'),
+                 url('assets/fonts/delight/Delight-Regular.woff')  format('woff');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Delight';
+            src: url('assets/fonts/delight/Delight-Bold.woff2') format('woff2'),
+                 url('assets/fonts/delight/Delight-Bold.woff')  format('woff');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+
+                @font-face {
             font-family: 'CS-Felice-Mono';
-            src: url('assets/LSC Fonts/CS-Felice-Mono-Monospaced-Font/Regular/CSFeliceMono-Regular.woff2') format('woff2'),
-                 url('assets/LSC Fonts/CS-Felice-Mono-Monospaced-Font/Regular/CSFeliceMono-Regular.woff')  format('woff'),
-                 url('assets/LSC Fonts/CS-Felice-Mono-Monospaced-Font/Regular/CSFeliceMono-Regular.otf')   format('opentype');
+            src: url('assets/fonts/cs-felice-mono/CSFeliceMono-Regular.woff2') format('woff2'),
+                 url('assets/fonts/cs-felice-mono/CSFeliceMono-Regular.woff')  format('woff'),
+                 url('assets/fonts/cs-felice-mono/CSFeliceMono-Regular.otf')   format('opentype');
             font-weight: 400;
             font-style: normal;
             font-display: swap;
@@ -32,9 +50,9 @@
 
         @font-face {
             font-family: 'CS-Felice-Mono';
-            src: url('assets/LSC Fonts/CS-Felice-Mono-Monospaced-Font/Italic/CSFeliceMono-Italic.woff2') format('woff2'),
-                 url('assets/LSC Fonts/CS-Felice-Mono-Monospaced-Font/Italic/CSFeliceMono-Italic.woff')  format('woff'),
-                 url('assets/LSC Fonts/CS-Felice-Mono-Monospaced-Font/Italic/CSFeliceMono-Italic.otf')   format('opentype');
+            src: url('assets/fonts/cs-felice-mono/CSFeliceMono-Italic.woff2') format('woff2'),
+                 url('assets/fonts/cs-felice-mono/CSFeliceMono-Italic.woff')  format('woff'),
+                 url('assets/fonts/cs-felice-mono/CSFeliceMono-Italic.otf')   format('opentype');
             font-weight: 400;
             font-style: italic;
             font-display: swap;
@@ -42,9 +60,9 @@
 
         @font-face {
             font-family: 'CS-Felice-Mono';
-            src: url('assets/LSC Fonts/CS-Felice-Mono-Monospaced-Font/Reverse Italic/CSFeliceMono-ReverseItalic.woff2') format('woff2'),
-                 url('assets/LSC Fonts/CS-Felice-Mono-Monospaced-Font/Reverse Italic/CSFeliceMono-ReverseItalic.woff')  format('woff'),
-                 url('assets/LSC Fonts/CS-Felice-Mono-Monospaced-Font/Reverse Italic/CSFeliceMono-ReverseItalic.otf')   format('opentype');
+            src: url('assets/fonts/cs-felice-mono/CSFeliceMono-ReverseItalic.woff2') format('woff2'),
+                 url('assets/fonts/cs-felice-mono/CSFeliceMono-ReverseItalic.woff')  format('woff'),
+                 url('assets/fonts/cs-felice-mono/CSFeliceMono-ReverseItalic.otf')   format('opentype');
             font-weight: 400;
             font-style: oblique -10deg;
             font-display: swap;
@@ -1929,7 +1947,7 @@
 
         /* ══════════════════════════════════════════════════════════════════════
            AUTHENTIC FILM CONTACT SHEET SUBSTRATE
-           PNG: assets/Film Contact-sheet/Film contact.png (5374 × 838 px native)
+           PNG: assets/sections/section-work/film-contact.png (5374 × 838 px native)
            The real Kodak scan is injected as .film-strip-container::before at
            scale 0.5909, rendering at exactly 3175 × 495 px. Each of the six
            frame holes in the PNG aligns with the 504px-wide .project-tile
@@ -1987,7 +2005,7 @@
             left: 0;
             width: 3162px;
             height: 493px;
-            background-image: url('assets/Film Contact-sheet/Film contact.png');
+            background-image: url('assets/sections/section-work/film-contact.png');
             background-size: 3162px 493px;
             background-position: 0 0;
             background-repeat: no-repeat;
@@ -2981,7 +2999,7 @@
         <div class="hud-corner bottom-right"></div>
 
         <div class="hud-measure-guide">
-            <img src="assets/HUD Ui Elements/Side Messure.png" alt="" aria-hidden="true">
+            <img src="assets/branding/hud-side-measure.png" alt="" aria-hidden="true">
         </div>
 
         <div class="hud-rec-indicator">
@@ -3099,7 +3117,7 @@
     <nav class="navbar" id="navbar">
         <div class="nav-container">
             <a href="#home" class="brand-logo absolute-logo animate-entrance delay-nav">
-                <img src="assets/LSC Logo [Transparent]/3.png" alt="LSC Creative Logo" class="nav-logo default-icon">
+                <img src="assets/branding/lsc-logo.png" alt="LSC Creative Logo" class="nav-logo default-icon">
             </a>
             <button class="mobile-menu-toggle" id="mobileMenuToggle" aria-label="Open navigation" aria-expanded="false">
                 <svg width="22" height="14" viewBox="0 0 22 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -3136,7 +3154,7 @@
                 <h1 class="display-title">LSC <em>Creative.</em></h1>
             </div>
 
-            <img src="assets/Igonography/shape_85.png" alt="" class="floating-icon hero-mark" style="position: absolute; z-index: 3; pointer-events: none;" aria-hidden="true">
+            <img src="assets/branding/shape-85.png" alt="" class="floating-icon hero-mark" style="position: absolute; z-index: 3; pointer-events: none;" aria-hidden="true">
 
 
             <div class="focus-meter-layer animate-entrance delay-nav" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 55;" aria-hidden="true">
@@ -3156,19 +3174,19 @@
             <div class="services-sticky-window">
                 <!-- Slide 1: Services Landing Blueprint Banner -->
                 <div class="services-slide is-active" data-slide="0">
-                    <img src="assets/01 SECTION ASSETS/SECTION_SERVICES/VENUE-SCREEN-MOCKUP 01Services.png" alt="Services Landing Blueprint Banner">
+                    <img src="assets/sections/section-services/services-01.png" alt="Services Landing Blueprint Banner">
                 </div>
                 <!-- Slide 2: Motion Video Production Workspace -->
                 <div class="services-slide" data-slide="1">
-                    <img src="assets/01 SECTION ASSETS/SECTION_SERVICES/VENUE-SCREEN-MOCKUP 02 Motion.png" alt="Motion Video Production Workspace">
+                    <img src="assets/sections/section-services/services-02.png" alt="Motion Video Production Workspace">
                 </div>
                 <!-- Slide 3: Stills Photography Masterboard -->
                 <div class="services-slide" data-slide="2">
-                    <img src="assets/01 SECTION ASSETS/SECTION_SERVICES/VENUE-SCREEN-MOCKUP 03 Stills.png" alt="Stills Photography Masterboard">
+                    <img src="assets/sections/section-services/services-03.png" alt="Stills Photography Masterboard">
                 </div>
                 <!-- Slide 4: LSC Creative Projector Outro Canvas -->
                 <div class="services-slide" data-slide="3">
-                    <img src="assets/01 SECTION ASSETS/SECTION_SERVICES/VENUE-SCREEN-MOCKUP 04 END SLIDE.png" alt="LSC Creative Projector Outro Canvas">
+                    <img src="assets/sections/section-services/services-04.png" alt="LSC Creative Projector Outro Canvas">
                 </div>
                 <!-- Progress bar -->
                 <div class="services-progress-bar">
@@ -3211,7 +3229,7 @@
 
                         <!-- Frame-perfect composite: all 4 projects in one PNG -->
                         <img
-                            src="assets/01 SECTION ASSETS/SECTION_Selected Work/Selected Work Thumbails (film contact sheet).png"
+                            src="assets/sections/section-work/film-contact.png"
                             alt="LSC Creative — Selected Work Film Contact Sheet"
                             class="film-contact-sheet-img"
                             draggable="false"
@@ -3309,7 +3327,7 @@
 
                 <div class="mobile-card" data-video-id="89a0b68b-1afe-4c5a-9d83-67fc880a876a" data-project-title="Marine Vitalities">
                     <div class="mobile-card-thumb">
-                        <img src="assets/Selected Work Thumbnails/Marine Vitalities-thumb.png" alt="Marine Vitalities">
+                        <img src="assets/sections/section-work/marine-vitalities-thumb.png" alt="Marine Vitalities">
                         <div class="mobile-card-play" aria-hidden="true">&#8964;</div>
                         <div class="mobile-card-play-overlay">
                             <button class="mobile-card-play-overlay-btn" aria-label="Watch video">
@@ -3333,7 +3351,7 @@
 
                 <div class="mobile-card" data-video-id="b73539f4-26bd-470d-b658-8b2b0870098b" data-project-title="BNB AutoHaus">
                     <div class="mobile-card-thumb">
-                        <img src="assets/Selected Work Thumbnails/BNB Autohaus-thumb.png" alt="BNB AutoHaus">
+                        <img src="assets/sections/section-work/bnb-autohaus-thumb.png" alt="BNB AutoHaus">
                         <div class="mobile-card-play" aria-hidden="true">&#8964;</div>
                         <div class="mobile-card-play-overlay">
                             <button class="mobile-card-play-overlay-btn" aria-label="Watch video">
@@ -3357,7 +3375,7 @@
 
                 <div class="mobile-card" data-video-id="0d00bcf5-bf60-4c2c-8513-f8e41b490670" data-project-title="BakeHouse">
                     <div class="mobile-card-thumb">
-                        <img src="assets/Selected Work Thumbnails/BakeHouse-thumb.png" alt="BakeHouse">
+                        <img src="assets/sections/section-work/bakehouse-thumb.png" alt="BakeHouse">
                         <div class="mobile-card-play" aria-hidden="true">&#8964;</div>
                         <div class="mobile-card-play-overlay">
                             <button class="mobile-card-play-overlay-btn" aria-label="Watch video">
@@ -3381,7 +3399,7 @@
 
                 <div class="mobile-card" data-video-id="380dcc46-201f-46a1-8157-4e2fb3d88415" data-project-title="Illawarra Hawks">
                     <div class="mobile-card-thumb">
-                        <img src="assets/Selected Work Thumbnails/Illawarra Hawks-thumb.png" alt="Illawarra Hawks">
+                        <img src="assets/sections/section-work/illawarra-hawks-thumb.png" alt="Illawarra Hawks">
                         <div class="mobile-card-play" aria-hidden="true">&#8964;</div>
                         <div class="mobile-card-play-overlay">
                             <button class="mobile-card-play-overlay-btn" aria-label="Watch video">
