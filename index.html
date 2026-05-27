@@ -6,34 +6,88 @@
     <meta name="description" content="LSC Creative — Documentary-style brand films and editorial photography. We don't make ads, we make films that tell the truth about great brands.">
     <title>LSC Creative | Cinematic Video Production</title>
     <link rel="icon" type="image/png" href="assets/01 SECTION ASSETS/icon.png">
-    <!-- Google Fonts -->
+    <!-- Google Fonts — Outfit retained as CS-Felice-Mono fallback anchor -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
     <style>
         /* ============================================================
-           LSC CREATIVE — DESIGN SYSTEM V3.0 + KVS STUDIO AESTHETIC
+           CS-FELICE-MONO — LOCAL FONT-FACE DECLARATIONS
+           Source: assets/LSC Fonts/CS-Felice-Mono-Monospaced-Font/
+           Variants: Regular (400) · Italic (400i) · Reverse Italic (oblique)
+           Compile order: woff2 → woff → otf (descending efficiency)
+           font-display: swap prevents FOUT / layout shifts on first paint.
            ============================================================ */
 
-        /* --- GLOBAL TOKENS --- */
+        @font-face {
+            font-family: 'CS-Felice-Mono';
+            src: url('assets/LSC Fonts/CS-Felice-Mono-Monospaced-Font/Regular/CSFeliceMono-Regular.woff2') format('woff2'),
+                 url('assets/LSC Fonts/CS-Felice-Mono-Monospaced-Font/Regular/CSFeliceMono-Regular.woff')  format('woff'),
+                 url('assets/LSC Fonts/CS-Felice-Mono-Monospaced-Font/Regular/CSFeliceMono-Regular.otf')   format('opentype');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'CS-Felice-Mono';
+            src: url('assets/LSC Fonts/CS-Felice-Mono-Monospaced-Font/Italic/CSFeliceMono-Italic.woff2') format('woff2'),
+                 url('assets/LSC Fonts/CS-Felice-Mono-Monospaced-Font/Italic/CSFeliceMono-Italic.woff')  format('woff'),
+                 url('assets/LSC Fonts/CS-Felice-Mono-Monospaced-Font/Italic/CSFeliceMono-Italic.otf')   format('opentype');
+            font-weight: 400;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'CS-Felice-Mono';
+            src: url('assets/LSC Fonts/CS-Felice-Mono-Monospaced-Font/Reverse Italic/CSFeliceMono-ReverseItalic.woff2') format('woff2'),
+                 url('assets/LSC Fonts/CS-Felice-Mono-Monospaced-Font/Reverse Italic/CSFeliceMono-ReverseItalic.woff')  format('woff'),
+                 url('assets/LSC Fonts/CS-Felice-Mono-Monospaced-Font/Reverse Italic/CSFeliceMono-ReverseItalic.otf')   format('opentype');
+            font-weight: 400;
+            font-style: oblique -10deg;
+            font-display: swap;
+        }
+
+        /* ============================================================
+           LSC CREATIVE — DESIGN SYSTEM V4.0 + KVS STUDIO AESTHETIC
+           ============================================================ */
+
+        /* ── STAGE 1: CENTRALISED DESIGN TOKEN MATRIX ────────────── */
         :root {
+            /* Surface Variables */
             --lsc-black:     #0E0E0E;
             --lsc-surface:   #1C1F24;
-            --lsc-white:     #F0EDE8;
-            --lsc-terra:     #C0603C;
-            --lsc-sage:      #8FA89B;
-            --lsc-charcoal:  #252930;
-            --lsc-slate:     #3A4756;
-            --lsc-mid:       #7A7470;
+
+            /* Brand Accent Tokens */
+            --lsc-white:     #F0EDE8;   /* Warm Platinum */
+            --lsc-terra:     #C0603C;   /* Terracotta — section accent */
+
+
+            /* Extended Palette */
             --lsc-rule:      rgba(240, 237, 232, 0.07);
             --lsc-muted:     rgba(240, 237, 232, 0.45);
 
-            /* Legacy aliases */
-            --bg-primary:    var(--lsc-black);
-            --bg-secondary:  var(--lsc-surface);
-            --text-primary:  var(--lsc-white);
-            --accent-color:  var(--lsc-sage);
+            /* ── STAGE 2: TYPOGRAPHY TOKENS ──────────────────────── */
+            --font-display:  'Delight', Georgia, serif;
+            --font-mono:     'CS-Felice-Mono', 'Outfit', sans-serif;
+            --font-primary:  var(--font-mono);
+
+            /* ── Spacing Scale (8-pt grid) ── */
+            --gap-xs:  0.5rem;    /* 8px  — icon + text */
+            --gap-sm:  1rem;      /* 16px — form fields */
+            --gap-md:  2rem;      /* 32px — stacked cards */
+            --gap-lg:  4rem;      /* 64px — page sections */
+            --gap-xl:  8rem;      /* 128px — major transitions */
+
+            /* ── Border Radius ── */
+            --radius-none: 0px;
+            --radius-sm:   4px;
+
+            /* ── Transitions ── */
+            --trans-interactive: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+            --trans-cinematic:   all 0.8s cubic-bezier(0.22, 1, 0.36, 1);
         }
 
         *, *::before, *::after {
@@ -46,17 +100,20 @@
             scroll-behavior: smooth;
         }
 
+        /* ── STAGE 2: BODY — DIGITAL SCREEN OPTIMIZATION ────────── */
         body.dark-theme {
             background-color: var(--lsc-black);
             color: var(--lsc-white);
-            font-family: 'FunnelSans', 'Outfit', sans-serif;
+            font-family: var(--font-primary);
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
+            font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
         }
 
         /* ── Reusable fixed grid background for all light/beige sections ── */
         .light-grid {
-            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22480%22%20height%3D%22360%22%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%2214%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%2214%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3C%2Fsvg%3E");
+            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22480%22%20height%3D%22360%22%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%2214%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%22466%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%2214%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%22346%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3C%2Fsvg%3E");
             background-attachment: fixed;
             background-size: 480px 360px;
             background-repeat: repeat;
@@ -141,7 +198,7 @@
             background: rgba(30, 34, 40, 0.35);
             backdrop-filter: blur(24px);
             -webkit-backdrop-filter: blur(24px);
-            border: 1px solid rgba(255, 255, 255, 0.15);
+            border: none;
             box-shadow: 0 40px 80px rgba(0, 0, 0, 0.6);
             max-width: 1000px;
             width: 100%;
@@ -216,7 +273,7 @@
         }
 
         .about-eyebrow {
-            font-family: 'FunnelSans', sans-serif;
+            font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
             font-size: 10px;
             letter-spacing: 0.28em;
             text-transform: uppercase;
@@ -237,7 +294,7 @@
 
         .about-close-btn:hover {
             opacity: 1;
-            color: var(--lsc-sage);
+            color: var(--lsc-terra);
         }
 
         .about-modal-title {
@@ -257,11 +314,11 @@
         }
 
         .about-modal-copy {
-            font-family: 'FunnelSans', sans-serif;
+            font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
             font-size: 16px;
-            font-weight: 300;
+            font-weight: 400;
             line-height: 1.7;
-            color: var(--lsc-muted);
+            color: var(--lsc-white);
             letter-spacing: 0.01em;
             max-width: 420px;
         }
@@ -276,7 +333,7 @@
         }
 
         .about-modal-tag {
-            font-family: 'FunnelSans', sans-serif;
+            font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
             font-size: 10px;
             letter-spacing: 0.22em;
             text-transform: uppercase;
@@ -338,7 +395,7 @@
             color: var(--lsc-terra);
             text-transform: uppercase;
             letter-spacing: 0.28em;
-            font-family: 'FunnelSans', sans-serif;
+            font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
             font-size: 11px;
             margin-bottom: 0.75rem;
             display: block;
@@ -370,8 +427,44 @@
             background-color: var(--lsc-rule);
         }
 
+        /* ── STAGE 3: ICONOGRAPHY ALIGNMENT SYSTEM ───────────────── */
+        /* All icon+text pairs use inline-flex with cap-height alignment.
+           SVG size locked to 8-pt grid. Stroke weight fixed at 1.5px.
+           Decorative icons carry aria-hidden="true" (enforced in DOM).  */
+        .icon-text-pair {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--gap-xs);     /* 8px minimum; 12px for larger pairs */
+        }
+
+        svg[aria-hidden="true"] {
+            flex-shrink: 0;
+            pointer-events: none;
+        }
+
+        /* Standard UI icons: 24×24 (1.5rem) */
+        .icon-ui {
+            width: 24px;
+            height: 24px;
+            stroke-width: 1.5px;
+        }
+
+        /* Inline text icons: 16×16 (1rem) — cap-height matched to body */
+        .icon-inline {
+            width: 16px;
+            height: 16px;
+            stroke-width: 1.5px;
+        }
+
+        /* Large feature icons: 48×48 (3rem) */
+        .icon-feature {
+            width: 48px;
+            height: 48px;
+            stroke-width: 1.5px;
+        }
+
         .section-eyebrow {
-            font-family: 'FunnelSans', sans-serif;
+            font-family: var(--font-primary);
             font-size: 10px;
             letter-spacing: 0.28em;
             text-transform: uppercase;
@@ -389,8 +482,8 @@
            ============================================================ */
         .lsc-services-section {
             padding: 0;                              /* horizontal padding lives inside columns */
-            background-color: #E8E2D9;
-            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22480%22%20height%3D%22360%22%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%2214%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%2214%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3C%2Fsvg%3E");
+            background-color: #FFFFFF;
+            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22480%22%20height%3D%22360%22%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%2214%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%22466%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%2214%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%22346%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3C%2Fsvg%3E");
             background-attachment: fixed;
             background-size: 480px 360px;
             background-repeat: repeat;
@@ -399,6 +492,15 @@
             z-index: 3;
             overflow: hidden;
             transition: background-color 0.3s ease, border-color 0.3s ease;
+        }
+
+        /* ── Capabilities mockup image ── */
+        .capabilities-mockup-img {
+            display: block;
+            width: 100%;
+            height: auto;
+            border: none;
+            outline: none;
         }
 
         /* Split two-column layout: zero gap so columns butt up edge-to-edge */
@@ -464,7 +566,7 @@
 
         /* Editorial body paragraph — large enough to fill the panel */
         .capabilities-display-body {
-            font-family: 'FunnelSans', sans-serif;
+            font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
             font-size: clamp(18px, 1.9vw, 26px);
             font-weight: 300;
             line-height: 1.55;
@@ -480,7 +582,7 @@
         /* .services-header removed — header now inside .capabilities-right */
 
         .eyebrow-accent {
-            font-family: 'FunnelSans', sans-serif;
+            font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
             font-size: 10px;
             color: var(--lsc-terra);
             letter-spacing: 0.28em;
@@ -557,7 +659,7 @@
 
         /* ── { 01 } bracket number — terracotta eyebrow, no fixed width ── */
         .trigger-number {
-            font-family: 'FunnelSans', sans-serif;
+            font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
             font-size: 11px;
             letter-spacing: 0.22em;
             text-transform: uppercase;
@@ -592,7 +694,7 @@
             transition: color 0.25s ease;
         }
 
-        .accordion-trigger:hover .capability-icon { color: var(--lsc-sage); }
+        .accordion-trigger:hover .capability-icon { color: var(--lsc-terra); }
 
         /* ── Architectural + / − toggle: 1px hairline cross ── */
         .trigger-indicator {
@@ -624,12 +726,12 @@
             opacity: 0;
         }
 
-        /* ── Hover states — brand guide: sage = interactive token ── */
-        .accordion-trigger:hover .trigger-title   { color: var(--lsc-sage); }
-        .accordion-trigger:hover .trigger-number  { color: var(--lsc-sage); }
+        /* ── Hover states — brand guide: terra = interactive token ── */
+        .accordion-trigger:hover .trigger-title   { color: var(--lsc-terra); }
+        .accordion-trigger:hover .trigger-number  { color: var(--lsc-terra); }
         .accordion-trigger:hover .trigger-indicator,
         .accordion-trigger:hover .trigger-indicator::before {
-            background-color: var(--lsc-sage);
+            background-color: var(--lsc-terra);
         }
 
         /* ── Open card: dark elevated — deep shadow + subtle lift ── */
@@ -653,7 +755,7 @@
         }
 
         .cinematic-accordion[open] .capability-icon {
-            color: var(--lsc-sage);
+            color: var(--lsc-terra);
         }
 
         .cinematic-accordion[open] .trigger-indicator,
@@ -667,7 +769,7 @@
 
         /* Hover states on open row */
         .cinematic-accordion[open] .accordion-trigger:hover .trigger-title {
-            color: var(--lsc-sage);
+            color: var(--lsc-terra);
         }
 
         /* ── Body text: matches card horizontal padding ── */
@@ -677,7 +779,7 @@
         }
 
         .accordion-content p {
-            font-family: 'FunnelSans', sans-serif;
+            font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
             font-size: 15px;
             font-weight: 300;
             line-height: 1.75;
@@ -752,7 +854,7 @@
         }
 
         .process-section-eyebrow {
-            font-family: 'FunnelSans', sans-serif;
+            font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
             font-size: 10px;
             letter-spacing: 0.22em;
             text-transform: uppercase;
@@ -850,7 +952,7 @@
         }
 
         .process-timeline-num {
-            font-family: 'FunnelSans', sans-serif;
+            font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
             font-size: 9px;
             letter-spacing: 0.12em;
             color: rgba(240, 237, 232, 0.45);
@@ -906,7 +1008,7 @@
             color: var(--lsc-terra);
         }
         .capabilities-card.is-hovered .capability-icon {
-            color: var(--lsc-sage);
+            color: var(--lsc-terra);
         }
 
         /* ── Process hover cards (no accordion — hover only) ── */
@@ -950,7 +1052,69 @@
             color: var(--lsc-terra);
         }
         .process-card.is-hovered .capability-icon {
-            color: var(--lsc-sage);
+            color: var(--lsc-terra);
+        }
+
+
+        /* ── Process section: light palette (beige + grid, matches Capabilities) ── */
+        .lsc-process-section {
+            background-color: #FFFFFF;
+            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22480%22%20height%3D%22360%22%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%2214%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%22466%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%2214%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%22346%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3C%2Fsvg%3E");
+            background-attachment: fixed;
+            background-size: 480px 360px;
+            background-repeat: repeat;
+            border-top: 1px solid rgba(14, 14, 14, 0.08);
+        }
+        .process-right {
+            background-color: transparent;
+            border-left: 1px solid rgba(14, 14, 14, 0.08);
+        }
+        .process-section-title {
+            color: var(--lsc-black);
+        }
+        .process-display-title {
+            color: var(--lsc-black);
+            font-size: clamp(24px, 4vw, 60px); /* scaled to guarantee one-line */
+            white-space: nowrap;               /* never wraps */
+            overflow: hidden;
+        }
+        .process-display-body {
+            color: rgba(14, 14, 14, 0.62);
+        }
+        .process-timeline-node {
+            border-color: rgba(14, 14, 14, 0.22);
+        }
+        .process-timeline-num {
+            color: rgba(14, 14, 14, 0.45);
+        }
+        .process-timeline-line {
+            background: repeating-linear-gradient(
+                to right,
+                rgba(14, 14, 14, 0.18) 0px,
+                rgba(14, 14, 14, 0.18) 4px,
+                transparent 4px,
+                transparent 8px
+            );
+        }
+        /* Cards: pure white on beige for clean lift */
+        .process-card {
+            background: var(--lsc-terra);
+            box-shadow:
+                0 1px 3px  rgba(14, 14, 14, 0.10),
+                0 4px 20px rgba(14, 14, 14, 0.18);
+        }
+        .process-card:hover {
+            background: #A85432; /* deepened terracotta on hover lift */
+        }
+        /* Card text: warm white palette on terracotta */
+        .process-card .trigger-title {
+            color: var(--lsc-white);
+        }
+        .process-card .trigger-number {
+            color: rgba(240, 237, 232, 0.72);
+        }
+        .process-card .capability-icon {
+            color: rgba(240, 237, 232, 0.65);
         }
 
         /* ============================================================
@@ -972,7 +1136,7 @@
 
         .footer-left p,
         .footer-right a {
-            font-family: 'FunnelSans', sans-serif;
+            font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
             font-size: 11px;
             letter-spacing: 0.14em;
             text-transform: uppercase;
@@ -987,12 +1151,12 @@
         }
 
         .footer-right a:hover {
-            color: var(--lsc-sage);
+            color: var(--lsc-terra);
         }
 
         /* ── Selected Work: beige bg + dark grid fades in as you scroll in ── */
         .horizontal-scroll-section {
-            background-color: #E8E2D9 !important;   /* match capabilities beige */
+            background-color: #FFFFFF !important;   /* brand standard: white + grid */
         }
 
         /* Grid lives on a ::before so we can apply a scroll-reveal mask */
@@ -1002,7 +1166,7 @@
             inset: 0;
             z-index: 0;
             pointer-events: none;
-            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22480%22%20height%3D%22360%22%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%2214%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%2214%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3C%2Fsvg%3E");
+            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22480%22%20height%3D%22360%22%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%2214%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%22466%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%2214%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%22346%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3C%2Fsvg%3E");
             background-attachment: fixed;
             background-size: 480px 360px;
             background-repeat: repeat;
@@ -1013,7 +1177,7 @@
 
         /* Mobile portfolio: same beige + grid fade */
         .mobile-portfolio-section {
-            background-color: #E8E2D9 !important;
+            background-color: #FFFFFF !important;
         }
         .mobile-portfolio-section::before {
             content: '';
@@ -1021,7 +1185,7 @@
             inset: 0;
             z-index: 0;
             pointer-events: none;
-            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22480%22%20height%3D%22360%22%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%2214%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%2214%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3C%2Fsvg%3E");
+            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22480%22%20height%3D%22360%22%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%2214%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%22466%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%2214%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%22346%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3C%2Fsvg%3E");
             background-attachment: fixed;
             background-size: 480px 360px;
             background-repeat: repeat;
@@ -1095,7 +1259,7 @@
         }
 
         .video-modal-eyebrow {
-            font-family: 'FunnelSans', sans-serif;
+            font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
             font-size: 10px;
             letter-spacing: 0.28em;
             text-transform: uppercase;
@@ -1132,7 +1296,7 @@
 
         .video-modal-close:hover {
             opacity: 1;
-            color: var(--lsc-sage); /* Premium sage compliant hover state */
+            color: var(--lsc-terra); /* terracotta hover */
             transform: rotate(90deg);
         }
 
@@ -1207,9 +1371,9 @@
         .playable-tile:hover .custom-play-indicator {
             opacity: 1;
             transform: translate(-50%, -50%) scale(1);
-            border-color: var(--lsc-sage); /* Compliant Sage */
+            border-color: var(--lsc-terra); /* terracotta interactive */
             background: rgba(14, 14, 14, 0.7);
-            color: var(--lsc-sage);
+            color: var(--lsc-terra);
         }
 
         .playable-tile:hover .tile-media::after {
@@ -1283,7 +1447,7 @@
         }
 
         .form-modal-eyebrow {
-            font-family: 'FunnelSans', sans-serif;
+            font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
             font-size: 10px;
             letter-spacing: 0.28em;
             text-transform: uppercase;
@@ -1320,7 +1484,7 @@
 
         .form-modal-close:hover {
             opacity: 1;
-            color: var(--lsc-sage); /* Premium sage compliant hover state */
+            color: var(--lsc-terra); /* terracotta hover */
             transform: rotate(90deg);
         }
 
@@ -1402,7 +1566,7 @@
         }
 
         .contact-eyebrow {
-            font-family: 'FunnelSans', sans-serif;
+            font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
             font-size: 10px;
             letter-spacing: 0.28em;
             text-transform: uppercase;
@@ -1428,7 +1592,7 @@
         /* ============================================================
            DYNAMIC TEXT CAROUSEL — Contact Section
            Brand compliance: --lsc-terra for rotating accent per brand
-           guide v4 (sage = interactive only, never decorative).
+           guide v4 (terra = interactive only, never decorative).
            ============================================================ */
 
         /* ─ Stage 2: height locked to 1.1em + fade mask on top/bottom edges ─ */
@@ -1563,8 +1727,8 @@
         .contact-cta-btn.massive-btn:hover,
         .contact-cta-btn.secondary-contact-btn:hover {
             background-color: transparent;
-            border-color: var(--lsc-sage);
-            color: var(--lsc-sage);
+            border-color: var(--lsc-terra);
+            color: var(--lsc-terra);
             transform: translateY(-2px);
         }
 
@@ -1712,7 +1876,7 @@
             bottom: 38px;
             right: 38px;
             font-family: var(--font-primary);
-            font-size: 16px;
+            font-size: clamp(10px, 1.1vw, 16px);
             font-weight: 400;
             color: var(--lsc-white, #F0EDE8);
             letter-spacing: 2px;
@@ -1735,7 +1899,7 @@
         /* ============================================================
            SELECTED WORKS — EXTERNAL DATA OVERLAY SYSTEM V2.0
            Stage 1–3 reconciliation: overlay lives BELOW the filmstrip,
-           connected by the sage leader line. Viewport is clean.
+           Viewport is clean.
            ============================================================ */
 
         /* ── Override sticky-track overflow: clip x / visible y ──
@@ -1747,11 +1911,13 @@
         }
 
         /* ── Filmstrip: scale down + rise to clear viewport for overlay ── */
-        .film-strip-container {
+        .film-strip-container,
+        .film-contact-strip-wrapper {
             transition: transform 0.5s cubic-bezier(0.65, 0, 0.35, 1);
             transform-origin: center top;
         }
-        .film-strip-container:has(.playable-tile:hover) {
+        .film-strip-container:has(.playable-tile:hover),
+        .film-contact-strip-wrapper:has(.video-hotspot:hover) {
             transform: scale(0.85) translateY(-8%);
         }
 
@@ -1762,12 +1928,248 @@
         }
 
         /* ══════════════════════════════════════════════════════════════════════
+           AUTHENTIC FILM CONTACT SHEET SUBSTRATE
+           PNG: assets/Film Contact-sheet/Film contact.png (5374 × 838 px native)
+           The real Kodak scan is injected as .film-strip-container::before at
+           scale 0.5909, rendering at exactly 3175 × 495 px. Each of the six
+           frame holes in the PNG aligns with the 504px-wide .project-tile
+           elements to sub-2px accuracy. Opaque sprocket/edge geometry overlays
+           the perimeter; transparent frame holes let the videos show through.
+           All tiles beneath remain fully interactive — pointer-events: none.
+           ══════════════════════════════════════════════════════════════════════ */
+
+        /* ── Override legacy CSS gradient strip from style.css ─────────────── */
+        /* Padding computed from pixel-accurate PIL analysis of Film contact.png:
+           PNG native 838px tall. Sprocket bands: rows 3–122 (top), 706–834 (bottom).
+           Frame hole: rows 123–705 (583px native). Render scale: 493÷838 = 0.5884.
+           Rendered frame hole: top=72px, height=343px, bottom=415px.
+           Container total = 72 + 343 + 78 = 493px — zero vertical gap.             */
+        .film-strip-container {
+            padding: 72px 0 78px !important;
+            background-image: none !important;  /* Kill the procedural gradient film generator */
+            background-color: transparent !important;
+        }
+
+        /* ── Tile-media: pixel-locked + horizontal-only frame-fill ─────────────
+           Frame hole rendered height = 343px. Explicit height overrides aspect-ratio.
+           height: 343px fills the frame hole exactly — zero vertical overflow,
+           zero bleed into the sprocket hole rows (which are transparent in the PNG
+           and would show the image if any vertical expansion occurred).
+           transform: scaleX(1.04) — horizontal fill ONLY:
+             Expands each tile ~10px left and ~10px right, sliding image data beneath
+             the Kodak frame's left/right inner border. The PNG ::before at z-index 30
+             masks the horizontal overflow. scaleX leaves height untouched — the top
+             and bottom image edges stay locked inside the opaque sprocket bands.
+           transform-origin: center center — horizontal expansion is symmetric.
+           overflow: hidden — clips content to the pre-transform box.
+           border-radius: 0 — no rounded-corner transparency.
+           background: #0E0E0E — dark failsafe; no white flash on sub-px gaps.      */
+        .film-frames-grid .tile-media,
+        .film-frames-grid .tile-media.native-aspect {
+            height: 343px !important;
+            aspect-ratio: unset !important;
+            border-radius: 0 !important;
+            overflow: hidden !important;
+            background: #0E0E0E !important;
+            transform: scaleX(1.04) !important;
+            transform-origin: center center !important;
+        }
+
+        /* ── Authentic Kodak scan overlay — the physical film material ────────
+           Container height = 72 + 343 + 78 = 493px (pixel-matched to frame hole).
+           PNG rescaled to 493px tall → width = 5374 × (493÷838) = 3162px.
+           Frame hole y=72px–415px (343px) aligns exactly with tile-media.
+           pointer-events: none — all tile clicks / hover pass straight through. */
+        .film-strip-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 3162px;
+            height: 493px;
+            background-image: url('assets/Film Contact-sheet/Film contact.png');
+            background-size: 3162px 493px;
+            background-position: 0 0;
+            background-repeat: no-repeat;
+            pointer-events: none;
+            z-index: 30;
+        }
+
+        /* ── Adjust film-frames-grid spacing to match real scan divider widths ─
+           PNG inter-frame dividers avg ~38px native → 23px at scale 0.5909.
+           Left-edge stub is ~32px native → 19px at scale.                    */
+        .film-frames-grid {
+            gap: 23px !important;
+            padding: 0 19px !important;
+        }
+
+        /* ── Thumbnail image: hard-fill the tile-media container, zero gap ─────
+           object-fit: cover ensures correct crop on any source ratio.
+           Explicit 100% w/h + display block removes any inline-element baseline
+           gap that browsers insert under <img> tags (sub-pixel white line fix). */
+        .film-frames-grid .tile-media img.tile-thumbnail {
+            display: block !important;
+            width: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            object-fit: cover !important;
+            object-position: center center !important;
+        }
+
+        /* ── Legacy synthetic edge-text: permanently retired ─────────────────
+           Removed from HTML. This rule is a belt-and-suspenders safety net. */
+        .film-edge-text {
+            display: none !important;
+        }
+
+        /* ════════════════════════════════════════════════════════════════════════
+           MASTER COMPOSITE CONTACT SHEET — single-asset hotspot architecture
+           Canva-mastered PNG (4374 × 838px native, RGBA) renders as one continuous
+           strip at height: 493px → rendered width 2573px. Four transparent
+           <button> targets overlay the 4 frame columns at 25% each.
+           Each button carries .playable-tile so all existing hover CSS +
+           JS engines (modal controller, HUD leader line) fire with zero changes.
+           ════════════════════════════════════════════════════════════════════════ */
+
+        /* ── Parent track + gallery: explicit transparency — no accidental fills ── */
+        .sticky-track,
+        .horizontal-gallery {
+            background: transparent !important;
+            background-color: transparent !important;
+        }
+
+        /* ── Outer wrapper: transparent — PNG alpha is the sole visual boundary ── */
+        .film-contact-strip-wrapper {
+            position: relative;
+            display: inline-block;
+            vertical-align: middle;
+            margin-left: 30vw;
+            white-space: nowrap;
+            background: transparent !important;
+            background-color: transparent !important;
+            /* Raise strip toward top of the flex-aligned gallery so the
+               project-info-overlay has enough viewport room below to render
+               fully without clipping at typical laptop screen heights.      */
+            align-self: flex-start !important;
+            margin-top: 32px !important;
+            /* box-shadow removed — rectangular shadow bleeds into transparent PNG zones.
+               drop-shadow is applied to the img below; it follows the alpha contour.  */
+        }
+
+        /* ── Composite PNG: alpha-aware shadow + full transparency pass-through ── */
+        .film-contact-sheet-img {
+            display: block;
+            height: 440px;          /* 4374/838 × 440 = 2296px rendered width */
+            width: auto;
+            pointer-events: none;   /* All interactions route through hotspot buttons */
+            user-select: none;
+            -webkit-user-drag: none;
+            /* filter: drop-shadow traces the PNG's alpha edge — shadow only appears
+               around the opaque Kodak substrate, never inside transparent sprocket holes
+               or across the transparent outer margins of the image.               */
+            filter: drop-shadow(0 20px 50px rgba(0, 0, 0, 0.45));
+        }
+
+        /* ── Transparent hotspot grid: pixel-locked to Kodak material only ──
+           PNG is 4374×838 native → 2573px rendered wide at height:493px.
+           PIL analysis: transparent left zone = 293px native = 172px rendered.
+           Transparent right zone = 455px native = 268px rendered.
+           Opaque Kodak material: native cols 293–3918 → rendered 172px–2305px.
+           Material width = 3625px native = 2133px rendered.
+           Overlay anchored at left:172px, width:2133px — 4 buttons of ~533px
+           each precisely align with the 4 Kodak film frames.
+           left:0 would place button-1 inside the transparent void (148px left
+           of frame-1), causing all titles to appear outside the strip.         ── */
+        .hotspot-overlay {
+            position: absolute;
+            top: 0;
+            left: 154px;            /* Skip transparent left zone: 293px native × (440/838) */
+            width: 1904px;          /* Kodak material: 3625px native × (440/838) — 4 frames × 476px */
+            height: 100%;
+            display: flex;
+            align-items: stretch;
+            pointer-events: none;   /* Grid itself is pass-through; buttons handle events */
+        }
+
+        /* ── Individual frame hotspot: 25% each, invisible, clickable ── */
+        .video-hotspot {
+            flex: 1;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            background: transparent !important;
+            background-color: transparent !important;
+            border: none;
+            padding: 0;
+            margin: 0;
+            cursor: pointer;
+            pointer-events: all;
+            overflow: visible;      /* Allows .project-info-overlay to break below strip */
+            -webkit-appearance: none;
+            appearance: none;
+            white-space: normal;
+        }
+
+        /* Breath-of-light confirmation on hover — imperceptible, fully transparent base */
+        .video-hotspot:hover {
+            background: rgba(255, 255, 255, 0.03) !important;
+        }
+
+        /* ── cinematic-film-capsule inside hotspot: flex-fill, own containing block ──
+           flex: 1 makes capsule consume the full button height via the flex-column
+           parent. position: relative makes it the containing block for .tile-meta's
+           position: absolute — not the distant .sticky-track ancestor.
+           This fixes the "viewport left + 24px" title misalignment bug.           */
+        .video-hotspot .cinematic-film-capsule {
+            flex: 1;
+            position: relative;
+            width: 100%;
+            display: block;
+            overflow: visible;
+        }
+
+        /* ── Project title: lower-left corner INSIDE the photo frame boundary ──
+           Strip height = 440px. Lower photo-frame edge = y 370px from top =
+           70px from hotspot bottom. bottom: 88px = 18px above that boundary —
+           title sits cleanly inside the frame, clear of the brown measurement
+           track and sprocket holes. left: 24px = inner frame left margin.
+           z-index: 50 renders above the PNG overlay (z-index: 30).
+           HUD leader-line JS reads titleEl.getBoundingClientRect() live —
+           relocating the title here automatically corrects the vector path.  */
+        .video-hotspot .tile-meta {
+            position: absolute !important;
+            bottom: 88px !important;
+            left: 24px !important;
+            right: auto !important;
+            top: auto !important;
+            text-align: left !important;
+            pointer-events: none;
+            z-index: 50;
+            margin: 0 !important;
+        }
+        .video-hotspot .project-title {
+            font-family: 'Delight', Georgia, serif;
+            font-weight: 700;
+            font-size: 1.5rem;
+            letter-spacing: -0.02em;
+            line-height: 1;
+            color: #F0EDE8;
+            text-align: left !important;
+            text-shadow: 0 2px 16px rgba(0, 0, 0, 0.95),
+                         0 0 40px rgba(0, 0, 0, 0.6);
+            margin: 0;
+            display: inline-block;
+            transform: none !important;
+        }
+
+        /* ══════════════════════════════════════════════════════════════════════
            THE CINEMATIC FILM CAPSULE
-           A single, frozen piece of geometry. Sprockets + video frame + tile meta
-           travel as one unified mass. When the capsule scales or rises on hover,
-           every child element moves with it — nothing detaches, nothing splits.
-           The .project-info-overlay calculates its clearance from this capsule's
-           bottom edge via top: calc(100% + 90px).
+           A single, frozen piece of geometry. Video frame + tile meta travel as
+           one unified mass. When the capsule scales or rises on hover, every
+           child element moves with it — nothing detaches, nothing splits.
+           The .project-info-overlay clears the capsule bottom via
+           top: calc(100% + 90px), landing it in the lower sprocket zone.
            ══════════════════════════════════════════════════════════════════════ */
         .cinematic-film-capsule {
             position: relative;
@@ -1776,14 +2178,21 @@
             overflow: visible;
         }
 
-        /* ── External overlay container — positioned BELOW the tile ── */
+        /* ── External overlay container — anchored below each hotspot frame ──
+           capsule height = 493px (flex-fill of button). top: calc(100% + 20px)
+           places overlay 513px from capsule top = 20px below the strip's
+           bottom edge. The wrapper uses align-self: flex-start to sit near the
+           gallery top, freeing ~200px of viewport space below for this overlay.
+           left: 24px mirrors the title's inner frame margin — the data-heading
+           and the title share the same left rail, giving the HUD leader line a
+           clean straight vertical anchor from title → heading.               */
         .project-info-overlay {
-            white-space: normal;   /* breaks .film-strip-container white-space:nowrap cascade */
+            white-space: normal;
             position: absolute;
-            top: calc(100% + 90px); /* clears full film-edge-text.bottom zone + breathing room */
-            left: 0;
+            top: calc(100% + 20px);
+            left: 24px;
             width: 100%;
-            max-width: 460px;       /* prevents runaway line lengths on wide tiles */
+            max-width: 460px;
             padding: 0 0 32px;
             opacity: 0;
             pointer-events: none;
@@ -1799,6 +2208,18 @@
             opacity: 1;
         }
 
+        /* ── Paragraph-format project description ── */
+        .project-description {
+            font-family: 'FunnelSans', 'Outfit', sans-serif;
+            font-size: 0.82rem;
+            line-height: 1.65;
+            color: var(--lsc-white, #F0EDE8);
+            margin: 0;
+            max-width: 380px;
+            text-align: left;
+            letter-spacing: 0.01em;
+        }
+
         /* connector line removed — overlay fades in directly */
 
         /* ── Data heading: editorial large — Delight Bold, blur-to-focus ── */
@@ -1809,7 +2230,7 @@
             letter-spacing: -0.02em;
             text-transform: none;
             line-height: 1;
-            color: var(--lsc-charcoal, #252930);
+            color: var(--lsc-black);
             margin: 0 0 14px;
             opacity: 0;
             filter: blur(8px);
@@ -1836,25 +2257,25 @@
             flex-shrink: 0;
             /* Layer 1: minor ticks — 1px wide every 8px, 35% element height tall, from bottom */
             /* Layer 2: major ticks — 1px wide every 32px, 65% element height tall, from bottom */
-            /* Layer 3: baseline — 1px sage line at very bottom */
+            /* Layer 3: baseline — 1px dark rule at very bottom */
             background-image:
                 repeating-linear-gradient(
                     90deg,
-                    var(--lsc-mid, #7A7470) 0,
-                    var(--lsc-mid, #7A7470) 1px,
+                    rgba(14, 14, 14, 0.35) 0,
+                    rgba(14, 14, 14, 0.35) 1px,
                     transparent 1px,
                     transparent 8px
                 ),
                 repeating-linear-gradient(
                     90deg,
-                    var(--lsc-mid, #7A7470) 0,
-                    var(--lsc-mid, #7A7470) 1px,
+                    rgba(14, 14, 14, 0.35) 0,
+                    rgba(14, 14, 14, 0.35) 1px,
                     transparent 1px,
                     transparent 32px
                 ),
                 linear-gradient(
-                    var(--lsc-mid, #7A7470),
-                    var(--lsc-mid, #7A7470)
+                    rgba(14, 14, 14, 0.35),
+                    rgba(14, 14, 14, 0.35)
                 );
             background-size:
                 100% 35%,
@@ -1881,15 +2302,16 @@
 
         /* ── Data text blocks: staggered sequential fade-up ── */
         .data-text-block {
-            font-family: 'FunnelSans', 'Outfit', sans-serif;
+            font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
             font-size: 12px;
-            font-weight: 300;
+            font-weight: 400;
             line-height: 1.7;
             letter-spacing: 0.015em;
-            color: var(--lsc-slate, #3A4756);
+            color: var(--lsc-black);
             margin-bottom: 6px;
             opacity: 0;
             transform: translateY(5px);
+            transition: opacity 0.4s ease, transform 0.4s ease;
         }
 
         /* SCOPE block — primary description, bold + two-line constraint */
@@ -1912,7 +2334,7 @@
 
         /* Terracotta bracket labels — brand token */
         .data-label {
-            font-family: 'FunnelSans', 'Outfit', sans-serif;
+            font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
             font-size: 10px;
             letter-spacing: 0.18em;
             text-transform: uppercase;
@@ -1921,35 +2343,94 @@
             font-weight: 500;
         }
 
+        /* ── CONTRAST LOCK: colour only — opacity is owned by hover controller ──
+           body.dark-theme sets color:#F0EDE8 globally; these rules sever
+           that colour inheritance. Opacity is intentionally NOT set here —
+           the hover state controller below owns all opacity transitions.   */
+        .project-info-overlay p,
+        .project-info-overlay .scope-body,
+        .project-info-overlay .data-text-block,
+        .project-info-overlay .data-heading {
+            color: #0E0E0E !important;
+        }
+        .project-info-overlay .data-label,
+        .project-info-overlay .data-text-block.seq-2,
+        .project-info-overlay .data-text-block.seq-3 {
+            color: var(--lsc-terra, #C0603C) !important;
+        }
+        .project-info-overlay .data-text-block.seq-1,
+        .project-info-overlay .data-text-block.seq-1 .scope-body {
+            color: #0E0E0E !important;
+        }
+
+        /* ── Hover reveal: opacity fully controlled here with !important ── */
+        .playable-tile:hover .project-info-overlay,
+        .video-hotspot:hover .project-info-overlay,
+        .project-tile:hover .project-info-overlay {
+            opacity: 1 !important;
+            pointer-events: auto !important;
+            transform: translateY(0) !important;
+        }
         .playable-tile:hover .data-text-block.seq-1 {
-            animation: dataFadeUp 0.4s ease-in-out 0.60s forwards;
+            opacity: 1 !important;
+            transform: translateY(0) !important;
+            transition-delay: 0.48s;
         }
         .playable-tile:hover .data-text-block.seq-2 {
-            animation: dataFadeUp 0.4s ease-in-out 0.74s forwards;
+            opacity: 1 !important;
+            transform: translateY(0) !important;
+            transition-delay: 0.58s;
         }
         .playable-tile:hover .data-text-block.seq-3 {
-            animation: dataFadeUp 0.4s ease-in-out 0.88s forwards;
+            opacity: 1 !important;
+            transform: translateY(0) !important;
+            transition-delay: 0.68s;
         }
 
-        @keyframes dataFadeUp {
-            from { opacity: 0; transform: translateY(5px); }
-            to   { opacity: 1; transform: translateY(0);   }
-        }
-
-        /* ── Project title: bottom-center, scales from center-bottom on hover ── */
+        /* ── Project title hover: colour shift only — no scale/transform ──────
+           Title is now bottom-left anchored with transform: none !important.
+           Scale transform would misalign it from its left-rail anchor, so
+           the hover interaction is colour-only: terracotta accent sweep.    */
+        .video-hotspot .project-title,
         .film-frames-grid .project-title {
-            transition: color 0.35s ease-in-out, transform 0.35s ease-in-out;
-            transform-origin: center bottom;
+            transition: color 0.35s ease-in-out;
             display: inline-block;
         }
 
         .playable-tile:hover .project-title {
-            color: var(--lsc-sage, #4CAF82) !important;
-            transform: scale(1.1);
+            color: var(--lsc-terra) !important;
         }
 
 
-        /* ============================================================
+        /* ── FRACTAL GLASS DISTORTION OVERLAY ───────────────────────────────
+           Sits inside .about-modal-overlay (z-index 0), filling the full
+           overlay behind the modal card. Uses SVG feTurbulence +
+           feDisplacementMap (applied as a CSS filter) on top of a
+           backdrop-filter capture, creating animated wavy-glass ripple
+           distortion over the background when the About modal is open.
+           ─────────────────────────────────────────────────────────────── */
+        .about-fractal-glass {
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.9s ease;
+            backdrop-filter: blur(1.5px) brightness(1.06) saturate(1.12);
+            -webkit-backdrop-filter: blur(1.5px) brightness(1.06) saturate(1.12);
+            filter: url(#fractal-glass-filter);
+            background: rgba(200, 215, 255, 0.03);
+        }
+
+        .about-modal-overlay.is-open .about-fractal-glass {
+            opacity: 1;
+        }
+
+        /* Ensure the modal card always floats above the fractal glass layer */
+        .about-modal { position: relative; z-index: 2; }
+
+                /* ============================================================
+
            RESPONSIVE — DESKTOP PRESERVATION LAW
            All overrides live exclusively in @media blocks.
            Zero desktop CSS is touched here.
@@ -2009,21 +2490,21 @@
                 width: 40px;
                 height: 40px;
             }
-            /* Nav links: compact dropdown below hamburger button */
+            /* Nav links: glass card dropdown — matches about modal */
             .nav-links.absolute-nav {
                 display: none !important;
                 position: fixed !important;
                 top: 64px !important;
-                right: 16px !important;
+                right: 16px;
                 left: auto !important;
                 bottom: auto !important;
                 width: auto !important;
-                min-width: 160px !important;
-                background: rgba(8,8,10,0.95) !important;
-                backdrop-filter: blur(16px) !important;
-                -webkit-backdrop-filter: blur(16px) !important;
-                border: 1px solid rgba(255,255,255,0.12) !important;
-                border-radius: 8px !important;
+                min-width: 180px !important;
+                background: rgba(30, 34, 40, 0.35) !important;
+                backdrop-filter: blur(24px) !important;
+                -webkit-backdrop-filter: blur(24px) !important;
+                border: 1px solid rgba(255, 255, 255, 0.15) !important;
+                border-radius: 12px !important;
                 flex-direction: column !important;
                 align-items: flex-start !important;
                 justify-content: flex-start !important;
@@ -2032,7 +2513,8 @@
                 margin: 0 !important;
                 list-style: none !important;
                 z-index: 9100 !important;
-                box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important;
+                box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6) !important;
+                overflow: hidden !important;
             }
             .nav-links.absolute-nav.is-active {
                 display: flex !important;
@@ -2042,11 +2524,20 @@
             }
             .nav-links.absolute-nav li a {
                 display: block !important;
-                padding: 12px 20px !important;
-                font-size: 0.75rem !important;
-                letter-spacing: 0.2em !important;
-                color: var(--lsc-text, #f0ede8) !important;
+                padding: 14px 24px !important;
+                font-size: 0.72rem !important;
+                letter-spacing: 0.22em !important;
+                color: rgba(240, 237, 232, 0.9) !important;
                 text-decoration: none !important;
+                transition: background 0.18s ease, color 0.18s ease !important;
+            }
+            .nav-links.absolute-nav li a:hover {
+                background: rgba(255, 255, 255, 0.08) !important;
+                color: #fff !important;
+            }
+            /* Hairline dividers between items */
+            .nav-links.absolute-nav li + li {
+                border-top: 1px solid rgba(255, 255, 255, 0.07) !important;
             }
 
             /* ── HUD: shrink + hide measure guide ────────────────── */
@@ -2105,7 +2596,7 @@
                 transform: none;
                 transition: opacity 0.55s ease, transform 0.55s ease;
                 padding: 28px 0;
-                border-bottom: 1px solid rgba(255,255,255,0.08);
+                border-bottom: 1px solid rgba(14,14,14,0.1);
                 cursor: pointer;
             }
             .mobile-card.will-animate {
@@ -2142,15 +2633,61 @@
                 object-fit: cover;
                 display: block;
             }
+            /* Expand hint — tiny corner indicator, hidden once open */
             .mobile-card-play {
+                position: absolute;
+                bottom: 10px;
+                right: 10px;
+                width: 28px;
+                height: 28px;
+                border-radius: 50%;
+                background: rgba(14,14,14,0.45);
+                border: 1px solid rgba(255,255,255,0.15);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: rgba(255,255,255,0.6);
+                font-size: 0.65rem;
+                pointer-events: none;
+                transition: opacity 0.25s ease;
+            }
+            .mobile-card.is-open .mobile-card-play {
+                opacity: 0;
+            }
+            /* Centered play button — appears on open */
+            .mobile-card-play-overlay {
                 position: absolute;
                 inset: 0;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                background: rgba(0,0,0,0.35);
-                color: rgba(255,255,255,0.9);
-                font-size: 2rem;
+                background: rgba(14,14,14,0.28);
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.3s ease;
+                cursor: pointer;
+            }
+            .mobile-card.is-open .mobile-card-play-overlay {
+                opacity: 1;
+                pointer-events: auto;
+            }
+            .mobile-card-play-overlay-btn {
+                width: 60px;
+                height: 60px;
+                border-radius: 50%;
+                background: #C0603C;
+                border: none;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: #F0EDE8;
+                box-shadow: 0 4px 20px rgba(192,96,60,0.5);
+                transition: transform 0.2s ease, background 0.2s ease;
+                cursor: pointer;
+            }
+            .mobile-card-play-overlay-btn:active {
+                transform: scale(0.93);
+                background: #A84E2E;
             }
             /* Card header row: title + chevron */
             .mobile-card-header {
@@ -2167,7 +2704,7 @@
             }
             .mobile-card-chevron {
                 flex-shrink: 0;
-                color: rgba(240,237,232,0.45);
+                color: rgba(14,14,14,0.4);
                 transition: transform 0.3s ease;
             }
             .mobile-card.is-open .mobile-card-chevron {
@@ -2200,13 +2737,13 @@
                 text-transform: uppercase;
                 color: var(--lsc-terra, #C0603C);
                 margin-bottom: 6px;
-                font-family: 'FunnelSans', sans-serif;
+                font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
             }
             .mobile-card-title {
                 font-family: 'Delight', Georgia, serif;
                 font-size: 1.3rem;
                 font-weight: 700;
-                color: var(--lsc-text, #f0ede8);
+                color: #0E0E0E;
                 margin: 0 0 8px;
                 letter-spacing: -0.01em;
                 line-height: 1.2;
@@ -2214,16 +2751,16 @@
             .mobile-card-scope {
                 font-size: 11px;
                 line-height: 1.6;
-                color: rgba(240,237,232,0.65);
+                color: rgba(14,14,14,0.6);
                 margin: 0 0 8px;
-                font-family: 'FunnelSans', sans-serif;
+                font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
             }
             .mobile-card-meta {
                 font-size: 9px;
                 letter-spacing: 0.12em;
-                color: rgba(240,237,232,0.4);
+                color: rgba(14,14,14,0.45);
                 margin-bottom: 2px;
-                font-family: 'FunnelSans', sans-serif;
+                font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
                 text-transform: uppercase;
             }
             .mobile-card-label {
@@ -2313,8 +2850,8 @@
                 white-space: nowrap !important;
             }
 
-            /* ── About modal: bottom sheet ───────────────────────── */
-            .about-modal-overlay { padding: 0 !important; align-items: flex-end !important; }
+            /* ── About modal: centred ────────────────────────────── */
+            .about-modal-overlay { padding: 16px !important; align-items: center !important; }
             .about-modal {
                 grid-template-columns: 1fr !important;
                 max-width: 100% !important;
@@ -2330,9 +2867,103 @@
             .about-modal-copy { font-size: 13px !important; }
         }
 
+
         /* ── TOUCH DEVICES — kill hover-gated animations ──────────── */
         @media (hover: none) and (pointer: coarse) {
             .project-tile:hover .project-info-overlay { opacity: 0; }
+        }
+
+        /* ============================================================
+           SERVICES PIN CONTAINER — STICKY CROSSFADE SCROLL TRACK
+           ============================================================ */
+        .services-pin-container {
+            position: relative;
+            width: 100%;
+            height: 400vh;
+            background-color: var(--lsc-black);
+        }
+
+        .services-sticky-window {
+            position: sticky;
+            top: 0;
+            width: 100%;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .services-slide {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            visibility: hidden;
+            transition: none;
+            z-index: 10;
+        }
+
+        .services-slide img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .services-slide.is-active {
+            opacity: 1;
+            visibility: visible;
+            transition: none;
+            z-index: 20;
+        }
+
+        /* ── PROGRESS BAR ───────────────────────────────────────── */
+        .services-progress-bar {
+            position: absolute;
+            bottom: 32px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 320px;
+            height: 2px;
+            background: rgba(240, 237, 232, 0.15);
+            z-index: 30;
+            overflow: hidden;
+        }
+
+        .services-progress-fill {
+            height: 100%;
+            width: 0%;
+            background: var(--lsc-terra);
+            transition: width 0.08s linear;
+        }
+
+        /* ── SLIDE TICK MARKS ────────────────────────────────────── */
+        .services-progress-ticks {
+            position: absolute;
+            bottom: 32px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 320px;
+            height: 2px;
+            z-index: 31;
+            pointer-events: none;
+        }
+
+        .services-progress-tick {
+            position: absolute;
+            top: -3px;
+            width: 1px;
+            height: 8px;
+            background: rgba(240, 237, 232, 0.35);
+        }
+
+        /* ── MOBILE SUPPRESSION — phone screens excluded ─────────── */
+        @media (max-width: 768px) {
+            .services-pin-container {
+                display: none !important;
+            }
         }
 
     </style>
@@ -2368,10 +2999,35 @@
         <div class="loader-typography">LSC <em>Creative.</em></div>
     </div>
 
+    <!-- Hidden SVG filter — fractal glass displacement -->
+    <svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true"
+         style="position:absolute;width:0;height:0;overflow:hidden;pointer-events:none">
+        <defs>
+            <filter id="fractal-glass-filter" x="-5%" y="-5%" width="110%" height="110%"
+                    color-interpolation-filters="sRGB">
+                <feTurbulence
+                    id="fractalTurbulence"
+                    type="fractalNoise"
+                    baseFrequency="0.009 0.013"
+                    numOctaves="3"
+                    seed="7"
+                    result="noise"/>
+                <feDisplacementMap
+                    in="SourceGraphic"
+                    in2="noise"
+                    scale="45"
+                    xChannelSelector="R"
+                    yChannelSelector="G"/>
+            </filter>
+        </defs>
+    </svg>
+
     <!-- ============================================================
          ABOUT MODAL
          ============================================================ -->
     <div class="about-modal-overlay" id="aboutModal" role="dialog" aria-modal="true" aria-label="About LSC Creative">
+        <!-- Fractal glass distortion layer (behind the modal card) -->
+        <div class="about-fractal-glass" aria-hidden="true"></div>
         <div class="about-modal">
             <div class="about-photo-placeholder">
                 <img
@@ -2494,60 +3150,42 @@
         </section>
 
         <!-- ============================================================
-             CAPABILITIES — CINEMATIC ACCORDION
+             SERVICES SCROLL TRACK — PINNED CROSSFADE SEQUENCE
              ============================================================ -->
-        <section class="lsc-services-section" id="capabilities">
-            <div class="capabilities-layout">
-
-                <!-- LEFT: hover-activated capability cards -->
-                <div class="capabilities-left">
-                    <div class="accordion-container">
-
-                        <div class="capabilities-card proc-reveal"
-                             data-cap-title="Motion."
-                             data-cap-body="Documentary-style brand films that are shot on location. Our expertise is capturing the candid, authentic side of your business, product or message. Here, cinematic precision is our standard for you.">
-                            <div class="accordion-trigger" style="cursor:default;">
-                                <div class="trigger-body">
-                                    <span class="trigger-number">{ 01 }</span>
-                                    <span class="trigger-title-group">
-                                        <svg class="capability-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></svg>
-                                        <span class="trigger-title">Motion.</span>
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="capabilities-card proc-reveal" style="transition-delay:0.12s"
-                             data-cap-title="Stills."
-                             data-cap-body="Our aim is to capture real moments, real people and real meaning in image format. We seek to provide you with quality stills to show to your audience, whatever your message.">
-                            <div class="accordion-trigger" style="cursor:default;">
-                                <div class="trigger-body">
-                                    <span class="trigger-number">{ 02 }</span>
-                                    <span class="trigger-title-group">
-                                        <svg class="capability-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
-                                        <span class="trigger-title">Stills.</span>
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                    </div>
+        <section class="services-pin-container" id="services-track">
+            <div class="services-sticky-window">
+                <!-- Slide 1: Services Landing Blueprint Banner -->
+                <div class="services-slide is-active" data-slide="0">
+                    <img src="assets/01 SECTION ASSETS/SECTION_SERVICES/VENUE-SCREEN-MOCKUP 01Services.png" alt="Services Landing Blueprint Banner">
                 </div>
-
-                <!-- RIGHT: default header fades out, display title+body fades in on hover -->
-                <div class="capabilities-right proc-reveal" style="transition-delay:0.06s">
-                    <div class="capabilities-header-panel">
-                        <span class="eyebrow-accent">Our Craft</span>
-                        <h2 class="section-title cap-section-title">Capabilities.</h2>
-                    </div>
-                    <div class="capabilities-display-content" aria-live="polite">
-                        <div class="capabilities-display-title"></div>
-                        <div class="capabilities-display-body"></div>
-                    </div>
+                <!-- Slide 2: Motion Video Production Workspace -->
+                <div class="services-slide" data-slide="1">
+                    <img src="assets/01 SECTION ASSETS/SECTION_SERVICES/VENUE-SCREEN-MOCKUP 02 Motion.png" alt="Motion Video Production Workspace">
                 </div>
-
+                <!-- Slide 3: Stills Photography Masterboard -->
+                <div class="services-slide" data-slide="2">
+                    <img src="assets/01 SECTION ASSETS/SECTION_SERVICES/VENUE-SCREEN-MOCKUP 03 Stills.png" alt="Stills Photography Masterboard">
+                </div>
+                <!-- Slide 4: LSC Creative Projector Outro Canvas -->
+                <div class="services-slide" data-slide="3">
+                    <img src="assets/01 SECTION ASSETS/SECTION_SERVICES/VENUE-SCREEN-MOCKUP 04 END SLIDE.png" alt="LSC Creative Projector Outro Canvas">
+                </div>
+                <!-- Progress bar -->
+                <div class="services-progress-bar">
+                    <div class="services-progress-fill" id="servicesFill"></div>
+                </div>
+                <div class="services-progress-ticks">
+                    <div class="services-progress-tick" style="left: 25%;"></div>
+                    <div class="services-progress-tick" style="left: 50%;"></div>
+                    <div class="services-progress-tick" style="left: 75%;"></div>
+                </div>
             </div>
         </section>
+
+        <!-- ============================================================
+             CAPABILITIES — VENUE SCREEN MOCKUP
+             ============================================================ -->
+
 
         <!-- ============================================================
              SELECTED WORK — HORIZONTAL SCROLL PORTFOLIO
@@ -2562,147 +3200,100 @@
                         <p class="section-subtitle">2024–2025</p>
                     </div>
 
-                    <div class="film-strip-container">
-                        <div class="film-frames-grid">
+                    <!-- ═══════════════════════════════════════════════════════════════
+                         MASTER COMPOSITE CONTACT SHEET — single-asset hotspot system
+                         Canva-mastered PNG (4374×838px) renders as a single continuous
+                         strip at height:493px (→ 2573px wide). Four transparent <button>
+                         segments overlay the 4 frame columns at 25% each.
+                         Each carries .playable-tile → all hover CSS + JS wires fire.
+                         ═══════════════════════════════════════════════════════════════ -->
+                    <div class="film-contact-strip-wrapper">
 
-                            <!-- Project 01: Marine Vitalities -->
-                            <div class="project-tile playable-tile portfolio-video-wrapper" data-video-id="89a0b68b-1afe-4c5a-9d83-67fc880a876a" data-project-title="Marine Vitalities">
+                        <!-- Frame-perfect composite: all 4 projects in one PNG -->
+                        <img
+                            src="assets/01 SECTION ASSETS/SECTION_Selected Work/Selected Work Thumbails (film contact sheet).png"
+                            alt="LSC Creative — Selected Work Film Contact Sheet"
+                            class="film-contact-sheet-img"
+                            draggable="false"
+                        >
+
+                        <!-- Transparent interactive hotspot overlay grid -->
+                        <div class="hotspot-overlay">
+
+                            <!-- Hotspot 01 — Marine Vitalities (0%–25%) -->
+                            <button
+                                class="video-hotspot playable-tile"
+                                data-video-id="89a0b68b-1afe-4c5a-9d83-67fc880a876a"
+                                data-project-title="Marine Vitalities"
+                                aria-label="Play Marine Vitalities reel">
                                 <div class="cinematic-film-capsule">
-                                <div class="film-edge-text top"><span>9</span><span>KODAK EKTAR 100</span></div>
-                                <div class="tile-media native-aspect">
-                                    <img src="https://vz-2d3e9bef-866.b-cdn.net/89a0b68b-1afe-4c5a-9d83-67fc880a876a/thumbnail.jpg" alt="Marine Vitalities Thumbnail" class="tile-thumbnail">
-                                    <img src="https://vz-2d3e9bef-866.b-cdn.net/89a0b68b-1afe-4c5a-9d83-67fc880a876a/preview.webp?v=1779252138" alt="Marine Vitalities Preview" class="tile-preview">
-                                    <div class="custom-play-indicator" aria-hidden="true">
-                                        <svg viewBox="0 0 24 24" fill="currentColor">
-                                            <path d="M8 5v14l11-7z"/>
-                                        </svg>
+                                    <div class="tile-meta">
+                                        <h3 class="project-title">Marine Vitalities</h3>
+                                    </div>
+                                    <div class="project-info-overlay">
+                                        <h4 class="data-heading">BRAND DOCUMENTARY</h4>
+                                        <div class="data-measuring-graphic"></div>
+                                        <p class="project-description">On-location brand film capturing the relationship between sustainable farming in one of the worlds nutrient rich waters. Distributed across Website Hero, Meta Ads &amp; Socials — 03.02.2026</p>
                                     </div>
                                 </div>
-                                <div class="film-edge-text bottom"><span>9</span><span class="arrow">▶</span><span>9A</span></div>
-                                <div class="tile-meta">
-                                    <h3 class="project-title">Marine Vitalities</h3>
-                                </div>
-                                <div class="project-info-overlay">
+                            </button>
 
-                                    <h4 class="data-heading">BRAND DOCUMENTARY</h4>
-                                    <div class="data-measuring-graphic"></div>
-                                    <div class="data-text-block seq-1">
-                                        <span class="data-label">{SCOPE}</span><span class="scope-body"> On-location brand film capturing the relationship between sustainable farming in one of the worlds nutrient rich waters</span>
-                                    </div>
-                                    <div class="data-text-block seq-2">
-                                        <span class="data-label">{SCREENS}</span> Website Hero, Meta ads, Socials
-                                    </div>
-                                    <div class="data-text-block seq-3">
-                                        <span class="data-label">{CAMPAIGN}</span> 03.02.2026
-                                    </div>
-                                </div>
-                                </div>
-                            </div>
-
-                            <!-- Project 02: BNB AutoHaus -->
-                            <div class="project-tile playable-tile portfolio-video-wrapper" data-video-id="b73539f4-26bd-470d-b658-8b2b0870098b" data-project-title="BNB AutoHaus">
+                            <!-- Hotspot 02 — BNB AutoHaus (25%–50%) -->
+                            <button
+                                class="video-hotspot playable-tile"
+                                data-video-id="b73539f4-26bd-470d-b658-8b2b0870098b"
+                                data-project-title="BNB AutoHaus"
+                                aria-label="Play BNB AutoHaus reel">
                                 <div class="cinematic-film-capsule">
-                                <div class="film-edge-text top"><span>10</span><span>KODAK EKTAR 100</span></div>
-                                <div class="tile-media native-aspect">
-                                    <img src="https://vz-2d3e9bef-866.b-cdn.net/b73539f4-26bd-470d-b658-8b2b0870098b/thumbnail.jpg" alt="BNB AutoHaus Thumbnail" class="tile-thumbnail">
-                                    <img src="https://vz-2d3e9bef-866.b-cdn.net/b73539f4-26bd-470d-b658-8b2b0870098b/preview.webp?v=1779253460" alt="BNB AutoHaus Preview" class="tile-preview">
-                                    <div class="custom-play-indicator" aria-hidden="true">
-                                        <svg viewBox="0 0 24 24" fill="currentColor">
-                                            <path d="M8 5v14l11-7z"/>
-                                        </svg>
+                                    <div class="tile-meta">
+                                        <h3 class="project-title">BNB AutoHaus</h3>
+                                    </div>
+                                    <div class="project-info-overlay">
+                                        <h4 class="data-heading">PRODUCT SHOWCASE</h4>
+                                        <div class="data-measuring-graphic"></div>
+                                        <p class="project-description">Feature a factory fresh car interior build, visualising the pinnacle of BNB's high detail work. Advertisement, YouTube &amp; Social Media — 05.03.2025</p>
                                     </div>
                                 </div>
-                                <div class="film-edge-text bottom"><span>10</span><span class="arrow">▶</span><span>10A</span></div>
-                                <div class="tile-meta">
-                                    <h3 class="project-title">BNB AutoHaus</h3>
-                                </div>
-                                <div class="project-info-overlay">
+                            </button>
 
-                                    <h4 class="data-heading">PRODUCT SHOWCASE</h4>
-                                    <div class="data-measuring-graphic"></div>
-                                    <div class="data-text-block seq-1">
-                                        <span class="data-label">{SCOPE}</span><span class="scope-body"> Feature a factory fresh car interior build - visualising the pinnacle of BNB's high detail work</span>
-                                    </div>
-                                    <div class="data-text-block seq-2">
-                                        <span class="data-label">{SCREENS}</span> Advertisement, YouTube, Social Media
-                                    </div>
-                                    <div class="data-text-block seq-3">
-                                        <span class="data-label">{CAMPAIGN}</span> 05.03.2025
-                                    </div>
-                                </div>
-                                </div>
-                            </div>
-
-                            <!-- Project 03: BakeHouse -->
-                            <div class="project-tile playable-tile portfolio-video-wrapper" data-video-id="0d00bcf5-bf60-4c2c-8513-f8e41b490670" data-project-title="BakeHouse">
+                            <!-- Hotspot 03 — BakeHouse (50%–75%) -->
+                            <button
+                                class="video-hotspot playable-tile"
+                                data-video-id="0d00bcf5-bf60-4c2c-8513-f8e41b490670"
+                                data-project-title="BakeHouse"
+                                aria-label="Play BakeHouse reel">
                                 <div class="cinematic-film-capsule">
-                                <div class="film-edge-text top"><span>11</span><span>KODAK EKTAR 100</span></div>
-                                <div class="tile-media native-aspect">
-                                    <img src="https://vz-2d3e9bef-866.b-cdn.net/0d00bcf5-bf60-4c2c-8513-f8e41b490670/thumbnail.jpg" alt="BakeHouse Thumbnail" class="tile-thumbnail">
-                                    <img src="https://vz-2d3e9bef-866.b-cdn.net/0d00bcf5-bf60-4c2c-8513-f8e41b490670/preview.webp?v=1779253210" alt="BakeHouse Preview" class="tile-preview">
-                                    <div class="custom-play-indicator" aria-hidden="true">
-                                        <svg viewBox="0 0 24 24" fill="currentColor">
-                                            <path d="M8 5v14l11-7z"/>
-                                        </svg>
+                                    <div class="tile-meta">
+                                        <h3 class="project-title">BakeHouse</h3>
+                                    </div>
+                                    <div class="project-info-overlay">
+                                        <h4 class="data-heading">HERO EXPOSITORY</h4>
+                                        <div class="data-measuring-graphic"></div>
+                                        <p class="project-description">An intimate look at the dedication of a world class baker, set in his heritage in a small corner of Australia. Local Culture Circuit, Pitch Deck &amp; Investor Portal — 10.05.2025</p>
                                     </div>
                                 </div>
-                                <div class="film-edge-text bottom"><span>11</span><span class="arrow">▶</span><span>11A</span></div>
-                                <div class="tile-meta">
-                                    <h3 class="project-title">BakeHouse</h3>
-                                </div>
-                                <div class="project-info-overlay">
+                            </button>
 
-                                    <h4 class="data-heading">HERO EXPOSITORY</h4>
-                                    <div class="data-measuring-graphic"></div>
-                                    <div class="data-text-block seq-1">
-                                        <span class="data-label">{SCOPE}</span><span class="scope-body"> An intimate look at the dedication of a world class baker set in his heritage in a small corner of Australia.</span>
-                                    </div>
-                                    <div class="data-text-block seq-2">
-                                        <span class="data-label">{SCREENS}</span> Local Culture Circuit, Pitch Deck, Investor Portal
-                                    </div>
-                                    <div class="data-text-block seq-3">
-                                        <span class="data-label">{CAMPAIGN}</span> 10.05.2025
-                                    </div>
-                                </div>
-                                </div>
-                            </div>
-
-                            <!-- Project 04: HAWKS -->
-                            <div class="project-tile playable-tile portfolio-video-wrapper" data-video-id="380dcc46-201f-46a1-8157-4e2fb3d88415" data-project-title="HAWKS">
+                            <!-- Hotspot 04 — Illawarra Hawks (75%–100%) -->
+                            <button
+                                class="video-hotspot playable-tile"
+                                data-video-id="380dcc46-201f-46a1-8157-4e2fb3d88415"
+                                data-project-title="HAWKS"
+                                aria-label="Play Illawarra Hawks reel">
                                 <div class="cinematic-film-capsule">
-                                <div class="film-edge-text top"><span>12</span><span>KODAK EKTAR 100</span></div>
-                                <div class="tile-media native-aspect">
-                                    <img src="https://vz-2d3e9bef-866.b-cdn.net/380dcc46-201f-46a1-8157-4e2fb3d88415/thumbnail.jpg" alt="HAWKS Thumbnail" class="tile-thumbnail">
-                                    <img src="https://vz-2d3e9bef-866.b-cdn.net/380dcc46-201f-46a1-8157-4e2fb3d88415/preview.webp?v=1779252990" alt="HAWKS Preview" class="tile-preview">
-                                    <div class="custom-play-indicator" aria-hidden="true">
-                                        <svg viewBox="0 0 24 24" fill="currentColor">
-                                            <path d="M8 5v14l11-7z"/>
-                                        </svg>
+                                    <div class="tile-meta">
+                                        <h3 class="project-title">ILLAWARRA HAWKS</h3>
+                                    </div>
+                                    <div class="project-info-overlay">
+                                        <h4 class="data-heading">EVENT COVERAGE</h4>
+                                        <div class="data-measuring-graphic"></div>
+                                        <p class="project-description">Court side grit and locker room tension. Real moments from the season to the championship finals. Broadcast, Stadium Screens &amp; Jumbotron — 04.09.2024</p>
                                     </div>
                                 </div>
-                                <div class="film-edge-text bottom"><span>12</span><span class="arrow">▶</span><span>12A</span></div>
-                                <div class="tile-meta">
-                                    <h3 class="project-title">ILLAWARRA HAWKS</h3>
-                                </div>
-                                <div class="project-info-overlay">
+                            </button>
 
-                                    <h4 class="data-heading">EVENT COVERAGE</h4>
-                                    <div class="data-measuring-graphic"></div>
-                                    <div class="data-text-block seq-1">
-                                        <span class="data-label">{SCOPE}</span><span class="scope-body"> Court side grit and locker room tension. Real moments from the season to the championship finals.</span>
-                                    </div>
-                                    <div class="data-text-block seq-2">
-                                        <span class="data-label">{SCREENS}</span> Broadcast, Stadium Screens, Jumbotron
-                                    </div>
-                                    <div class="data-text-block seq-3">
-                                        <span class="data-label">{CAMPAIGN}</span> 04.09.2024
-                                    </div>
-                                </div>
-                                </div>
-                            </div>
-
-                        </div>
-                    </div>
+                        </div><!-- /.hotspot-overlay -->
+                    </div><!-- /.film-contact-strip-wrapper -->
                 </div>
             </div>
         </section>
@@ -2718,8 +3309,13 @@
 
                 <div class="mobile-card" data-video-id="89a0b68b-1afe-4c5a-9d83-67fc880a876a" data-project-title="Marine Vitalities">
                     <div class="mobile-card-thumb">
-                        <img src="https://vz-2d3e9bef-866.b-cdn.net/89a0b68b-1afe-4c5a-9d83-67fc880a876a/thumbnail.jpg" alt="Marine Vitalities">
-                        <div class="mobile-card-play">&#9654;</div>
+                        <img src="assets/Selected Work Thumbnails/Marine Vitalities-thumb.png" alt="Marine Vitalities">
+                        <div class="mobile-card-play" aria-hidden="true">&#8964;</div>
+                        <div class="mobile-card-play-overlay">
+                            <button class="mobile-card-play-overlay-btn" aria-label="Watch video">
+                                <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true"><polygon points="5,2 16,9 5,16"/></svg>
+                            </button>
+                        </div>
                     </div>
                     <button class="mobile-card-header" aria-expanded="false">
                         <h3 class="mobile-card-title">Marine Vitalities</h3>
@@ -2737,8 +3333,13 @@
 
                 <div class="mobile-card" data-video-id="b73539f4-26bd-470d-b658-8b2b0870098b" data-project-title="BNB AutoHaus">
                     <div class="mobile-card-thumb">
-                        <img src="https://vz-2d3e9bef-866.b-cdn.net/b73539f4-26bd-470d-b658-8b2b0870098b/thumbnail.jpg" alt="BNB AutoHaus">
-                        <div class="mobile-card-play">&#9654;</div>
+                        <img src="assets/Selected Work Thumbnails/BNB Autohaus-thumb.png" alt="BNB AutoHaus">
+                        <div class="mobile-card-play" aria-hidden="true">&#8964;</div>
+                        <div class="mobile-card-play-overlay">
+                            <button class="mobile-card-play-overlay-btn" aria-label="Watch video">
+                                <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true"><polygon points="5,2 16,9 5,16"/></svg>
+                            </button>
+                        </div>
                     </div>
                     <button class="mobile-card-header" aria-expanded="false">
                         <h3 class="mobile-card-title">BNB AutoHaus</h3>
@@ -2747,7 +3348,7 @@
                     <div class="mobile-card-drawer">
                         <div class="mobile-card-drawer-inner">
                             <span class="mobile-card-category">Product Showcase</span>
-                            <p class="mobile-card-scope">Factory fresh car interior build — the pinnacle of BNB's high detail work.</p>
+                            <p class="mobile-card-scope">Factory fresh car interior build &mdash; the pinnacle of BNB's high detail work.</p>
                             <div class="mobile-card-meta"><span class="mobile-card-label">{SCREENS}</span> Advertisement, YouTube, Social Media</div>
                             <div class="mobile-card-meta"><span class="mobile-card-label">{CAMPAIGN}</span> 05.03.2025</div>
                         </div>
@@ -2756,8 +3357,13 @@
 
                 <div class="mobile-card" data-video-id="0d00bcf5-bf60-4c2c-8513-f8e41b490670" data-project-title="BakeHouse">
                     <div class="mobile-card-thumb">
-                        <img src="https://vz-2d3e9bef-866.b-cdn.net/0d00bcf5-bf60-4c2c-8513-f8e41b490670/thumbnail.jpg" alt="BakeHouse">
-                        <div class="mobile-card-play">&#9654;</div>
+                        <img src="assets/Selected Work Thumbnails/BakeHouse-thumb.png" alt="BakeHouse">
+                        <div class="mobile-card-play" aria-hidden="true">&#8964;</div>
+                        <div class="mobile-card-play-overlay">
+                            <button class="mobile-card-play-overlay-btn" aria-label="Watch video">
+                                <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true"><polygon points="5,2 16,9 5,16"/></svg>
+                            </button>
+                        </div>
                     </div>
                     <button class="mobile-card-header" aria-expanded="false">
                         <h3 class="mobile-card-title">BakeHouse</h3>
@@ -2775,8 +3381,13 @@
 
                 <div class="mobile-card" data-video-id="380dcc46-201f-46a1-8157-4e2fb3d88415" data-project-title="Illawarra Hawks">
                     <div class="mobile-card-thumb">
-                        <img src="https://vz-2d3e9bef-866.b-cdn.net/380dcc46-201f-46a1-8157-4e2fb3d88415/thumbnail.jpg" alt="Illawarra Hawks">
-                        <div class="mobile-card-play">&#9654;</div>
+                        <img src="assets/Selected Work Thumbnails/Illawarra Hawks-thumb.png" alt="Illawarra Hawks">
+                        <div class="mobile-card-play" aria-hidden="true">&#8964;</div>
+                        <div class="mobile-card-play-overlay">
+                            <button class="mobile-card-play-overlay-btn" aria-label="Watch video">
+                                <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true"><polygon points="5,2 16,9 5,16"/></svg>
+                            </button>
+                        </div>
                     </div>
                     <button class="mobile-card-header" aria-expanded="false">
                         <h3 class="mobile-card-title">Illawarra Hawks</h3>
@@ -3016,6 +3627,34 @@
         })();
     </script>
 
+    <!-- Fractal glass: animated feTurbulence baseFrequency via rAF -->
+    <script>
+        (function () {
+            var turbulence = document.getElementById('fractalTurbulence');
+            var overlay    = document.getElementById('aboutModal');
+            if (!turbulence || !overlay) return;
+
+            var rafId = null;
+            var t = 0;
+
+            function tick() {
+                t += 0.003;
+                var bfx = (0.009 + Math.sin(t * 0.55) * 0.004).toFixed(6);
+                var bfy = (0.013 + Math.cos(t * 0.85) * 0.006).toFixed(6);
+                turbulence.setAttribute('baseFrequency', bfx + ' ' + bfy);
+                rafId = requestAnimationFrame(tick);
+            }
+
+            new MutationObserver(function () {
+                if (overlay.classList.contains('is-open')) {
+                    if (!rafId) { t = 0; tick(); }
+                } else {
+                    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+                }
+            }).observe(overlay, { attributes: true, attributeFilter: ['class'] });
+        }());
+    </script>
+
     <!-- Cinematic Video Modal Controller -->
     <script>
         (function () {
@@ -3151,10 +3790,16 @@
             var navLinks = document.querySelector('.nav-links.absolute-nav');
             if (!toggle || !navLinks) return;
 
+            function alignMenu() {
+                /* Pin the dropdown's right edge to the hamburger's right edge */
+                var rect = toggle.getBoundingClientRect();
+                navLinks.style.right = (window.innerWidth - rect.right) + 'px';
+            }
+
             function openMenu() {
+                alignMenu();
                 navLinks.classList.add('is-active');
                 toggle.setAttribute('aria-expanded', 'true');
-                // No body scroll lock — it's a small dropdown, not full-screen
             }
             function closeMenu() {
                 navLinks.classList.remove('is-active');
@@ -3374,39 +4019,54 @@
             var iframe  = document.getElementById('videoModalIframe');
             var titleEl = document.getElementById('videoModalTitle');
 
-            // ── Thumbnail tap → open video ──────────────────────────────
+            // ── Helper: toggle info drawer (single open at a time) ────────
+            function toggleDrawer(card) {
+                var isOpen = card.classList.contains('is-open');
+                document.querySelectorAll('.mobile-card.is-open').forEach(function (c) {
+                    c.classList.remove('is-open');
+                    var h = c.querySelector('.mobile-card-header');
+                    if (h) h.setAttribute('aria-expanded', 'false');
+                });
+                if (!isOpen) {
+                    card.classList.add('is-open');
+                    var h = card.querySelector('.mobile-card-header');
+                    if (h) h.setAttribute('aria-expanded', 'true');
+                }
+            }
+
+            // ── Thumbnail tap → open info drawer (not video) ───────────
             document.querySelectorAll('.mobile-card').forEach(function (card) {
                 var thumb = card.querySelector('.mobile-card-thumb');
-                if (!thumb) return;
-                thumb.addEventListener('click', function (e) {
-                    e.stopPropagation();
-                    var videoId = card.getAttribute('data-video-id');
-                    var title   = card.getAttribute('data-project-title');
-                    if (!modal || !iframe || !videoId) return;
-                    iframe.src = 'https://player.mediadelivery.net/embed/662936/' + videoId + '?autoplay=true';
-                    if (titleEl) titleEl.textContent = title || 'Project Film';
-                    modal.classList.add('is-active');
-                    document.body.style.overflow = 'hidden';
-                });
-            });
-
-            // ── Title row tap → toggle info drawer ─────────────────────
-            document.querySelectorAll('.mobile-card-header').forEach(function (btn) {
-                btn.addEventListener('click', function (e) {
-                    e.stopPropagation();
-                    var card = btn.closest('.mobile-card');
-                    var isOpen = card.classList.contains('is-open');
-                    // Close all open drawers first
-                    document.querySelectorAll('.mobile-card.is-open').forEach(function (c) {
-                        c.classList.remove('is-open');
-                        c.querySelector('.mobile-card-header').setAttribute('aria-expanded', 'false');
+                if (thumb) {
+                    thumb.addEventListener('click', function (e) {
+                        e.stopPropagation();
+                        toggleDrawer(card);
                     });
-                    // Toggle this one
-                    if (!isOpen) {
-                        card.classList.add('is-open');
-                        btn.setAttribute('aria-expanded', 'true');
-                    }
-                });
+                }
+
+                // Title row tap → also toggles drawer
+                var btn = card.querySelector('.mobile-card-header');
+                if (btn) {
+                    btn.addEventListener('click', function (e) {
+                        e.stopPropagation();
+                        toggleDrawer(card);
+                    });
+                }
+
+                // Centred play overlay → open video modal
+                var playOverlay = card.querySelector('.mobile-card-play-overlay-btn');
+                if (playOverlay) {
+                    playOverlay.addEventListener('click', function (e) {
+                        e.stopPropagation();
+                        var videoId = card.getAttribute('data-video-id');
+                        var title   = card.getAttribute('data-project-title');
+                        if (!modal || !iframe || !videoId) return;
+                        iframe.src = 'https://player.mediadelivery.net/embed/662936/' + videoId + '?autoplay=true';
+                        if (titleEl) titleEl.textContent = title || 'Project Film';
+                        modal.classList.add('is-active');
+                        document.body.style.overflow = 'hidden';
+                    });
+                }
             });
 
             // ── Scroll-reveal via IntersectionObserver ──────────────────
@@ -3435,5 +4095,75 @@
         })();
     </script>
 
+
+    <!-- ============================================================
+         SERVICES PIN — SCROLL-DRIVEN CROSSFADE ENGINE
+         ============================================================ -->
+    <script>
+    (function () {
+        'use strict';
+
+        var pinContainer  = null;
+        var slides        = [];
+        var fill          = null;
+        var ticking       = false;
+        var lastActive    = -1;
+
+        function init() {
+            pinContainer = document.querySelector('.services-pin-container');
+            if (!pinContainer) return;
+            slides = Array.from(pinContainer.querySelectorAll('.services-slide'));
+            if (!slides.length) return;
+            fill = document.getElementById('servicesFill');
+            window.addEventListener('scroll', onScroll, { passive: true });
+            onScroll(); // set initial state
+        }
+
+        function onScroll() {
+            if (!ticking) {
+                requestAnimationFrame(update);
+                ticking = true;
+            }
+        }
+
+        function update() {
+            ticking = false;
+            var rect     = pinContainer.getBoundingClientRect();
+            var total    = pinContainer.offsetHeight - window.innerHeight;
+            // scrolled distance into the container (clamped 0→total)
+            var scrolled = Math.max(0, Math.min(-rect.top, total));
+            var progress = total > 0 ? scrolled / total : 0; // 0 → 1
+
+            // Map progress to slide index: 4 equal bands
+            var idx;
+            if      (progress < 0.25) idx = 0;
+            else if (progress < 0.50) idx = 1;
+            else if (progress < 0.75) idx = 2;
+            else                      idx = 3;
+
+            if (idx === lastActive) return; // no change
+            lastActive = idx;
+
+            slides.forEach(function (slide, i) {
+                if (i === idx) {
+                    slide.classList.add('is-active');
+                } else {
+                    slide.classList.remove('is-active');
+                }
+            });
+
+            // Drive progress bar
+            if (fill) {
+                fill.style.width = (progress * 100).toFixed(2) + '%';
+            }
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
+    }());
+    </script>
+
 </body>
-</html>
