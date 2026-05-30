@@ -1198,7 +1198,12 @@
 
         /* ── Selected Work: beige bg + dark grid fades in as you scroll in ── */
         .horizontal-scroll-section {
-            background-color: #FFFFFF !important;   /* brand standard: white + grid */
+            background-color: #111114 !important;   /* dark base under L.png */
+            background-image: url('assets/sections/section-work/SELECTED WORK Backgrounds.png') !important;
+            background-size: cover !important;
+            background-position: center center !important;
+            background-attachment: fixed !important;
+            background-repeat: no-repeat !important;
         }
 
         /* Grid lives on a ::before so we can apply a scroll-reveal mask */
@@ -2085,6 +2090,34 @@
             background-color: transparent !important;
         }
 
+        /* ── Gallery intro: title PNG — height-matched to filmstrip (440px) ── */
+        .gallery-intro {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: flex-start !important;
+            height: 440px !important;
+            width: auto !important;
+            min-width: 0 !important;
+            padding: 0 !important;
+            padding-right: 32px !important;   /* tight gap to filmstrip */
+            flex-shrink: 0 !important;
+            align-self: flex-start !important;
+            margin-top: 32px !important;
+        }
+        .gallery-intro-title-img {
+            height: 440px !important;
+            width: auto !important;
+            max-width: none !important;
+            display: block !important;
+            pointer-events: none !important;
+            user-select: none !important;
+            flex-shrink: 0 !important;
+        }
+        /* Tighten the horizontal gallery left padding so title starts closer to view */
+        .horizontal-gallery {
+            padding-left: 8vw !important;
+        }
+
         /* ── Outer wrapper: transparent — PNG alpha is the sole visual boundary ── */
         .film-contact-strip-wrapper {
             position: relative;
@@ -2506,7 +2539,7 @@
 
             /* ── Global: stop horizontal bleed ───────────────────── */
             html, body {
-                overflow-x: hidden !important;
+                overflow-x: clip !important;   /* clip does not create scroll container — sticky works */
                 max-width: 100vw !important;
             }
 
@@ -2608,56 +2641,90 @@
             .horizontal-scroll-section { display: none !important; }
             .mobile-portfolio-section  { display: block !important; }
 
-            /* ── Mobile portfolio feed styles ───────────────────────── */
+            /* ── Mobile Selected Work — dark editorial redesign ─────── */
             .mobile-portfolio-section {
                 position: relative;
-                padding: 60px 20px;
-                border-top: 1px solid rgba(14,14,14,0.08);
-                border-bottom: 1px solid rgba(14,14,14,0.08);
+                padding: 72px 24px 80px;
+                background-color: #0D0D0F;
+                background-image: url('assets/sections/section-work/SELECTED WORK Backgrounds.png');
+                background-size: cover;
+                background-position: center center;
+                background-attachment: scroll;
+                background-repeat: no-repeat;
                 overflow: hidden;
             }
+            /* Dark scrim over background image so text stays legible */
+            .mobile-portfolio-section::before {
+                content: '';
+                position: absolute;
+                inset: 0;
+                background: linear-gradient(
+                    160deg,
+                    rgba(13,13,15,0.88) 0%,
+                    rgba(13,13,15,0.72) 50%,
+                    rgba(13,13,15,0.82) 100%
+                );
+                pointer-events: none;
+                z-index: 0;
+            }
+            .mobile-portfolio-header,
+            .mobile-portfolio-feed {
+                position: relative;
+                z-index: 1;
+            }
             .mobile-portfolio-header {
-                margin-bottom: 40px;
+                margin-bottom: 48px;
+                border-bottom: 1px solid rgba(240,237,232,0.10);
+                padding-bottom: 32px;
+            }
+            /* Eyebrow tag */
+            .mobile-portfolio-header .section-eyebrow {
+                display: inline-block;
+                font-size: 9px;
+                letter-spacing: 0.26em;
+                text-transform: uppercase;
+                color: var(--lsc-terra);
+                font-family: 'CS-Felice-Mono', 'Outfit', monospace;
+                margin-bottom: 16px;
             }
             .mobile-portfolio-title {
                 font-family: 'Delight', Georgia, serif;
-                font-size: clamp(2.4rem, 11vw, 3.6rem);
+                font-size: clamp(2.8rem, 13vw, 4.2rem);
                 font-weight: 700;
-                line-height: 1;
-                color: var(--lsc-text, #f0ede8);
-                margin: 8px 0 4px;
-                letter-spacing: -0.02em;
+                line-height: 0.95;
+                color: #F0EDE8;
+                margin: 0 0 12px;
+                letter-spacing: -0.03em;
             }
             .mobile-portfolio-sub {
-                font-size: 11px;
-                letter-spacing: 0.18em;
-                color: var(--lsc-mid, #7a7470);
+                font-size: 10px;
+                letter-spacing: 0.22em;
+                color: rgba(240,237,232,0.35);
                 margin: 0;
                 text-transform: uppercase;
+                font-family: 'CS-Felice-Mono', 'Outfit', monospace;
             }
             .mobile-portfolio-feed {
                 display: flex;
                 flex-direction: column;
                 gap: 0;
             }
-            /* Each card: visible by default; JS adds .will-animate before observing */
+
+            /* ── Card ────────────────────────────────────────────────── */
             .mobile-card {
                 opacity: 1;
                 transform: none;
                 transition: opacity 0.55s ease, transform 0.55s ease;
-                padding: 28px 0;
-                border-bottom: 1px solid rgba(14,14,14,0.1);
+                padding: 32px 0;
+                border-bottom: 1px solid rgba(240,237,232,0.09);
                 cursor: pointer;
+                position: relative;
             }
             .mobile-card.will-animate {
                 opacity: 0;
-                transform: translateY(32px);
+                transform: translateY(28px);
             }
             .mobile-card:last-child { border-bottom: none; }
-            .mobile-card.will-animate {
-                opacity: 0;
-                transform: translateY(32px);
-            }
             .mobile-card.in-view {
                 opacity: 1 !important;
                 transform: translateY(0) !important;
@@ -2667,51 +2734,72 @@
                 transform: translateY(-20px) !important;
                 transition: opacity 0.3s ease, transform 0.3s ease !important;
             }
-            /* Thumbnail with play button overlay */
+
+            /* Card number index — editorial accent top-right of thumb */
+            .mobile-card-index {
+                position: absolute;
+                top: 32px;
+                right: 0;
+                font-family: 'CS-Felice-Mono', 'Outfit', monospace;
+                font-size: 9px;
+                letter-spacing: 0.18em;
+                color: rgba(240,237,232,0.22);
+                pointer-events: none;
+                z-index: 2;
+            }
+
+            /* Thumbnail */
             .mobile-card-thumb {
                 position: relative;
                 width: 100%;
                 aspect-ratio: 16/9;
                 overflow: hidden;
-                border-radius: 4px;
-                margin-bottom: 16px;
-                background: #111;
+                border-radius: 6px;
+                margin-bottom: 0;
+                background: #1a1a1c;
+                border: 1px solid rgba(240,237,232,0.08);
             }
             .mobile-card-thumb img {
                 width: 100%;
                 height: 100%;
                 object-fit: cover;
                 display: block;
+                transition: transform 0.5s cubic-bezier(0.22,1,0.36,1);
             }
-            /* Expand hint — tiny corner indicator, hidden once open */
+            .mobile-card.is-open .mobile-card-thumb img {
+                transform: scale(1.03);
+            }
+
+            /* Play pill — bottom-left on open */
             .mobile-card-play {
                 position: absolute;
-                bottom: 10px;
-                right: 10px;
-                width: 28px;
-                height: 28px;
+                bottom: 12px;
+                right: 12px;
+                width: 32px;
+                height: 32px;
                 border-radius: 50%;
-                background: rgba(14,14,14,0.45);
-                border: 1px solid rgba(255,255,255,0.15);
+                background: rgba(13,13,15,0.55);
+                border: 1px solid rgba(240,237,232,0.18);
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                color: rgba(255,255,255,0.6);
-                font-size: 0.65rem;
+                color: rgba(240,237,232,0.55);
+                font-size: 0.6rem;
                 pointer-events: none;
                 transition: opacity 0.25s ease;
+                backdrop-filter: blur(4px);
+                -webkit-backdrop-filter: blur(4px);
             }
-            .mobile-card.is-open .mobile-card-play {
-                opacity: 0;
-            }
-            /* Centered play button — appears on open */
+            .mobile-card.is-open .mobile-card-play { opacity: 0; }
+
+            /* Centered play overlay */
             .mobile-card-play-overlay {
                 position: absolute;
                 inset: 0;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                background: rgba(14,14,14,0.28);
+                background: rgba(13,13,15,0.32);
                 opacity: 0;
                 pointer-events: none;
                 transition: opacity 0.3s ease;
@@ -2722,8 +2810,8 @@
                 pointer-events: auto;
             }
             .mobile-card-play-overlay-btn {
-                width: 60px;
-                height: 60px;
+                width: 56px;
+                height: 56px;
                 border-radius: 50%;
                 background: var(--lsc-terra);
                 border: none;
@@ -2731,15 +2819,16 @@
                 align-items: center;
                 justify-content: center;
                 color: #F0EDE8;
-                box-shadow: 0 4px 20px rgba(192,96,60,0.5);
+                box-shadow: 0 4px 24px rgba(168,78,46,0.55);
                 transition: transform 0.2s ease, background 0.2s ease;
                 cursor: pointer;
             }
             .mobile-card-play-overlay-btn:active {
-                transform: scale(0.93);
-                background: #A84E2E;
+                transform: scale(0.92);
+                background: #8c3e22;
             }
-            /* Card header row: title + chevron */
+
+            /* Card header: title row */
             .mobile-card-header {
                 display: flex;
                 align-items: center;
@@ -2747,24 +2836,26 @@
                 width: 100%;
                 background: none;
                 border: none;
-                padding: 14px 0 0;
+                padding: 18px 0 0;
                 cursor: pointer;
                 text-align: left;
                 gap: 12px;
             }
             .mobile-card-chevron {
                 flex-shrink: 0;
-                color: rgba(14,14,14,0.4);
-                transition: transform 0.3s ease;
+                color: rgba(240,237,232,0.25);
+                transition: transform 0.3s ease, color 0.25s ease;
             }
             .mobile-card.is-open .mobile-card-chevron {
                 transform: rotate(180deg);
+                color: var(--lsc-terra);
             }
-            /* Drawer: collapsed by default, smooth expand */
+
+            /* Drawer */
             .mobile-card-drawer {
                 display: grid;
                 grid-template-rows: 0fr;
-                transition: grid-template-rows 0.35s ease;
+                transition: grid-template-rows 0.38s cubic-bezier(0.22,1,0.36,1);
                 overflow: hidden;
             }
             .mobile-card.is-open .mobile-card-drawer {
@@ -2773,48 +2864,48 @@
             .mobile-card-drawer-inner {
                 overflow: hidden;
                 padding-bottom: 0;
-                transition: padding-bottom 0.35s ease;
+                transition: padding-bottom 0.38s ease;
             }
             .mobile-card.is-open .mobile-card-drawer-inner {
-                padding-bottom: 20px;
+                padding-bottom: 4px;
             }
 
-            /* Card info */
+            /* Card text tokens — all light-on-dark */
             .mobile-card-category {
                 display: block;
                 font-size: 9px;
-                letter-spacing: 0.22em;
+                letter-spacing: 0.24em;
                 text-transform: uppercase;
-                color: var(--lsc-terra, var(--lsc-terra));
-                margin-bottom: 6px;
-                font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
+                color: var(--lsc-terra);
+                margin: 12px 0 6px;
+                font-family: 'CS-Felice-Mono', 'Outfit', monospace;
             }
             .mobile-card-title {
                 font-family: 'Delight', Georgia, serif;
-                font-size: 1.3rem;
+                font-size: clamp(1.25rem, 5.5vw, 1.5rem);
                 font-weight: 700;
-                color: var(--lsc-black);
-                margin: 0 0 8px;
-                letter-spacing: -0.01em;
-                line-height: 1.2;
+                color: #F0EDE8;
+                margin: 0 0 0;
+                letter-spacing: -0.02em;
+                line-height: 1.15;
             }
             .mobile-card-scope {
                 font-size: 11px;
-                line-height: 1.6;
-                color: rgba(14,14,14,0.6);
-                margin: 0 0 8px;
-                font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
+                line-height: 1.65;
+                color: rgba(240,237,232,0.50);
+                margin: 0 0 10px;
+                font-family: 'CS-Felice-Mono', 'Outfit', monospace;
             }
             .mobile-card-meta {
                 font-size: 9px;
-                letter-spacing: 0.12em;
-                color: rgba(14,14,14,0.45);
-                margin-bottom: 2px;
-                font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
+                letter-spacing: 0.14em;
+                color: rgba(240,237,232,0.28);
+                margin-bottom: 3px;
+                font-family: 'CS-Felice-Mono', 'Outfit', monospace;
                 text-transform: uppercase;
             }
             .mobile-card-label {
-                color: var(--lsc-terra, var(--lsc-terra));
+                color: var(--lsc-terra);
                 margin-right: 6px;
             }
 
@@ -2992,7 +3083,7 @@
 
             /* ── Mobile services section ─────────────────────────── */
             .mobile-services-section {
-                display: block !important;
+                display: none !important;
                 position: relative;
                 width: 100%;
                 background: var(--lsc-black, #181818);
@@ -3142,79 +3233,32 @@
            Scale + blur + saturation lens-focus dissolve — no 3D intersection.
            Active slide pushes to the focal plane; dormant slides recede behind.
            ──────────────────────────────────────────────────────────────────── */
+        /* ── Services section — static full-width image ── */
         .services-pin-container {
+            display: block;
             position: relative;
             width: 100%;
-            height: 400vh;
             background-color: var(--lsc-black);
+            line-height: 0;
         }
 
         .services-sticky-window {
-            position: sticky;
-            top: 0;
+            display: block;
+            position: relative;
             width: 100%;
-            height: 100vh;
-            overflow: hidden;
-            /* NO perspective here — avoids 3D context that causes inter-slide clipping */
-            isolation: isolate;
         }
 
-        /* ── Slide panels: receded / dormant state ── */
         .services-slide {
-            position: absolute;
-            inset: 0;
+            display: block;
+            position: relative;
             width: 100%;
-            height: 100%;
-            transform-origin: center center;
-            transform: scale(0.88);
-            opacity: 0;
-            filter: blur(10px) saturate(0.35);
-            will-change: transform, opacity, filter;
-            pointer-events: none;
-            z-index: 10;
-            transition:
-                transform 0.62s cubic-bezier(0.25, 1, 0.5, 1),
-                opacity   0.62s cubic-bezier(0.25, 1, 0.5, 1),
-                filter    0.62s cubic-bezier(0.25, 1, 0.5, 1);
-        }
-
-        /* ── Active slide: pushed to the lens focal plane ── */
-        .services-slide.is-active {
-            opacity: 1;
-            transform: scale(1);
-            filter: blur(0px) saturate(1);
-            z-index: 20;
-            pointer-events: auto;
         }
 
         .services-slide img {
             width: 100%;
-            height: 100%;
-            object-fit: cover;
+            height: auto;
             display: block;
-            pointer-events: none;
-        }
-
-        /* ── Service name label — fades in when slide is focal ── */
-        .slide-service-label {
-            position: absolute;
-            left: 50%;
-            bottom: 58px;
-            transform: translateX(-50%) translateY(6px);
-            font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
-            font-size: 9px;
-            letter-spacing: 0.38em;
-            text-transform: uppercase;
-            color: rgba(240, 237, 232, 0);
-            transition: color 0.4s ease, transform 0.4s ease;
-            z-index: 5;
-            white-space: nowrap;
-            pointer-events: none;
-        }
-
-        .services-slide.is-active .slide-service-label {
-            color: rgba(240, 237, 232, 0.45);
-            transform: translateX(-50%) translateY(0px);
+            object-fit: cover;
         }
 
         /* ── HUD Measure Bar — scrub track + timecode only ─────────────────── */
@@ -3281,7 +3325,71 @@
 
         /* ── Mobile suppression ── */
         @media (max-width: 768px) {
+            /* Services section completely removed on mobile */
             .services-pin-container { display: none !important; }
+            /* Close gap: selected works follows hero directly */
+            .mobile-portfolio-section { margin-top: 0 !important; }
+        }
+
+
+        /* ══════════════════════════════════════════════════════════════
+           PORTFOLIO GLASS PANEL — full-screen, slides in from left.
+           z-index: 0 — paints above non-positioned bg, below sticky-track
+           (sticky-track is position:sticky and comes later in DOM order,
+           so it naturally paints over this layer without any z-index boost).
+           backdrop-filter only blurs content painted BEFORE this element,
+           which is the L.png section background — exactly correct.
+           ══════════════════════════════════════════════════════════════ */
+        .portfolio-glass-panel {
+            position: fixed;
+            inset: 0;
+            z-index: 0;                  /* above bg, below sticky content */
+            pointer-events: none;
+            /* Subtle light frosted tint — matches reference */
+            background: rgba(240, 237, 232, 0.07);
+            /* Low blur — diffuse without smearing */
+            backdrop-filter: blur(4.8px) brightness(1.05) saturate(0.95);
+            -webkit-backdrop-filter: blur(4.8px) brightness(1.05) saturate(0.95);
+            /* Refraction edge border — thin bright rim, no shadow */
+            border: 1px solid rgba(255, 255, 255, 0.20);
+            /* Start off-screen left, invisible */
+            transform: translateX(-100%);
+            opacity: 0;
+            visibility: hidden;
+            /* Slow, cinematic ease — 1.4s slide, 1.1s fade */
+            transition:
+                transform 1.4s cubic-bezier(0.22, 1, 0.36, 1),
+                opacity   1.1s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        .portfolio-glass-panel.is-visible {
+            transform: translateX(0);
+            opacity: 1;
+            visibility: visible;
+        }
+        /* Inner refraction catches + grid overlay on the glass */
+        .portfolio-glass-panel::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            /* Grid sits on top of the refraction gradients, no white fill */
+            background:
+                linear-gradient(to bottom,
+                    rgba(255,255,255,0.09)  0%,
+                    rgba(255,255,255,0)     5%,
+                    rgba(255,255,255,0)    95%,
+                    rgba(255,255,255,0.05) 100%),
+                linear-gradient(to right,
+                    rgba(255,255,255,0.11)  0%,
+                    rgba(255,255,255,0)     4%,
+                    rgba(255,255,255,0)    96%,
+                    rgba(255,255,255,0.05) 100%),
+                url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2248%22%20height%3D%2248%22%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%2248%22%20y2%3D%220.5%22%20stroke%3D%22white%22%20stroke-opacity%3D%220.25%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%2248%22%20stroke%3D%22white%22%20stroke-opacity%3D%220.25%22%20stroke-width%3D%221%22%2F%3E%3C%2Fsvg%3E");
+            background-size: auto, auto, 48px 48px;
+            background-repeat: no-repeat, no-repeat, repeat;
+        }
+        @media (max-width: 992px) {
+            .portfolio-glass-panel { display: none; }
         }
 
     </style>
@@ -3471,38 +3579,11 @@
              ============================================================ -->
         <section class="services-pin-container" id="services-track">
             <div class="services-sticky-window">
-                <!-- Slide 0: Services Landing -->
+                <!-- Single services screen PNG -->
                 <div class="services-slide" data-slide="0">
-                    <img src="assets/sections/section-services/servicesV2-01.png" alt="Services Landing Blueprint Banner">
-                    <span class="slide-service-label">Services</span>
+                    <img src="assets/sections/section-services/Services Screens.png" alt="LSC Creative Services">
                 </div>
-                <!-- Slide 1: Motion Production -->
-                <div class="services-slide" data-slide="1">
-                    <img src="assets/sections/section-services/servicesV2-02.png" alt="Motion Video Production Workspace">
-                    <span class="slide-service-label">Motion</span>
-                </div>
-                <!-- Slide 2: Stills Photography -->
-                <div class="services-slide" data-slide="2">
-                    <img src="assets/sections/section-services/servicesV2-03.png" alt="Stills Photography Masterboard">
-                    <span class="slide-service-label">Stills</span>
-                </div>
-                <!-- Slide 3: Production Outro -->
-                <div class="services-slide" data-slide="3">
-                    <img src="assets/sections/section-services/servicesV2-04.png" alt="LSC Creative Projector Outro Canvas">
-                    <span class="slide-service-label">Production</span>
-                </div>
-                <!-- HUD Measure Bar — scrub track + timecode -->
-                <div class="hud-measure-bar">
-                    <div class="hud-track">
-                        <div class="hud-track-rail"></div>
-                        <div class="hud-tick-mark" style="left: 25%;"></div>
-                        <div class="hud-tick-mark" style="left: 50%;"></div>
-                        <div class="hud-tick-mark" style="left: 75%;"></div>
-                        <div class="hud-track-fill" id="hudFill"></div>
-                        <div class="hud-scrub-head" id="hudScrub"></div>
-                    </div>
 
-                </div>
             </div>
         </section>
 
@@ -3554,13 +3635,19 @@
              SELECTED WORK — HORIZONTAL SCROLL PORTFOLIO
              ============================================================ -->
         <section id="portfolio" class="horizontal-scroll-section">
+            <!-- Glass panel: fixed, slides in from left when filmstrip enters view -->
+            <div class="portfolio-glass-panel" id="portfolioGlassPanel" aria-hidden="true"></div>
             <div id="portfolioBg" class="portfolio-hover-bg"></div>
             <div class="sticky-track">
                 <div class="horizontal-gallery" id="portfolioGallery">
 
                     <div class="gallery-intro">
-                        <h2 class="section-title">Selected<br>Work</h2>
-                        <p class="section-subtitle">2024–2025</p>
+                        <img
+                            src="assets/sections/section-work/ title Selected work'.png"
+                            alt="Selected Work"
+                            class="gallery-intro-title-img"
+                            draggable="false"
+                        >
                     </div>
 
                     <!-- ═══════════════════════════════════════════════════════════════
@@ -3671,6 +3758,7 @@
             <div class="mobile-portfolio-feed">
 
                 <div class="mobile-card" data-video-id="89a0b68b-1afe-4c5a-9d83-67fc880a876a" data-project-title="Marine Vitalities">
+                    <span class="mobile-card-index">01</span>
                     <div class="mobile-card-thumb">
                         <img src="assets/sections/section-work/marine-vitalities-thumb.png" alt="Marine Vitalities">
                         <div class="mobile-card-play" aria-hidden="true">&#8964;</div>
@@ -3695,6 +3783,7 @@
                 </div>
 
                 <div class="mobile-card" data-video-id="b73539f4-26bd-470d-b658-8b2b0870098b" data-project-title="BNB AutoHaus">
+                    <span class="mobile-card-index">02</span>
                     <div class="mobile-card-thumb">
                         <img src="assets/sections/section-work/bnb-autohaus-thumb.png" alt="BNB AutoHaus">
                         <div class="mobile-card-play" aria-hidden="true">&#8964;</div>
@@ -3719,6 +3808,7 @@
                 </div>
 
                 <div class="mobile-card" data-video-id="0d00bcf5-bf60-4c2c-8513-f8e41b490670" data-project-title="BakeHouse">
+                    <span class="mobile-card-index">03</span>
                     <div class="mobile-card-thumb">
                         <img src="assets/sections/section-work/bakehouse-thumb.png" alt="BakeHouse">
                         <div class="mobile-card-play" aria-hidden="true">&#8964;</div>
@@ -3743,6 +3833,7 @@
                 </div>
 
                 <div class="mobile-card" data-video-id="380dcc46-201f-46a1-8157-4e2fb3d88415" data-project-title="Illawarra Hawks">
+                    <span class="mobile-card-index">04</span>
                     <div class="mobile-card-thumb">
                         <img src="assets/sections/section-work/illawarra-hawks-thumb.png" alt="Illawarra Hawks">
                         <div class="mobile-card-play" aria-hidden="true">&#8964;</div>
@@ -3948,8 +4039,6 @@
                 <p>LSC Creative &copy; 2025</p>
             </div>
             <div class="footer-right">
-                <a href="#">Privacy Policy</a>
-                <a href="#">Terms of Service</a>
                 <a href="mailto:hello@lsccreative.studio">Contact</a>
             </div>
         </div>
@@ -4463,78 +4552,7 @@
          SERVICES PIN — SCROLL-DRIVEN CROSSFADE ENGINE
          ============================================================ -->
     <script>
-    /* ── FOCAL DEPTH WARP ENGINE — SERVICES SCROLL TRACK ───────────────────
-       Scroll-driven lens-focus transition: scale + blur + saturation.
-       The active (nearest) slide is pushed to the focal plane via is-active.
-       CSS handles all easing — JS only drives class state and HUD data.
-       ────────────────────────────────────────────────────────────────────── */
-    (function () {
-        'use strict';
-
-        var pinContainer = null;
-        var slides       = [];
-        var hudFill      = null;
-        var hudScrub     = null;
-        var ticking      = false;
-        var lastActive   = -1;
-        var SLIDE_LABELS = ['01', '02', '03', '04'];
-
-        function init() {
-            pinContainer = document.querySelector('.services-pin-container');
-            if (!pinContainer) return;
-            slides      = Array.from(pinContainer.querySelectorAll('.services-slide'));
-            hudFill     = document.getElementById('hudFill');
-            hudScrub    = document.getElementById('hudScrub');
-            if (!slides.length) return;
-            window.addEventListener('scroll', onScroll, { passive: true });
-            update();
-        }
-
-        function onScroll() {
-            if (!ticking) {
-                requestAnimationFrame(update);
-                ticking = true;
-            }
-        }
-
-        function update() {
-            ticking = false;
-
-            var rect     = pinContainer.getBoundingClientRect();
-            var total    = pinContainer.offsetHeight - window.innerHeight;
-            var scrolled = Math.max(0, Math.min(-rect.top, total));
-            var progress = total > 0 ? scrolled / total : 0;
-
-            /* Map 0→1 to nearest slide index */
-            var n       = slides.length;
-            var pos     = progress * (n - 1);           /* continuous 0 → n-1 */
-            var nearest = Math.min(n - 1, Math.max(0, Math.round(pos)));
-
-            /* Toggle is-active only when it changes — CSS drives animation */
-            if (nearest !== lastActive) {
-                slides.forEach(function (slide, i) {
-                    if (i === nearest) {
-                        slide.classList.add('is-active');
-                    } else {
-                        slide.classList.remove('is-active');
-                    }
-                });
-                lastActive = nearest;
-
-            }
-
-            /* HUD scrub — always continuous, unaffected by slide state */
-            var pct = (progress * 100).toFixed(2) + '%';
-            if (hudFill)  hudFill.style.width = pct;
-            if (hudScrub) hudScrub.style.left  = pct;
-        }
-
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', init);
-        } else {
-            init();
-        }
-    }());
+    /* Services scroll engine removed — section is now a static image */
 
     /* ── MOBILE SERVICES SCROLL REVEAL ──────────────────────────────
        IntersectionObserver triggers .is-visible on header + cards.
@@ -4567,6 +4585,43 @@
         }
     }());
 
+    </script>
+
+    <!-- Portfolio Glass Panel — scroll-position trigger (not IntersectionObserver)
+         Glass shows only when INSIDE the portfolio section:
+         top of section has passed viewport top (rect.top <= 0).
+         This prevents it appearing over the services section above. -->
+    <script>
+        (function () {
+            var section = document.getElementById('portfolio');
+            var panel   = document.getElementById('portfolioGlassPanel');
+            if (!section || !panel) return;
+
+            var ticking = false;
+
+            function checkGlass() {
+                ticking = false;
+                var rect = section.getBoundingClientRect();
+                /* Show only when the section top has scrolled above the viewport
+                   AND the section bottom is still visible — i.e. we are inside it */
+                var inside = rect.top <= 0 && rect.bottom > 0;
+                if (inside) {
+                    panel.classList.add('is-visible');
+                } else {
+                    panel.classList.remove('is-visible');
+                }
+            }
+
+            window.addEventListener('scroll', function () {
+                if (!ticking) {
+                    requestAnimationFrame(checkGlass);
+                    ticking = true;
+                }
+            }, { passive: true });
+
+            /* Prime on load */
+            checkGlass();
+        }());
     </script>
 
 </body>
