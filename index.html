@@ -172,10 +172,21 @@
             animation: cinematicFadeOut 0.8s ease-in-out 1.2s forwards;
         }
 
+        .loader-eyebrow {
+            font-family: 'CS-Felice-Mono', monospace;
+            font-size: 9px;
+            letter-spacing: 0.3em;
+            color: var(--lsc-terra);
+            display: block;
+            margin-bottom: 12px;
+            opacity: 0;
+            animation: textFadeIn 0.4s ease-out 0s forwards;
+        }
+
         .loader-typography {
             font-family: 'Delight', Georgia, serif;
             font-weight: 700;
-            font-size: 42px;
+            font-size: 56px;
             color: var(--lsc-white);
             letter-spacing: -0.02em;
             opacity: 0;
@@ -386,12 +397,52 @@
         /* ============================================================
            HERO CANVAS — FULL-BLEED IFRAME ENGINE
            ============================================================ */
+        /* ── HUD NAV BAR OVERRIDE ─────────────────────────────── */
+        .navbar {
+            background: rgba(8, 8, 10, 0.85) !important;
+            backdrop-filter: blur(14px) !important;
+            -webkit-backdrop-filter: blur(14px) !important;
+            border-bottom: 1px solid rgba(255,255,255,0.055) !important;
+            mix-blend-mode: normal !important;
+            padding: 0 !important;
+            height: 56px !important;
+        }
+        .nav-container { height: 56px !important; }
+        .brand-logo { mix-blend-mode: normal !important; }
+        .nav-logo.default-icon { height: 30px !important; width: auto !important; }
+        .nav-links a {
+            font-family: 'CS-Felice-Mono','Outfit',monospace !important;
+            font-size: 10px !important;
+            letter-spacing: 0.2em !important;
+            color: rgba(240,237,232,0.6) !important;
+            text-decoration: none !important;
+            padding-bottom: 3px !important;
+            border-bottom: 1px solid transparent !important;
+            transition: color 0.2s, border-color 0.2s !important;
+            mix-blend-mode: normal !important;
+        }
+        .nav-links a:hover { color: var(--lsc-white) !important; border-bottom-color: var(--lsc-terra) !important; }
+        .absolute-nav { position: static !important; transform: none !important; }
+
+        /* ── HUD SCANLINE TEXTURE ───────────────────────────────── */
+        .hud-scanlines::after {
+            content: '';
+            position: absolute; inset: 0;
+            background-image: repeating-linear-gradient(to bottom,transparent 0px,transparent 3px,rgba(0,0,0,0.07) 3px,rgba(0,0,0,0.07) 4px);
+            pointer-events: none; z-index: 2;
+        }
+
         .hero-canvas {
             position: relative;
             width: 100vw;
             height: 100vh;
-            /* background is transparent so the pinned video layer bleeds through */
-            background-color: transparent;
+            background-color: #0D0D0F;
+        }
+        .hero-canvas::after {
+            content: '';
+            position: absolute; inset: 0;
+            background: linear-gradient(to top, rgba(8,8,10,0.82) 0%, rgba(8,8,10,0.1) 45%, transparent 72%);
+            z-index: 1; pointer-events: none;
         }
 
         .hero-video-mask {
@@ -419,8 +470,8 @@
 
         .hero-interface-layer {
             position: relative;
-            z-index: 2;
-            padding: 60px;
+            z-index: 3;
+            padding: 56px 60px 88px;
             display: flex;
             flex-direction: column;
             justify-content: flex-end;
@@ -430,26 +481,54 @@
         .hero-interface-layer .eyebrow-accent {
             color: var(--lsc-terra);
             text-transform: uppercase;
-            letter-spacing: 0.28em;
-            font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
-            font-size: 11px;
-            margin-bottom: 0.75rem;
+            letter-spacing: 0.32em;
+            font-family: 'CS-Felice-Mono','Outfit',monospace;
+            font-size: 10px;
+            margin-bottom: 1rem;
             display: block;
         }
+        .hero-interface-layer .eyebrow-accent::before { content: '[ '; }
+        .hero-interface-layer .eyebrow-accent::after  { content: ' ]'; }
 
         .hero-interface-layer .display-title {
             color: var(--lsc-white);
-            font-family: 'Delight', sans-serif;
+            font-family: 'Delight', Georgia, serif;
             font-weight: 700;
-            letter-spacing: -0.025em;
-            line-height: 0.92;
-            font-size: 6rem;
+            letter-spacing: -0.03em;
+            line-height: 0.9;
+            font-size: clamp(3.8rem, 7vw, 8rem);
             margin: 0;
         }
 
         .hero-interface-layer .display-title em {
             font-style: italic;
             font-weight: 400;
+            color: var(--lsc-terra);
+        }
+
+        /* Scroll hint */
+        .hero-scroll-hint {
+            position: absolute;
+            bottom: 36px; left: 50%;
+            transform: translateX(-50%);
+            z-index: 4;
+            display: flex; flex-direction: column; align-items: center; gap: 8px;
+            pointer-events: none;
+        }
+        .hero-scroll-hint span {
+            font-family: 'CS-Felice-Mono',monospace;
+            font-size: 9px; letter-spacing: 0.24em;
+            text-transform: uppercase;
+            color: rgba(240,237,232,0.35);
+        }
+        .hero-scroll-hint svg {
+            width: 16px; height: 16px;
+            stroke: rgba(240,237,232,0.3); stroke-width: 2; fill: none;
+            animation: hudBounce 2s ease-in-out infinite;
+        }
+        @keyframes hudBounce {
+            0%,100% { transform: translateY(0); }
+            50%      { transform: translateY(6px); }
         }
 
         /* ============================================================
@@ -849,8 +928,11 @@
            ============================================================ */
         .lsc-process-section {
             padding: 0;
-            background-color: var(--lsc-black);
-            border-top: 1px solid var(--lsc-rule);
+            background-color: #0B0B0D;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56'%3E%3Cline x1='0' y1='0.5' x2='56' y2='0.5' stroke='white' stroke-opacity='0.04' stroke-width='1'/%3E%3Cline x1='0.5' y1='0' x2='0.5' y2='56' stroke='white' stroke-opacity='0.04' stroke-width='1'/%3E%3C/svg%3E");
+            background-size: 56px 56px;
+            background-repeat: repeat;
+            border-top: 1px solid rgba(168,78,46,0.2);
             position: relative;
             z-index: 3;
             overflow: hidden;
@@ -1163,8 +1245,8 @@
            FOOTER — KVS MINIMAL STRUCTURAL FOOTER
            ============================================================ */
         .footer {
-            background-color: var(--lsc-black);
-            border-top: 1px solid var(--lsc-rule);
+            background-color: #0B0B0D;
+            border-top: 1px solid rgba(255,255,255,0.05);
             padding: 32px 5vw;
             position: relative;
             z-index: 3;
@@ -1182,7 +1264,7 @@
             font-size: 11px;
             letter-spacing: 0.14em;
             text-transform: uppercase;
-            color: var(--lsc-muted);
+            color: rgba(240,237,232,0.4);
             text-decoration: none;
             transition: color 0.2s ease;
         }
@@ -1197,29 +1279,275 @@
         }
 
         /* ── Selected Work: beige bg + dark grid fades in as you scroll in ── */
+        /* ── WORKS SECTION — complete redesign ───────────────────────── */
         .horizontal-scroll-section {
-            background-color: #111114 !important;   /* dark base under L.png */
-            background-image: url('assets/sections/section-work/SELECTED WORK Backgrounds.png') !important;
-            background-size: cover !important;
-            background-position: center center !important;
-            background-attachment: fixed !important;
-            background-repeat: no-repeat !important;
+            background-color: #0B0B0D !important;
+            background-image: none !important;
+            border-top: 1px solid rgba(168,78,46,0.2) !important;
+            /* Reset pin-scroll to natural height */
+            height: auto !important;
+            min-height: auto !important;
+            padding: 100px 5vw 120px !important;
+            position: relative;
+            z-index: 3;
         }
 
-        /* Grid lives on a ::before so we can apply a scroll-reveal mask */
+        /* White SVG grid texture — stays as section texture */
         .horizontal-scroll-section::before {
             content: '';
             position: absolute;
             inset: 0;
             z-index: 0;
             pointer-events: none;
-            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22480%22%20height%3D%22360%22%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%2214%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%22466%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%2214%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%22346%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3C%2Fsvg%3E");
-            background-attachment: fixed;
+            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22480%22%20height%3D%22360%22%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%28255%2C255%2C255%2C0.04%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%28255%2C255%2C255%2C0.04%29%22%20stroke-width%3D%221%22%2F%3E%3C%2Fsvg%3E");
             background-size: 480px 360px;
             background-repeat: repeat;
-            /* Fade in over first ~8% of the 400vh section height ≈ 32vh */
-            -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 8%);
-            mask-image:         linear-gradient(to bottom, transparent 0%, black 8%);
+        }
+
+        /* Works header */
+        .works-header {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 56px;
+        }
+        .works-eyebrow {
+            font-family: 'CS-Felice-Mono', monospace;
+            font-size: 9px;
+            letter-spacing: 0.32em;
+            color: var(--lsc-terra);
+            display: block;
+        }
+        .works-title {
+            font-family: 'Delight', Georgia, serif;
+            font-weight: 700;
+            font-size: clamp(3rem, 6vw, 5.5rem);
+            color: var(--lsc-white);
+            letter-spacing: -0.03em;
+            line-height: 1;
+            margin: 0;
+        }
+        .works-title em {
+            color: var(--lsc-terra);
+            font-style: normal;
+        }
+        .works-count {
+            font-family: 'CS-Felice-Mono', monospace;
+            font-size: 9px;
+            letter-spacing: 0.22em;
+            color: rgba(240,237,232,0.35);
+            display: block;
+            margin-top: 4px;
+        }
+
+        /* 2×2 grid */
+        .works-grid {
+            position: relative;
+            z-index: 2;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2px;
+            background: rgba(168,78,46,0.12);
+        }
+
+        /* Individual card */
+        .works-card {
+            position: relative;
+            aspect-ratio: 16 / 9;
+            overflow: hidden;
+            background: #080810;
+            border: none;
+            padding: 0;
+            margin: 0;
+            cursor: pointer;
+            display: block;
+            width: 100%;
+            -webkit-appearance: none;
+            appearance: none;
+            transition: opacity 0.45s ease, background 0.45s ease;
+        }
+
+        /* Thumbnail */
+        .works-card-thumb {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.9s cubic-bezier(0.22,1,0.36,1),
+                        filter 0.5s ease;
+            filter: brightness(0.65) saturate(0.75);
+        }
+        .works-card:hover .works-card-thumb {
+            transform: scale(1.06);
+            filter: brightness(0.35) saturate(0.5);
+        }
+
+        /* Permanent dark scrim + reveal gradient */
+        .works-card-overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            padding: 28px 32px;
+            background: linear-gradient(
+                to top,
+                rgba(6,6,8,0.95)  0%,
+                rgba(6,6,8,0.55)  40%,
+                rgba(6,6,8,0.1)   70%,
+                transparent       100%
+            );
+            pointer-events: none;
+        }
+
+        /* HUD corner brackets */
+        .wc-corner {
+            position: absolute;
+            width: 22px;
+            height: 22px;
+            border-color: var(--lsc-terra);
+            border-style: solid;
+            opacity: 0;
+            transition: opacity 0.35s ease;
+            z-index: 3;
+            pointer-events: none;
+        }
+        .works-card:hover .wc-corner { opacity: 0.65; }
+        .wc-tl { top: 18px; left: 18px; border-width: 1px 0 0 1px; }
+        .wc-tr { top: 18px; right: 18px; border-width: 1px 1px 0 0; }
+        .wc-bl { bottom: 18px; left: 18px; border-width: 0 0 1px 1px; }
+        .wc-br { bottom: 18px; right: 18px; border-width: 0 1px 1px 0; }
+
+        /* Category + index row */
+        .works-card-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        .works-card-category {
+            font-family: 'CS-Felice-Mono', monospace;
+            font-size: 8px;
+            letter-spacing: 0.28em;
+            color: rgba(240,237,232,0.45);
+            text-transform: uppercase;
+        }
+        .works-card-index {
+            font-family: 'CS-Felice-Mono', monospace;
+            font-size: 8px;
+            letter-spacing: 0.2em;
+            color: rgba(168,78,46,0.75);
+        }
+
+        /* Card title — always visible */
+        .works-card-title {
+            font-family: 'Delight', Georgia, serif;
+            font-weight: 700;
+            font-size: clamp(1.1rem, 2vw, 1.65rem);
+            color: var(--lsc-white);
+            letter-spacing: -0.02em;
+            line-height: 1.1;
+            margin: 0 0 10px;
+        }
+
+        /* Description — reveals on hover */
+        .works-card-desc {
+            font-family: 'CS-Felice-Mono', monospace;
+            font-size: 9px;
+            letter-spacing: 0.1em;
+            color: rgba(240,237,232,0.5);
+            line-height: 1.7;
+            margin: 0 0 18px;
+            max-width: 380px;
+            opacity: 0;
+            transform: translateY(6px);
+            transition: opacity 0.32s ease, transform 0.32s ease;
+        }
+        .works-card:hover .works-card-desc {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Play CTA — reveals on hover */
+        .works-card-play {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 18px 9px 14px;
+            border: 1px solid rgba(168,78,46,0.55);
+            background: rgba(168,78,46,0.08);
+            color: var(--lsc-white);
+            font-family: 'CS-Felice-Mono', monospace;
+            font-size: 8px;
+            letter-spacing: 0.28em;
+            text-transform: uppercase;
+            width: fit-content;
+            opacity: 0;
+            transform: translateY(6px);
+            transition: opacity 0.32s ease 0.06s,
+                        transform 0.32s ease 0.06s,
+                        background 0.2s ease,
+                        border-color 0.2s ease;
+        }
+        .works-card:hover .works-card-play {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .works-card:hover .works-card-play:hover {
+            background: rgba(168,78,46,0.22);
+            border-color: rgba(168,78,46,0.9);
+        }
+        .works-card-play svg {
+            width: 11px;
+            height: 11px;
+            fill: var(--lsc-terra);
+            flex-shrink: 0;
+        }
+
+        /* ── Works hover: full-section background video ── */
+
+        /* The bg video wrapper sits absolutely at z-index 1,
+           between the SVG grid texture (::before, z-0) and the
+           works-grid (z-2). The section is already position:relative. */
+        .works-bg-video {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            opacity: 0;
+            transition: opacity 0.55s ease;
+            pointer-events: none;
+            overflow: hidden;
+        }
+        .works-bg-video iframe {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            /* Cover-fit: whichever axis fills first clips the other */
+            width: 100%;
+            height: 100%;
+            min-width: calc(177.78% * 1); /* 16:9 ratio × 100% height */
+            transform: translate(-50%, -50%);
+            border: none;
+            display: block;
+        }
+
+        /* Siblings: fade out entirely to reveal the bg video */
+        .works-grid.has-hover .works-card:not(.is-hovered) {
+            opacity: 0;
+        }
+
+        /* Hovered card: go transparent + thumbnail fades,
+           so the bg video shows through the card's footprint too */
+        .works-grid.has-hover .works-card.is-hovered {
+            background: transparent;
+        }
+        .works-grid.has-hover .works-card.is-hovered .works-card-thumb {
+            opacity: 0;
+            transition: opacity 0.45s ease;
         }
 
         /* Mobile portfolio: same beige + grid fade */
@@ -1567,18 +1895,17 @@
            ============================================================ */
         .lsc-contact-section {
             padding: 160px 5vw 140px;
-            background-color: #FFFFFF;
-            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22480%22%20height%3D%22360%22%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%2214%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%22466%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%2214%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%22346%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.45%29%22%20stroke-width%3D%221.5%22%2F%3E%3C%2Fsvg%3E");
-            background-attachment: fixed;
-            background-size: 480px 360px;
+            background-color: #0B0B0D;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56'%3E%3Cline x1='0' y1='0.5' x2='56' y2='0.5' stroke='white' stroke-opacity='0.04' stroke-width='1'/%3E%3Cline x1='0.5' y1='0' x2='0.5' y2='56' stroke='white' stroke-opacity='0.04' stroke-width='1'/%3E%3C/svg%3E");
+            background-size: 56px 56px;
             background-repeat: repeat;
-            border-top: 1px solid rgba(14, 14, 14, 0.08);
+            border-top: 1px solid rgba(168,78,46,0.25);
             position: relative;
             z-index: 3;
             overflow: hidden;
         }
 
-        /* Large ghosted background lettermark — KVS depth trick */
+        /* Ghosted lettermark — dark mode version */
         .lsc-contact-section::before {
             content: 'LSC';
             position: absolute;
@@ -1587,7 +1914,7 @@
             font-family: 'Delight', Georgia, serif;
             font-weight: 700;
             font-size: clamp(120px, 18vw, 260px);
-            color: rgba(14, 14, 14, 0.04);
+            color: rgba(240, 237, 232, 0.03);
             letter-spacing: -0.06em;
             line-height: 1;
             pointer-events: none;
@@ -1632,8 +1959,8 @@
         .contact-headline {
             font-family: 'Delight', Georgia, serif;
             font-weight: 700;
-            font-size: clamp(48px, 5.5vw, 76px); /* Massive Delight Serif */
-            color: var(--lsc-black);
+            font-size: clamp(48px, 5.5vw, 76px);
+            color: var(--lsc-white);
             text-align: left;
             letter-spacing: -0.03em;
             line-height: 0.95;
@@ -1716,7 +2043,7 @@
         }
 
         .connector-line {
-            stroke: rgba(14, 14, 14, 0.18);
+            stroke: rgba(240, 237, 232, 0.15);
             stroke-width: 2px;
             stroke-linecap: round;
             stroke-dasharray: 1px 8px;
@@ -1764,7 +2091,7 @@
             font-weight: 400;
             background-color: transparent;
             border: 1px solid var(--lsc-terra);
-            color: var(--lsc-black);
+            color: var(--lsc-white);
             cursor: pointer;
             outline: none;
             text-decoration: none;
@@ -2083,8 +2410,11 @@
            JS engines (modal controller, HUD leader line) fire with zero changes.
            ════════════════════════════════════════════════════════════════════════ */
 
-        /* ── Parent track + gallery: explicit transparency — no accidental fills ── */
-        .sticky-track,
+        /* ── Sticky track: dark base blocks hero-video-mask bleed-through ── */
+        .sticky-track {
+            background: #0B0B0D !important;
+            background-color: #0B0B0D !important;
+        }
         .horizontal-gallery {
             background: transparent !important;
             background-color: transparent !important;
@@ -2645,12 +2975,8 @@
             .mobile-portfolio-section {
                 position: relative;
                 padding: 72px 24px 80px;
-                background-color: #0D0D0F;
-                background-image: url('assets/sections/section-work/SELECTED WORK Backgrounds.png');
-                background-size: cover;
-                background-position: center center;
-                background-attachment: scroll;
-                background-repeat: no-repeat;
+                background-color: #0B0B0D;
+                background-image: none;
                 overflow: hidden;
             }
             /* Dark scrim over background image so text stays legible */
@@ -2972,8 +3298,10 @@
             }
 
             /* ── Contact ─────────────────────────────────────────── */
-            .lsc-contact-section { padding: 60px 20px !important; }
-            .contact-headline { font-size: clamp(2rem, 10vw, 3.2rem) !important; }
+            .lsc-contact-section { padding: 60px 20px !important; background-color: #0B0B0D !important; }
+            .contact-headline { font-size: clamp(2rem, 10vw, 3.2rem) !important; color: #F0EDE8 !important; }
+            /* ── Process ─────────────────────────────────────────── */
+            .lsc-process-section { background-color: #0B0B0D !important; }
             .contact-asymmetric-layout {
                 flex-direction: column !important;
                 gap: 32px !important;
@@ -3233,14 +3561,27 @@
            Scale + blur + saturation lens-focus dissolve — no 3D intersection.
            Active slide pushes to the focal plane; dormant slides recede behind.
            ──────────────────────────────────────────────────────────────────── */
-        /* ── Services section — static full-width image ── */
+        /* ── Services section — HUD-framed ── */
         .services-pin-container {
             display: block;
             position: relative;
             width: 100%;
-            background-color: var(--lsc-black);
+            background-color: #0B0B0D;
             line-height: 0;
+            border-top: 1px solid rgba(255,255,255,0.05);
         }
+        .services-pin-container::before,
+        .services-pin-container::after {
+            content: '';
+            position: absolute;
+            width: 28px; height: 28px;
+            border-color: rgba(168,78,46,0.5);
+            border-style: solid;
+            pointer-events: none;
+            z-index: 10;
+        }
+        .services-pin-container::before { top: 20px; left: 5vw; border-width: 1px 0 0 1px; }
+        .services-pin-container::after  { top: 20px; right: 5vw; border-width: 1px 1px 0 0; }
 
         .services-sticky-window {
             display: block;
@@ -3340,31 +3681,10 @@
            backdrop-filter only blurs content painted BEFORE this element,
            which is the L.png section background — exactly correct.
            ══════════════════════════════════════════════════════════════ */
+        /* Glass panel disabled — HUD redesign uses flat dark bg; backdrop-filter
+           was causing hero-video-mask to bleed through into the portfolio section. */
         .portfolio-glass-panel {
-            position: fixed;
-            inset: 0;
-            z-index: 0;                  /* above bg, below sticky content */
-            pointer-events: none;
-            /* Subtle light frosted tint — matches reference */
-            background: rgba(240, 237, 232, 0.07);
-            /* Low blur — diffuse without smearing */
-            backdrop-filter: blur(4.8px) brightness(1.05) saturate(0.95);
-            -webkit-backdrop-filter: blur(4.8px) brightness(1.05) saturate(0.95);
-            /* Refraction edge border — thin bright rim, no shadow */
-            border: 1px solid rgba(255, 255, 255, 0.20);
-            /* Start off-screen left, invisible */
-            transform: translateX(-100%);
-            opacity: 0;
-            visibility: hidden;
-            /* Slow, cinematic ease — 1.4s slide, 1.1s fade */
-            transition:
-                transform 1.4s cubic-bezier(0.22, 1, 0.36, 1),
-                opacity   1.1s cubic-bezier(0.22, 1, 0.36, 1);
-        }
-        .portfolio-glass-panel.is-visible {
-            transform: translateX(0);
-            opacity: 1;
-            visibility: visible;
+            display: none !important;
         }
         /* Inner refraction catches + grid overlay on the glass */
         .portfolio-glass-panel::before {
@@ -3390,6 +3710,40 @@
         }
         @media (max-width: 992px) {
             .portfolio-glass-panel { display: none; }
+        }
+
+        /* ── WORKS GRID — tablet (≤992px) ──────────────────────────── */
+        @media (max-width: 992px) {
+            .horizontal-scroll-section {
+                padding: 80px 4vw 100px !important;
+            }
+            .works-title {
+                font-size: clamp(2.4rem, 7vw, 3.6rem) !important;
+            }
+        }
+
+        /* ── WORKS GRID — mobile (≤768px) ──────────────────────────── */
+        @media (max-width: 768px) {
+            /* Show the works grid on mobile, hide old mobile section */
+            .horizontal-scroll-section { display: block !important; padding: 64px 20px 80px !important; height: auto !important; }
+            .mobile-portfolio-section  { display: none !important; }
+
+            /* Single column */
+            .works-grid { grid-template-columns: 1fr !important; gap: 2px !important; }
+
+            /* Always show overlay content on touch — no hover */
+            .works-card-desc,
+            .works-card-play {
+                opacity: 1 !important;
+                transform: translateY(0) !important;
+            }
+            .works-card-thumb {
+                filter: brightness(0.45) saturate(0.6) !important;
+            }
+            .wc-corner { opacity: 0.5 !important; }
+            .works-card-overlay { padding: 20px 20px !important; }
+            .works-card-title { font-size: 1.15rem !important; }
+            .works-card-desc { margin-bottom: 14px !important; }
         }
 
     </style>
@@ -3422,6 +3776,7 @@
          CINEMATIC LOADER MASK
          ============================================================ -->
     <div class="cinematic-loader-mask" id="cinematicLoader">
+        <span class="loader-eyebrow">[ INITIALISING ]</span>
         <div class="loader-typography">LSC <em>Creative.</em></div>
     </div>
 
@@ -3572,6 +3927,7 @@
                     </div>
                 </div>
             </div>
+            <div class="hero-scroll-hint"><span>SCROLL</span><svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></div>
         </section>
 
         <!-- ============================================================
@@ -3635,117 +3991,132 @@
              SELECTED WORK — HORIZONTAL SCROLL PORTFOLIO
              ============================================================ -->
         <section id="portfolio" class="horizontal-scroll-section">
-            <!-- Glass panel: fixed, slides in from left when filmstrip enters view -->
-            <div class="portfolio-glass-panel" id="portfolioGlassPanel" aria-hidden="true"></div>
-            <div id="portfolioBg" class="portfolio-hover-bg"></div>
-            <div class="sticky-track">
-                <div class="horizontal-gallery" id="portfolioGallery">
 
-                    <div class="gallery-intro">
-                        <img
-                            src="assets/sections/section-work/ title Selected work'.png"
-                            alt="Selected Work"
-                            class="gallery-intro-title-img"
-                            draggable="false"
-                        >
-                    </div>
-
-                    <!-- ═══════════════════════════════════════════════════════════════
-                         MASTER COMPOSITE CONTACT SHEET — single-asset hotspot system
-                         Canva-mastered PNG (4374×838px) renders as a single continuous
-                         strip at height:493px (→ 2573px wide). Four transparent <button>
-                         segments overlay the 4 frame columns at 25% each.
-                         Each carries .playable-tile → all hover CSS + JS wires fire.
-                         ═══════════════════════════════════════════════════════════════ -->
-                    <div class="film-contact-strip-wrapper">
-
-                        <!-- Frame-perfect composite: all 4 projects in one PNG -->
-                        <img
-                            src="assets/sections/section-work/film-contact.png"
-                            alt="LSC Creative — Selected Work Film Contact Sheet"
-                            class="film-contact-sheet-img"
-                            draggable="false"
-                        >
-
-                        <!-- Transparent interactive hotspot overlay grid -->
-                        <div class="hotspot-overlay">
-
-                            <!-- Hotspot 01 — Marine Vitalities (0%–25%) -->
-                            <button
-                                class="video-hotspot playable-tile"
-                                data-video-id="89a0b68b-1afe-4c5a-9d83-67fc880a876a"
-                                data-project-title="Marine Vitalities"
-                                aria-label="Play Marine Vitalities reel">
-                                <div class="cinematic-film-capsule">
-                                    <div class="tile-meta">
-                                        <h3 class="project-title">Marine Vitalities</h3>
-                                    </div>
-                                    <div class="project-info-overlay">
-                                        <h4 class="data-heading">BRAND DOCUMENTARY</h4>
-                                        <div class="data-measuring-graphic"></div>
-                                        <p class="project-description">On-location brand film capturing the relationship between sustainable farming in one of the worlds nutrient rich waters. Distributed across Website Hero, Meta Ads &amp; Socials — 03.02.2026</p>
-                                    </div>
-                                </div>
-                            </button>
-
-                            <!-- Hotspot 02 — BNB AutoHaus (25%–50%) -->
-                            <button
-                                class="video-hotspot playable-tile"
-                                data-video-id="b73539f4-26bd-470d-b658-8b2b0870098b"
-                                data-project-title="BNB AutoHaus"
-                                aria-label="Play BNB AutoHaus reel">
-                                <div class="cinematic-film-capsule">
-                                    <div class="tile-meta">
-                                        <h3 class="project-title">BNB AutoHaus</h3>
-                                    </div>
-                                    <div class="project-info-overlay">
-                                        <h4 class="data-heading">PRODUCT SHOWCASE</h4>
-                                        <div class="data-measuring-graphic"></div>
-                                        <p class="project-description">Feature a factory fresh car interior build, visualising the pinnacle of BNB's high detail work. Advertisement, YouTube &amp; Social Media — 05.03.2025</p>
-                                    </div>
-                                </div>
-                            </button>
-
-                            <!-- Hotspot 03 — BakeHouse (50%–75%) -->
-                            <button
-                                class="video-hotspot playable-tile"
-                                data-video-id="0d00bcf5-bf60-4c2c-8513-f8e41b490670"
-                                data-project-title="BakeHouse"
-                                aria-label="Play BakeHouse reel">
-                                <div class="cinematic-film-capsule">
-                                    <div class="tile-meta">
-                                        <h3 class="project-title">BakeHouse</h3>
-                                    </div>
-                                    <div class="project-info-overlay">
-                                        <h4 class="data-heading">HERO EXPOSITORY</h4>
-                                        <div class="data-measuring-graphic"></div>
-                                        <p class="project-description">An intimate look at the dedication of a world class baker, set in his heritage in a small corner of Australia. Local Culture Circuit, Pitch Deck &amp; Investor Portal — 10.05.2025</p>
-                                    </div>
-                                </div>
-                            </button>
-
-                            <!-- Hotspot 04 — Illawarra Hawks (75%–100%) -->
-                            <button
-                                class="video-hotspot playable-tile"
-                                data-video-id="380dcc46-201f-46a1-8157-4e2fb3d88415"
-                                data-project-title="HAWKS"
-                                aria-label="Play Illawarra Hawks reel">
-                                <div class="cinematic-film-capsule">
-                                    <div class="tile-meta">
-                                        <h3 class="project-title">ILLAWARRA HAWKS</h3>
-                                    </div>
-                                    <div class="project-info-overlay">
-                                        <h4 class="data-heading">EVENT COVERAGE</h4>
-                                        <div class="data-measuring-graphic"></div>
-                                        <p class="project-description">Court side grit and locker room tension. Real moments from the season to the championship finals. Broadcast, Stadium Screens &amp; Jumbotron — 04.09.2024</p>
-                                    </div>
-                                </div>
-                            </button>
-
-                        </div><!-- /.hotspot-overlay -->
-                    </div><!-- /.film-contact-strip-wrapper -->
-                </div>
+            <!-- Full-section bg video — fades in on card hover (muted preview) -->
+            <div class="works-bg-video" id="works-bg-video" aria-hidden="true">
+                <iframe
+                    id="works-bg-iframe"
+                    frameborder="0"
+                    allow="autoplay; fullscreen; picture-in-picture"
+                    allowfullscreen
+                    title="Project preview"></iframe>
             </div>
+
+            <!-- Works header -->
+            <div class="works-header">
+                <span class="works-eyebrow">[ SELECTED WORK ]</span>
+                <h2 class="works-title">Selected <em>Works.</em></h2>
+                <span class="works-count">04 FILMS — 2024–2026</span>
+            </div>
+
+            <!-- 2×2 Video Grid -->
+            <div class="works-grid">
+
+                <!-- 01 — Marine Vitalities -->
+                <button
+                    class="works-card playable-tile"
+                    data-video-id="89a0b68b-1afe-4c5a-9d83-67fc880a876a"
+                    data-project-title="Marine Vitalities"
+                    aria-label="Watch Marine Vitalities film">
+                    <div class="wc-corner wc-tl" aria-hidden="true"></div>
+                    <div class="wc-corner wc-tr" aria-hidden="true"></div>
+                    <div class="wc-corner wc-bl" aria-hidden="true"></div>
+                    <div class="wc-corner wc-br" aria-hidden="true"></div>
+                    <img src="assets/sections/section-work/marine-vitalities-thumb.png"
+                         alt="Marine Vitalities" class="works-card-thumb" loading="lazy">
+                    <div class="works-card-overlay" aria-hidden="true">
+                        <div class="works-card-meta">
+                            <span class="works-card-category">Brand Documentary</span>
+                            <span class="works-card-index">01</span>
+                        </div>
+                        <h3 class="works-card-title">Marine Vitalities</h3>
+                        <p class="works-card-desc">On-location brand film — sustainable aquaculture in Australia's nutrient-rich coastal waters. Website Hero, Meta Ads &amp; Socials.</p>
+                        <div class="works-card-play">
+                            <svg viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg"><polygon points="2,1 11,6 2,11"/></svg>
+                            Watch Film
+                        </div>
+                    </div>
+                </button>
+
+                <!-- 02 — BNB AutoHaus -->
+                <button
+                    class="works-card playable-tile"
+                    data-video-id="b73539f4-26bd-470d-b658-8b2b0870098b"
+                    data-project-title="BNB AutoHaus"
+                    aria-label="Watch BNB AutoHaus film">
+                    <div class="wc-corner wc-tl" aria-hidden="true"></div>
+                    <div class="wc-corner wc-tr" aria-hidden="true"></div>
+                    <div class="wc-corner wc-bl" aria-hidden="true"></div>
+                    <div class="wc-corner wc-br" aria-hidden="true"></div>
+                    <img src="assets/sections/section-work/bnb-autohaus-thumb.png"
+                         alt="BNB AutoHaus" class="works-card-thumb" loading="lazy">
+                    <div class="works-card-overlay" aria-hidden="true">
+                        <div class="works-card-meta">
+                            <span class="works-card-category">Product Showcase</span>
+                            <span class="works-card-index">02</span>
+                        </div>
+                        <h3 class="works-card-title">BNB AutoHaus</h3>
+                        <p class="works-card-desc">Factory-fresh car interior build — the pinnacle of BNB's high-detail craftsmanship. Advertisement, YouTube &amp; Social Media.</p>
+                        <div class="works-card-play">
+                            <svg viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg"><polygon points="2,1 11,6 2,11"/></svg>
+                            Watch Film
+                        </div>
+                    </div>
+                </button>
+
+                <!-- 03 — BakeHouse -->
+                <button
+                    class="works-card playable-tile"
+                    data-video-id="0d00bcf5-bf60-4c2c-8513-f8e41b490670"
+                    data-project-title="BakeHouse"
+                    aria-label="Watch BakeHouse film">
+                    <div class="wc-corner wc-tl" aria-hidden="true"></div>
+                    <div class="wc-corner wc-tr" aria-hidden="true"></div>
+                    <div class="wc-corner wc-bl" aria-hidden="true"></div>
+                    <div class="wc-corner wc-br" aria-hidden="true"></div>
+                    <img src="assets/sections/section-work/bakehouse-thumb.png"
+                         alt="BakeHouse" class="works-card-thumb" loading="lazy">
+                    <div class="works-card-overlay" aria-hidden="true">
+                        <div class="works-card-meta">
+                            <span class="works-card-category">Hero Expository</span>
+                            <span class="works-card-index">03</span>
+                        </div>
+                        <h3 class="works-card-title">BakeHouse</h3>
+                        <p class="works-card-desc">An intimate portrait of a world-class baker — heritage, craft, and quiet dedication in a small corner of Australia.</p>
+                        <div class="works-card-play">
+                            <svg viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg"><polygon points="2,1 11,6 2,11"/></svg>
+                            Watch Film
+                        </div>
+                    </div>
+                </button>
+
+                <!-- 04 — Illawarra Hawks -->
+                <button
+                    class="works-card playable-tile"
+                    data-video-id="380dcc46-201f-46a1-8157-4e2fb3d88415"
+                    data-project-title="Illawarra Hawks"
+                    aria-label="Watch Illawarra Hawks film">
+                    <div class="wc-corner wc-tl" aria-hidden="true"></div>
+                    <div class="wc-corner wc-tr" aria-hidden="true"></div>
+                    <div class="wc-corner wc-bl" aria-hidden="true"></div>
+                    <div class="wc-corner wc-br" aria-hidden="true"></div>
+                    <img src="assets/sections/section-work/illawarra-hawks-thumb.png"
+                         alt="Illawarra Hawks" class="works-card-thumb" loading="lazy">
+                    <div class="works-card-overlay" aria-hidden="true">
+                        <div class="works-card-meta">
+                            <span class="works-card-category">Event Coverage</span>
+                            <span class="works-card-index">04</span>
+                        </div>
+                        <h3 class="works-card-title">Illawarra Hawks</h3>
+                        <p class="works-card-desc">Courtside grit and locker-room tension — real moments from the season to the championship finals. Broadcast &amp; Stadium Screens.</p>
+                        <div class="works-card-play">
+                            <svg viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg"><polygon points="2,1 11,6 2,11"/></svg>
+                            Watch Film
+                        </div>
+                    </div>
+                </button>
+
+            </div><!-- /.works-grid -->
         </section>
 
         <!-- MOBILE PORTFOLIO — shown only on ≤768px, replaces broken scroll section -->
@@ -4622,6 +4993,61 @@
             /* Prime on load */
             checkGlass();
         }());
+    </script>
+
+    <!-- ── Works Section: hover → full-section muted video preview ── -->
+    <script>
+    (function () {
+        var section  = document.getElementById('portfolio');
+        var bgVideo  = document.getElementById('works-bg-video');
+        var bgIframe = document.getElementById('works-bg-iframe');
+        if (!section || !bgVideo || !bgIframe) return;
+
+        var grid        = section.querySelector('.works-grid');
+        var cards       = section.querySelectorAll('.works-card');
+        if (!grid || !cards.length) return;
+
+        var activeId   = null;
+        var leaveTimer = null;
+        var LIB        = '662936';
+
+        function loadVideo(videoId) {
+            if (videoId === activeId) return;
+            activeId    = videoId;
+            bgIframe.src = 'https://player.mediadelivery.net/embed/' + LIB + '/' + videoId
+                         + '?autoplay=true&loop=true&muted=true&preload=true&responsive=true&controls=false';
+        }
+
+        function onEnter() {
+            clearTimeout(leaveTimer);
+            var videoId = this.dataset.videoId;
+            if (videoId) loadVideo(videoId);
+            bgVideo.style.opacity = '1';
+            grid.classList.add('has-hover');
+            cards.forEach(function (c) { c.classList.remove('is-hovered'); });
+            this.classList.add('is-hovered');
+        }
+
+        function onLeave() {
+            leaveTimer = setTimeout(function () {
+                grid.classList.remove('has-hover');
+                bgVideo.style.opacity = '0';
+                cards.forEach(function (c) { c.classList.remove('is-hovered'); });
+                /* Clear src after the fade completes so the video stops */
+                setTimeout(function () {
+                    if (!grid.classList.contains('has-hover')) {
+                        bgIframe.src = '';
+                        activeId     = null;
+                    }
+                }, 600);
+            }, 80); /* 80 ms grace period — lets mouseenter on next card cancel this */
+        }
+
+        cards.forEach(function (card) {
+            card.addEventListener('mouseenter', onEnter);
+            card.addEventListener('mouseleave', onLeave);
+        });
+    }());
     </script>
 
 </body>
