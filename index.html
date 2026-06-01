@@ -220,7 +220,14 @@
         .about-modal-overlay {
             position: fixed;
             inset: 0;
-            background-color: rgba(0, 0, 0, 0.5);
+            /* Heavier blur so background is beautifully frosted */
+            background-color: rgba(0, 0, 0, 0.28);
+            /* White grid lines float over the blurred backdrop */
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Cline x1='0' y1='0.5' x2='60' y2='0.5' stroke='rgba(255,255,255,0.07)' stroke-width='1'/%3E%3Cline x1='0.5' y1='0' x2='0.5' y2='60' stroke='rgba(255,255,255,0.07)' stroke-width='1'/%3E%3C/svg%3E");
+            background-size: 60px 60px;
+            background-repeat: repeat;
+            backdrop-filter: blur(22px) saturate(140%);
+            -webkit-backdrop-filter: blur(22px) saturate(140%);
             z-index: 8000;
             display: flex;
             align-items: center;
@@ -236,17 +243,22 @@
             pointer-events: all;
         }
 
-        /* ── GLASS SLATE MODAL SURFACE ──────────────────────────────────────
-           Translucent dark charcoal tint (0.45 alpha) + Gaussian diffusion
-           backdrop blur. No gradient slashes. No specular highlights.
-           Polished catch-light border + wide diffuse drop shadow for depth.
+        /* ── TRUE GLASSMORPHISM MODAL ───────────────────────────────────────
+           Overlay is now nearly transparent so real page content shows through.
+           The modal's heavy blur frosts that visible content — this is what
+           creates the genuine glass effect: you see the world behind, frozen.
            ─────────────────────────────────────────────────────────────── */
         .about-modal {
-            background: rgba(20, 22, 26, 0.65);
-            backdrop-filter: blur(40px);
-            -webkit-backdrop-filter: blur(40px);
-            border: 1px solid rgba(255, 255, 255, 0.17);
-            box-shadow: 0 40px 80px rgba(0, 0, 0, 0.65);
+            background: rgba(12, 12, 22, 0.30);
+            backdrop-filter: blur(36px) saturate(180%) brightness(1.05);
+            -webkit-backdrop-filter: blur(36px) saturate(180%) brightness(1.05);
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            border-radius: 14px;
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.25),
+                inset 0 -1px 0 rgba(255, 255, 255, 0.06),
+                0 40px 80px rgba(0, 0, 0, 0.50),
+                0 8px 24px rgba(0, 0, 0, 0.25);
             max-width: 1000px;
             width: 100%;
             display: grid;
@@ -262,8 +274,11 @@
         }
 
         .about-photo-placeholder {
-            background-color: var(--lsc-surface);
-            border: 1px solid rgba(240, 237, 232, 0.05);
+            background: rgba(10, 10, 18, 0.45);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: none;
+            border-right: 1px solid rgba(255, 255, 255, 0.10);
             min-height: 520px;
             position: relative;
             overflow: hidden;
@@ -397,31 +412,45 @@
         /* ============================================================
            HERO CANVAS — FULL-BLEED IFRAME ENGINE
            ============================================================ */
+        /* ── DYNAMIC CONTRAST UTILITY ─────────────────────────── */
+        /* Apply .blend-contrast to ANY future pinned element.   */
+        /* White + difference + transparent bg = auto-inverts:   */
+        /*   dark section  → stays white                         */
+        /*   light section → flips to near-black automatically   */
+        .blend-contrast,
+        .blend-contrast * {
+            mix-blend-mode: difference !important;
+            color: #FFFFFF !important;
+            background: transparent !important;
+        }
+
         /* ── HUD NAV BAR OVERRIDE ─────────────────────────────── */
         .navbar {
-            background: rgba(8, 8, 10, 0.85) !important;
-            backdrop-filter: blur(14px) !important;
-            -webkit-backdrop-filter: blur(14px) !important;
-            border-bottom: 1px solid rgba(255,255,255,0.055) !important;
-            mix-blend-mode: normal !important;
+            background: transparent !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            border-bottom: none !important;
+            mix-blend-mode: difference !important; /* auto-contrasts against every section */
             padding: 0 !important;
             height: 56px !important;
         }
-        .nav-container { height: 56px !important; }
-        .brand-logo { mix-blend-mode: normal !important; }
-        .nav-logo.default-icon { height: 30px !important; width: auto !important; }
+        /* Centre the three links — hide logo on desktop */
+        .nav-container {
+            height: 56px !important;
+            justify-content: center !important;
+        }
+        .brand-logo.absolute-logo { display: none !important; }
         .nav-links a {
             font-family: 'CS-Felice-Mono','Outfit',monospace !important;
             font-size: 10px !important;
-            letter-spacing: 0.2em !important;
-            color: rgba(240,237,232,0.6) !important;
+            letter-spacing: 0.28em !important;
+            color: #FFFFFF !important;          /* pure white — required for difference blend */
             text-decoration: none !important;
-            padding-bottom: 3px !important;
-            border-bottom: 1px solid transparent !important;
-            transition: color 0.2s, border-color 0.2s !important;
-            mix-blend-mode: normal !important;
+            border-bottom: none !important;     /* underline removed — blend mode is the signal */
+            mix-blend-mode: difference !important;
+            transition: opacity 0.2s !important;
         }
-        .nav-links a:hover { color: var(--lsc-white) !important; border-bottom-color: var(--lsc-terra) !important; }
+        .nav-links a:hover { opacity: 0.72 !important; } /* dim on hover; inversion still active */
         .absolute-nav { position: static !important; transform: none !important; }
 
         /* ── HUD SCANLINE TEXTURE ───────────────────────────────── */
@@ -724,31 +753,40 @@
         .accordion-container {
             display: flex;
             flex-direction: column;
-            gap: 14px;
+            gap: 16px;
             border-top: none;
+            overflow: visible; /* allow glass card box-shadow + lift to show */
         }
 
-        /* ── Each row: ELEVATED CARD — white surface, drop shadow, rounded ── */
+        /* ── Each row: FROSTED GLASS CARD — light glass on beige/white bg ── */
         .cinematic-accordion {
-            background: rgba(255, 255, 255, 0.72);
-            border-radius: 6px;
-            border: none;
+            background: rgba(255, 255, 255, 0.48);
+            backdrop-filter: blur(28px) saturate(140%);
+            -webkit-backdrop-filter: blur(28px) saturate(140%);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.72);
             overflow: hidden;
             box-shadow:
-                0 1px 3px  rgba(14, 14, 14, 0.05),
-                0 4px 16px rgba(14, 14, 14, 0.09);
+                inset 0 1px 0 rgba(255, 255, 255, 0.85),
+                0 2px 8px  rgba(14, 14, 14, 0.06),
+                0 8px 28px rgba(14, 14, 14, 0.10);
             transition:
-                background-color 0.3s ease,
-                box-shadow       0.3s ease,
-                transform        0.3s ease;
+                background 0.35s ease,
+                border-color 0.35s ease,
+                box-shadow   0.35s ease,
+                transform    0.35s ease;
         }
 
-        /* Hover: lift + deepen shadow */
+        /* Hover: lift + terra accent + deeper shadow */
         .cinematic-accordion:not([open]):hover {
-            transform: translateY(-2px);
+            background: rgba(255, 255, 255, 0.62);
+            border-color: rgba(168, 78, 46, 0.35);
+            transform: translateY(-3px);
             box-shadow:
-                0 2px 6px  rgba(14, 14, 14, 0.07),
-                0 8px 28px rgba(14, 14, 14, 0.13);
+                inset 0 1px 0 rgba(255, 255, 255, 0.90),
+                0 4px 14px rgba(14, 14, 14, 0.10),
+                0 14px 40px rgba(14, 14, 14, 0.16),
+                0 0 0 1px rgba(168, 78, 46, 0.12);
         }
 
         /* ── Trigger: flex row inside card — horizontal card padding ── */
@@ -1091,32 +1129,45 @@
             );
         }
 
-        /* ── Capabilities hover cards (mirrors process-card) ── */
+        /* ── Capabilities hover cards — light frosted glass on white bg ── */
         .capabilities-card {
-            background: rgba(255, 255, 255, 0.72);
-            border-radius: 6px;
-            border: none;
+            background: rgba(255, 255, 255, 0.48);
+            backdrop-filter: blur(28px) saturate(140%);
+            -webkit-backdrop-filter: blur(28px) saturate(140%);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.72);
             overflow: hidden;
             box-shadow:
-                0 1px 3px  rgba(14, 14, 14, 0.05),
-                0 4px 16px rgba(14, 14, 14, 0.09);
-            transition: background-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+                inset 0 1px 0 rgba(255, 255, 255, 0.85),
+                0 2px 8px  rgba(14, 14, 14, 0.06),
+                0 8px 28px rgba(14, 14, 14, 0.10);
+            transition: background 0.35s ease, border-color 0.35s ease,
+                        box-shadow 0.35s ease, transform 0.35s ease;
             cursor: default;
         }
 
         .capabilities-card:hover {
-            transform: translateY(-2px);
+            background: rgba(255, 255, 255, 0.62);
+            transform: translateY(-3px);
+            border-color: rgba(168, 78, 46, 0.38);
             box-shadow:
-                0 2px 6px  rgba(14, 14, 14, 0.07),
-                0 8px 28px rgba(14, 14, 14, 0.13);
+                inset 0 1px 0 rgba(255, 255, 255, 0.90),
+                0 4px 14px rgba(14, 14, 14, 0.10),
+                0 14px 40px rgba(14, 14, 14, 0.16),
+                0 0 0 1px rgba(168, 78, 46, 0.14);
         }
 
         .capabilities-card.is-hovered {
-            background-color: var(--lsc-black);
-            transform: translateY(-3px);
+            background: rgba(12, 12, 18, 0.82);
+            backdrop-filter: blur(40px) saturate(160%);
+            -webkit-backdrop-filter: blur(40px) saturate(160%);
+            border-color: rgba(168, 78, 46, 0.55);
+            transform: translateY(-4px);
             box-shadow:
-                0 4px 12px  rgba(14, 14, 14, 0.18),
-                0 16px 48px rgba(14, 14, 14, 0.28);
+                inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                0 8px 24px rgba(14, 14, 14, 0.22),
+                0 20px 56px rgba(14, 14, 14, 0.30),
+                0 0 0 1px rgba(168, 78, 46, 0.22);
         }
 
         .capabilities-card.is-hovered .trigger-title {
@@ -1217,29 +1268,55 @@
                 transparent 8px
             );
         }
-        /* Cards: dark editorial glass slates floating over the white grid */
+        /* ── Cards: dark frosted-glass panels over the white grid ── */
+        /* Transparency lets the grid bleed through; blur frosts it.   */
+        /* Inner top-edge highlight + luminous border = true glass look */
         .process-card {
-            background: rgba(24, 24, 24, 0.88);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(24, 24, 24, 0.10);
+            background: rgba(10, 10, 16, 0.48);
+            backdrop-filter: blur(42px) saturate(160%);
+            -webkit-backdrop-filter: blur(42px) saturate(160%);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.16);
             box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.18),   /* top-edge highlight */
                 0 2px 8px  rgba(0, 0, 0, 0.10),
-                0 16px 48px rgba(0, 0, 0, 0.18);
+                0 10px 36px rgba(0, 0, 0, 0.16);
+            transition: background 0.35s ease, border-color 0.35s ease,
+                        box-shadow 0.35s ease, transform 0.35s ease;
         }
         .process-card:hover {
-            background: rgba(24, 24, 24, 0.95);
+            background: rgba(10, 10, 16, 0.60);
+            border-color: rgba(168, 78, 46, 0.42);
+            transform: translateY(-4px);
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.22),
+                0 4px 16px  rgba(0, 0, 0, 0.14),
+                0 18px 52px rgba(0, 0, 0, 0.22),
+                0 0 0 1px   rgba(168, 78, 46, 0.16);     /* terra outline ring */
         }
-        /* Card text: warm parchment white on dark glass */
+        .process-card.is-hovered {
+            background: rgba(10, 10, 16, 0.72);
+            border-color: rgba(168, 78, 46, 0.62);
+            transform: translateY(-5px);
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.26),
+                0 8px 28px  rgba(0, 0, 0, 0.20),
+                0 28px 70px rgba(0, 0, 0, 0.28),
+                0 0 0 1px   rgba(168, 78, 46, 0.28);
+        }
+        /* Card text — parchment white on dark frosted glass */
         .process-card .trigger-title {
             color: var(--lsc-white);
         }
         .process-card .trigger-number {
-            color: rgba(240, 237, 232, 0.60);
-        }
-        .process-card .capability-icon {
             color: rgba(240, 237, 232, 0.50);
         }
+        .process-card .capability-icon {
+            color: rgba(240, 237, 232, 0.38);
+        }
+        .process-card.is-hovered .trigger-title  { color: var(--lsc-white); }
+        .process-card.is-hovered .trigger-number { color: var(--lsc-terra); }
+        .process-card.is-hovered .capability-icon { color: var(--lsc-terra); }
 
         /* ============================================================
            FOOTER — KVS MINIMAL STRUCTURAL FOOTER
@@ -1348,8 +1425,8 @@
             z-index: 2;
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 2px;
-            background: rgba(168,78,46,0.12);
+            gap: 10px;
+            background: transparent;
         }
 
         /* Individual card */
@@ -1359,6 +1436,7 @@
             overflow: hidden;
             background: #080810;
             border: none;
+            border-radius: 10px;
             padding: 0;
             margin: 0;
             cursor: pointer;
@@ -1574,9 +1652,9 @@
         .video-modal-overlay {
             position: fixed;
             inset: 0;
-            background-color: rgba(14, 14, 14, 0.85); /* Semi-transparent midnight canvas */
-            backdrop-filter: blur(20px); /* Premium heavy obscure blur */
-            -webkit-backdrop-filter: blur(20px);
+            background-color: rgba(0, 0, 0, 0.20);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
             z-index: 9000;
             display: flex;
             align-items: center;
@@ -1608,9 +1686,14 @@
         .video-modal-player-wrapper {
             width: 100%;
             aspect-ratio: 16/9;
-            background-color: var(--lsc-black);
-            border: 1px solid var(--lsc-rule); /* Thin architectural rule matching KVS */
-            box-shadow: 0 30px 100px rgba(0, 0, 0, 0.8);
+            background: rgba(6, 6, 10, 0.70);
+            backdrop-filter: blur(32px);
+            -webkit-backdrop-filter: blur(32px);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 14px;
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.12),
+                0 30px 100px rgba(0, 0, 0, 0.70);
             position: relative;
             overflow: hidden;
         }
@@ -1761,9 +1844,9 @@
         .form-modal-overlay {
             position: fixed;
             inset: 0;
-            background-color: rgba(14, 14, 14, 0.8); /* Premium dark tint overlay */
-            backdrop-filter: blur(16px); /* Heavy obscure blur */
-            -webkit-backdrop-filter: blur(16px);
+            background-color: rgba(0, 0, 0, 0.18);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
             z-index: 9000;
             display: flex;
             align-items: center;
@@ -1795,12 +1878,16 @@
         .form-modal-body {
             width: 100%;
             height: 75vh;
-            background-color: var(--lsc-surface); /* Sleek Dark Charcoal background behind transparent iframe */
-            border: 1px solid var(--lsc-rule); /* Thin architectural rule matching KVS */
-            box-shadow: 0 30px 100px rgba(0, 0, 0, 0.8);
+            background: rgba(10, 10, 18, 0.50);
+            backdrop-filter: blur(42px) saturate(150%);
+            -webkit-backdrop-filter: blur(42px) saturate(150%);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 14px;
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                0 30px 100px rgba(0, 0, 0, 0.65);
             position: relative;
             overflow: hidden;
-            border-radius: 4px;
         }
 
         .form-modal-body iframe {
@@ -2860,7 +2947,7 @@
 
         /* ── Mobile-only elements: never visible on desktop ─────────── */
         .nav-logo-mobile      { display: none !important; }
-        .mobile-services-section { display: none !important; }
+        /* mobile-services-section removed — replaced by .svc-section */
 
         /* ══════════════════════════════════════════════════════════════
            MOBILE (≤ 768px) — complete phone layout
@@ -3362,6 +3449,9 @@
                 height: 32px !important;
                 width: auto !important;
             }
+            /* Restore logo + left-align on mobile (desktop hides it for centred links) */
+            .brand-logo.absolute-logo { display: flex !important; }
+            .nav-container { justify-content: space-between !important; }
 
             /* ── Hamburger — CSS spans, mix-blend-mode auto-contrast ── */
             .hamburger-bar {
@@ -3409,143 +3499,7 @@
                 transform: translateY(-6.5px) rotate(-45deg);
             }
 
-            /* ── Mobile services section ─────────────────────────── */
-            .mobile-services-section {
-                display: none !important;
-                position: relative;
-                width: 100%;
-                background: var(--lsc-black, #181818);
-                overflow: hidden;
-                padding: 0 0 0 0;
-            }
-
-            /* Header */
-            .msvc-header {
-                padding: 56px 24px 32px;
-            }
-            .msvc-eyebrow {
-                font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
-                font-size: 9px;
-                letter-spacing: 0.28em;
-                text-transform: uppercase;
-                color: var(--lsc-terra, #a84e2e);
-                margin: 0 0 12px;
-                opacity: 0;
-                transform: translateY(14px);
-                transition: opacity 0.55s cubic-bezier(0.25, 1, 0.5, 1),
-                            transform 0.55s cubic-bezier(0.25, 1, 0.5, 1);
-            }
-            .msvc-heading {
-                position: relative;
-                display: inline-block;
-                font-family: 'Delight', Georgia, serif;
-                font-size: clamp(2.8rem, 14vw, 4.8rem);
-                font-weight: 700;
-                color: var(--lsc-white, #F0EDE8);
-                line-height: 1;
-                letter-spacing: -0.02em;
-                margin: 0;
-                padding-bottom: 10px;
-                overflow: visible;
-                opacity: 0;
-                transform: translateY(20px);
-                transition: opacity 0.65s cubic-bezier(0.25, 1, 0.5, 1) 0.08s,
-                            transform 0.65s cubic-bezier(0.25, 1, 0.5, 1) 0.08s;
-            }
-            .msvc-heading-underline {
-                position: absolute;
-                bottom: 0;
-                left: 0;
-                width: 0%;
-                height: 2px;
-                background: var(--lsc-terra, #a84e2e);
-                transition: width 0.75s cubic-bezier(0.25, 1, 0.5, 1) 0.35s;
-            }
-
-            /* Reveal state — triggered by IntersectionObserver */
-            .msvc-header.is-visible .msvc-eyebrow {
-                opacity: 1;
-                transform: translateY(0);
-            }
-            .msvc-header.is-visible .msvc-heading {
-                opacity: 1;
-                transform: translateY(0);
-            }
-            .msvc-header.is-visible .msvc-heading-underline {
-                width: 100%;
-            }
-
-            /* Cards */
-            .msvc-card {
-                position: relative;
-                width: 100%;
-                opacity: 0;
-                transform: translateY(24px);
-                transition: opacity 0.6s cubic-bezier(0.25, 1, 0.5, 1),
-                            transform 0.6s cubic-bezier(0.25, 1, 0.5, 1);
-            }
-            .msvc-card.is-visible {
-                opacity: 1;
-                transform: translateY(0);
-            }
-            .msvc-card--stills { transition-delay: 0.12s; }
-
-            .msvc-card-image-wrap {
-                position: relative;
-                width: 100%;
-                aspect-ratio: 16/10;
-                overflow: hidden;
-            }
-            .msvc-card-img {
-                width: 100%;
-                height: 100%;
-                object-fit: cover;
-                display: block;
-                transition: transform 0.6s cubic-bezier(0.25, 1, 0.5, 1);
-            }
-            .msvc-card-label-overlay {
-                position: absolute;
-                bottom: 16px;
-                left: 20px;
-                font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
-                font-size: 9px;
-                letter-spacing: 0.3em;
-                text-transform: uppercase;
-                color: rgba(240, 237, 232, 0.55);
-                pointer-events: none;
-            }
-            .msvc-card-body {
-                padding: 20px 24px 28px;
-                border-bottom: 1px solid rgba(240, 237, 232, 0.08);
-            }
-            .msvc-card-copy {
-                font-family: 'CS-Felice-Mono', 'Outfit', sans-serif;
-                font-size: 12px;
-                line-height: 1.7;
-                color: rgba(240, 237, 232, 0.5);
-                margin: 0;
-                letter-spacing: 0.04em;
-                opacity: 0;
-                transform: translateY(10px);
-                transition: opacity 0.5s cubic-bezier(0.25, 1, 0.5, 1) 0.22s,
-                            transform 0.5s cubic-bezier(0.25, 1, 0.5, 1) 0.22s;
-            }
-            .msvc-card.is-visible .msvc-card-copy {
-                opacity: 1;
-                transform: translateY(0);
-            }
-
-            /* Gradient exit — fade into next section */
-            .msvc-gradient-exit {
-                position: relative;
-                width: 100%;
-                height: 80px;
-                background: linear-gradient(to bottom,
-                    rgba(24, 24, 24, 0) 0%,
-                    var(--lsc-black, #181818) 100%
-                );
-                pointer-events: none;
-            }
+            /* ── msvc classes removed — replaced by .svc-* ── */
         }
 
 
@@ -3555,51 +3509,141 @@
         }
 
         /* ============================================================
-           SERVICES PIN CONTAINER — STICKY CROSSFADE SCROLL TRACK
+           SERVICES SECTION — WHITE GRID + GLASSMORPHISM CARDS
            ============================================================ */
-        /* ── FOCAL DEPTH WARP ENGINE ─────────────────────────────────────────────
-           Scale + blur + saturation lens-focus dissolve — no 3D intersection.
-           Active slide pushes to the focal plane; dormant slides recede behind.
-           ──────────────────────────────────────────────────────────────────── */
-        /* ── Services section — HUD-framed ── */
-        .services-pin-container {
-            display: block;
+        .svc-section {
+            background-color: #FFFFFF;
+            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22480%22%20height%3D%22360%22%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%2814%2C14%2C14%2C0.07%29%22%20stroke-width%3D%221%22%2F%3E%3C%2Fsvg%3E");
+            background-attachment: fixed;
+            background-size: 480px 360px;
+            background-repeat: repeat;
+            border-top: 1px solid rgba(14,14,14,0.08);
+            padding: 100px 5vw 120px;
             position: relative;
-            width: 100%;
-            background-color: #0B0B0D;
-            line-height: 0;
-            border-top: 1px solid rgba(255,255,255,0.05);
-        }
-        .services-pin-container::before,
-        .services-pin-container::after {
-            content: '';
-            position: absolute;
-            width: 28px; height: 28px;
-            border-color: rgba(168,78,46,0.5);
-            border-style: solid;
-            pointer-events: none;
-            z-index: 10;
-        }
-        .services-pin-container::before { top: 20px; left: 5vw; border-width: 1px 0 0 1px; }
-        .services-pin-container::after  { top: 20px; right: 5vw; border-width: 1px 1px 0 0; }
-
-        .services-sticky-window {
-            display: block;
-            position: relative;
-            width: 100%;
+            z-index: 3;
         }
 
-        .services-slide {
+        /* Section header */
+        .svc-header {
+            margin-bottom: 64px;
+        }
+        .svc-eyebrow {
+            font-family: 'CS-Felice-Mono', monospace;
+            font-size: 9px;
+            letter-spacing: 0.32em;
+            color: var(--lsc-terra);
             display: block;
-            position: relative;
-            width: 100%;
+            margin-bottom: 14px;
+        }
+        .svc-title {
+            font-family: 'Delight', Georgia, serif;
+            font-weight: 700;
+            font-size: clamp(3rem, 6vw, 5.5rem);
+            color: var(--lsc-black);
+            letter-spacing: -0.03em;
+            line-height: 1;
+            margin: 0;
         }
 
-        .services-slide img {
-            width: 100%;
-            height: auto;
+        /* Two-column card grid */
+        .svc-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        /* Card — light frosted glass on white grid */
+        .svc-card {
+            border-radius: 10px;
+            overflow: hidden;
+            transition: transform 0.35s ease, box-shadow 0.35s ease, border-color 0.35s ease;
+        }
+        .svc-card:hover {
+            transform: translateY(-4px);
+        }
+        .svc-card-inner {
+            background: rgba(255, 255, 255, 0.52);
+            backdrop-filter: blur(28px) saturate(140%);
+            -webkit-backdrop-filter: blur(28px) saturate(140%);
+            border: 1px solid rgba(255, 255, 255, 0.72);
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.85),
+                0 2px 8px  rgba(14, 14, 14, 0.06),
+                0 10px 36px rgba(14, 14, 14, 0.10);
+            transition: background 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease;
+            height: 100%;
+        }
+        .svc-card:hover .svc-card-inner {
+            background: rgba(255, 255, 255, 0.70);
+            border-color: rgba(168, 78, 46, 0.40);
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.90),
+                0 4px 16px rgba(14, 14, 14, 0.10),
+                0 20px 52px rgba(14, 14, 14, 0.16),
+                0 0 0 1px rgba(168, 78, 46, 0.16);
+        }
+
+        /* Card number eyebrow */
+        .svc-card-number {
+            font-family: 'CS-Felice-Mono', monospace;
+            font-size: 10px;
+            letter-spacing: 0.28em;
+            color: var(--lsc-terra);
             display: block;
+            padding: 24px 28px 0;
+        }
+
+        /* Photo */
+        .svc-card-image-wrap {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            overflow: hidden;
+            margin-top: 16px;
+        }
+        .svc-card-img {
+            width: 100%;
+            height: 100%;
             object-fit: cover;
+            display: block;
+            filter: grayscale(0.15) brightness(0.95);
+            transition: transform 0.7s cubic-bezier(0.22,1,0.36,1), filter 0.4s ease;
+        }
+        .svc-card:hover .svc-card-img {
+            transform: scale(1.04);
+            filter: grayscale(0) brightness(1);
+        }
+
+        /* Card body text */
+        .svc-card-body {
+            padding: 28px 28px 32px;
+        }
+        .svc-card-heading {
+            font-family: 'Delight', Georgia, serif;
+            font-weight: 700;
+            font-size: clamp(2rem, 3.5vw, 3.5rem);
+            letter-spacing: -0.02em;
+            line-height: 1;
+            color: var(--lsc-black);
+            margin: 0 0 6px;
+        }
+        .svc-card-sub {
+            font-family: 'CS-Felice-Mono', monospace;
+            font-size: 9px;
+            letter-spacing: 0.28em;
+            text-transform: uppercase;
+            color: rgba(14,14,14,0.45);
+            margin: 0 0 18px;
+        }
+        .svc-card-copy {
+            font-family: 'CS-Felice-Mono', monospace;
+            font-size: 12px;
+            line-height: 1.75;
+            letter-spacing: 0.06em;
+            color: rgba(14,14,14,0.65);
+            margin: 0;
+            max-width: 36ch;
         }
 
         /* ── HUD Measure Bar — scrub track + timecode only ─────────────────── */
@@ -3664,12 +3708,11 @@
 
 
 
-        /* ── Mobile suppression ── */
+        /* ── Services section: mobile responsive ── */
         @media (max-width: 768px) {
-            /* Services section completely removed on mobile */
-            .services-pin-container { display: none !important; }
-            /* Close gap: selected works follows hero directly */
-            .mobile-portfolio-section { margin-top: 0 !important; }
+            .svc-section { padding: 64px 20px 80px !important; }
+            .svc-grid { grid-template-columns: 1fr !important; gap: 14px !important; }
+            .svc-title { font-size: clamp(2.4rem, 10vw, 3.5rem) !important; }
         }
 
 
@@ -3812,8 +3855,8 @@
         <div class="about-modal">
             <div class="about-photo-placeholder">
                 <img
-                    src="assets/01 SECTION ASSETS/Light.JPG"
-                    alt="LSC Creative"
+                    src="assets/branding/me-with-lightbox.png"
+                    alt="Lachlan Sullivan-Carey — LSC Creative"
                     loading="lazy"
                     class="about-photo-img"
                 >
@@ -3933,57 +3976,59 @@
         <!-- ============================================================
              SERVICES SCROLL TRACK — PINNED CROSSFADE SEQUENCE
              ============================================================ -->
-        <section class="services-pin-container" id="services-track">
-            <div class="services-sticky-window">
-                <!-- Single services screen PNG -->
-                <div class="services-slide" data-slide="0">
-                    <img src="assets/sections/section-services/Services Screens.png" alt="LSC Creative Services">
-                </div>
-
-            </div>
-        </section>
-
         <!-- ============================================================
-             MOBILE SERVICES SECTION — phone-only, desktop hidden
+             SERVICES — WHITE GRID, GLASSMORPHISM CARDS
              ============================================================ -->
-        <section class="mobile-services-section" id="mobile-services" aria-label="Services">
+        <section class="svc-section" id="services" aria-label="Services">
+
             <!-- Section header -->
-            <div class="msvc-header">
-                <p class="msvc-eyebrow">What we do</p>
-                <h2 class="msvc-heading">
-                    <span class="msvc-heading-word">SERVICES</span>
-                    <span class="msvc-heading-underline"></span>
-                </h2>
+            <div class="svc-header">
+                <span class="svc-eyebrow">[ WHAT WE DO ]</span>
+                <h2 class="svc-title">Services.</h2>
             </div>
 
-            <!-- Card 1 — Motion -->
-            <div class="msvc-card msvc-card--motion">
-                <div class="msvc-card-image-wrap">
-                    <img src="assets/sections/section-services/servicesV2-02.png" alt="Motion Video Production" class="msvc-card-img" loading="lazy">
-                    <div class="msvc-card-label-overlay">MOTION</div>
-                </div>
-                <div class="msvc-card-body">
-                    <p class="msvc-card-copy">Video Production — scaled for modern purpose.</p>
-                </div>
-            </div>
+            <!-- Two service cards -->
+            <div class="svc-grid">
 
-            <!-- Card 2 — Stills -->
-            <div class="msvc-card msvc-card--stills">
-                <div class="msvc-card-image-wrap">
-                    <img src="assets/sections/section-services/servicesV2-03.png" alt="Stills Photography" class="msvc-card-img" loading="lazy">
-                    <div class="msvc-card-label-overlay">STILLS</div>
+                <!-- 01 — Motion -->
+                <div class="svc-card">
+                    <div class="svc-card-inner">
+                        <span class="svc-card-number">{ 01 }</span>
+                        <div class="svc-card-image-wrap">
+                            <img src="assets/sections/section-services/servicesV2-02.png"
+                                 alt="Motion Video Production"
+                                 class="svc-card-img" loading="lazy">
+                        </div>
+                        <div class="svc-card-body">
+                            <h3 class="svc-card-heading">MOTION</h3>
+                            <p class="svc-card-sub">Video Production</p>
+                            <p class="svc-card-copy">Scaled for modern purpose. Technical expertise and film industry standards behind every frame.</p>
+                        </div>
+                    </div>
                 </div>
-                <div class="msvc-card-body">
-                    <p class="msvc-card-copy">Sharp, clear meaning — behind image format.</p>
-                </div>
-            </div>
 
-            <!-- Gradient exit -->
-            <div class="msvc-gradient-exit" aria-hidden="true"></div>
+                <!-- 02 — Stills -->
+                <div class="svc-card">
+                    <div class="svc-card-inner">
+                        <span class="svc-card-number">{ 02 }</span>
+                        <div class="svc-card-image-wrap">
+                            <img src="assets/sections/section-services/servicesV2-03.png"
+                                 alt="Stills Photography"
+                                 class="svc-card-img" loading="lazy">
+                        </div>
+                        <div class="svc-card-body">
+                            <h3 class="svc-card-heading">STILLS</h3>
+                            <p class="svc-card-sub">Photography</p>
+                            <p class="svc-card-copy">Studio. Large format. Corporate. Events. Sharp, clear meaning — behind image format.</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div><!-- /.svc-grid -->
         </section>
 
         <!-- ============================================================
-             CAPABILITIES — VENUE SCREEN MOCKUP
+             CAPABILITIES — VENUE SCREEN MOCKUP (placeholder)
              ============================================================ -->
 
 
