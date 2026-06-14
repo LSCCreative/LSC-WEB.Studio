@@ -279,8 +279,8 @@ body.dark-theme {
    ============================================================ */
 @font-face {
             font-family: "Delight";
-            src: url("assets/fonts/delight/Delight-Regular.woff2") format("woff2"),
-                 url("assets/fonts/delight/Delight-Regular.woff")  format("woff");
+            src: url("../assets/fonts/delight/Delight-Regular.woff2") format("woff2"),
+                 url("../assets/fonts/delight/Delight-Regular.woff")  format("woff");
             font-weight: 400;
             font-style: normal;
             font-display: swap;
@@ -288,8 +288,8 @@ body.dark-theme {
 
 @font-face {
             font-family: "Delight";
-            src: url("assets/fonts/delight/Delight-Bold.woff2") format("woff2"),
-                 url("assets/fonts/delight/Delight-Bold.woff")  format("woff");
+            src: url("../assets/fonts/delight/Delight-Bold.woff2") format("woff2"),
+                 url("../assets/fonts/delight/Delight-Bold.woff")  format("woff");
             font-weight: 700;
             font-style: normal;
             font-display: swap;
@@ -297,8 +297,8 @@ body.dark-theme {
 
 @font-face {
             font-family: "Delight";
-            src: url("assets/fonts/delight/Delight-SemiBold.woff2") format("woff2"),
-                 url("assets/fonts/delight/Delight-SemiBold.otf")   format("opentype");
+            src: url("../assets/fonts/delight/Delight-SemiBold.woff2") format("woff2"),
+                 url("../assets/fonts/delight/Delight-SemiBold.otf")   format("opentype");
             font-weight: 600;
             font-style: normal;
             font-display: swap;
@@ -306,8 +306,8 @@ body.dark-theme {
 
 @font-face {
             font-family: "Delight";
-            src: url("assets/fonts/delight/Delight-Bold.woff2") format("woff2"),
-                 url("assets/fonts/delight/Delight-Bold.woff")  format("woff");
+            src: url("../assets/fonts/delight/Delight-Bold.woff2") format("woff2"),
+                 url("../assets/fonts/delight/Delight-Bold.woff")  format("woff");
             font-weight: 900;
             font-style: normal;
             font-display: swap;
@@ -315,9 +315,9 @@ body.dark-theme {
 
 @font-face {
             font-family: "CS-Felice-Mono";
-            src: url("assets/fonts/cs-felice-mono/CSFeliceMono-Regular.woff2") format("woff2"),
-                 url("assets/fonts/cs-felice-mono/CSFeliceMono-Regular.woff")  format("woff"),
-                 url("assets/fonts/cs-felice-mono/CSFeliceMono-Regular.otf")   format("opentype");
+            src: url("../assets/fonts/cs-felice-mono/CSFeliceMono-Regular.woff2") format("woff2"),
+                 url("../assets/fonts/cs-felice-mono/CSFeliceMono-Regular.woff")  format("woff"),
+                 url("../assets/fonts/cs-felice-mono/CSFeliceMono-Regular.otf")   format("opentype");
             font-weight: 400;
             font-style: normal;
             font-display: swap;
@@ -325,9 +325,9 @@ body.dark-theme {
 
 @font-face {
             font-family: "CS-Felice-Mono";
-            src: url("assets/fonts/cs-felice-mono/CSFeliceMono-Italic.woff2") format("woff2"),
-                 url("assets/fonts/cs-felice-mono/CSFeliceMono-Italic.woff")  format("woff"),
-                 url("assets/fonts/cs-felice-mono/CSFeliceMono-Italic.otf")   format("opentype");
+            src: url("../assets/fonts/cs-felice-mono/CSFeliceMono-Italic.woff2") format("woff2"),
+                 url("../assets/fonts/cs-felice-mono/CSFeliceMono-Italic.woff")  format("woff"),
+                 url("../assets/fonts/cs-felice-mono/CSFeliceMono-Italic.otf")   format("opentype");
             font-weight: 400;
             font-style: italic;
             font-display: swap;
@@ -335,9 +335,9 @@ body.dark-theme {
 
 @font-face {
             font-family: "CS-Felice-Mono";
-            src: url("assets/fonts/cs-felice-mono/CSFeliceMono-ReverseItalic.woff2") format("woff2"),
-                 url("assets/fonts/cs-felice-mono/CSFeliceMono-ReverseItalic.woff")  format("woff"),
-                 url("assets/fonts/cs-felice-mono/CSFeliceMono-ReverseItalic.otf")   format("opentype");
+            src: url("../assets/fonts/cs-felice-mono/CSFeliceMono-ReverseItalic.woff2") format("woff2"),
+                 url("../assets/fonts/cs-felice-mono/CSFeliceMono-ReverseItalic.woff")  format("woff"),
+                 url("../assets/fonts/cs-felice-mono/CSFeliceMono-ReverseItalic.otf")   format("opentype");
             font-weight: 400;
             font-style: oblique -10deg;
             font-display: swap;
@@ -1156,7 +1156,7 @@ svg[aria-hidden="true"] {
 
 .lsc-process-section {
             background-color: #FFFFFF;
-            background-image: url("assets/LSC-White-Background-Grid.png");
+            background-image: url("../assets/LSC-White-Background-Grid.png");
             background-attachment: fixed;
             background-size: 480px 360px;
             background-repeat: repeat;
@@ -2101,6 +2101,46 @@ svg[aria-hidden="true"] {
 .contact-cta-btn.massive-btn:hover svg,
         .contact-cta-btn.secondary-contact-btn:hover svg {
             transform: translateX(4px);
+}
+
+/* Instagram link — pale circle scales up behind the text on hover,
+   text inverts to near-black (matches reference video) */
+.contact-instagram-link {
+            position: relative;
+            isolation: isolate;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 40px;
+            padding: 18px 30px;
+            font-family: "CS-Felice-Mono", "Outfit", monospace;
+            font-size: 11px;
+            font-weight: 400;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            text-decoration: none;
+            color: var(--lsc-white);
+            transition: color 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.contact-instagram-link::before {
+            content: "";
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 118%;
+            aspect-ratio: 1 / 1;
+            border-radius: 50%;
+            background: var(--lsc-white);
+            transform: translate(-50%, -50%) scale(0);
+            transform-origin: center;
+            transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+            z-index: -1;
+}
+.contact-instagram-link:hover {
+            color: var(--lsc-black);
+}
+.contact-instagram-link:hover::before {
+            transform: translate(-50%, -50%) scale(1);
 }
 
 .global-camera-hud {
