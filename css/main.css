@@ -21,6 +21,51 @@
   --transition-fast: 0.3s ease;
 }
 
+/* ── PHASE 1: FLUID SCALE TOKENS (320px → 1920px, hard-clamped) ──
+   Defined but not yet consumed; wired into components per-section
+   in Phases 2-3. Slopes anchored so min hits at 320px viewport
+   and max locks at 1920px — no growth on ultra-wide monitors.  */
+:root {
+  /* Fluid typography scale (minor third) */
+  --fs-xs:      clamp(0.75rem,  0.71rem + 0.20vw, 0.95rem);
+  --fs-sm:      clamp(0.875rem, 0.82rem + 0.25vw, 1.125rem);
+  --fs-base:    clamp(1rem,     0.93rem + 0.35vw, 1.35rem);
+  --fs-md:      clamp(1.25rem,  1.13rem + 0.60vw, 1.85rem);
+  --fs-lg:      clamp(1.6rem,   1.35rem + 1.25vw, 2.85rem);
+  --fs-xl:      clamp(2.2rem,   1.70rem + 2.50vw, 4.70rem);
+  --fs-display: clamp(2.8rem,   1.90rem + 4.50vw, 7.30rem);
+
+  /* Fluid spacing scale (margins, padding, grid gaps) */
+  --space-2xs:  clamp(0.25rem,  0.23rem + 0.10vw, 0.35rem);
+  --space-xs:   clamp(0.5rem,   0.45rem + 0.25vw, 0.75rem);
+  --space-sm:   clamp(0.75rem,  0.65rem + 0.50vw, 1.25rem);
+  --space-md:   clamp(1.25rem,  1.05rem + 1.00vw, 2.25rem);
+  --space-lg:   clamp(2rem,     1.60rem + 2.00vw, 4rem);
+  --space-xl:   clamp(3rem,     2.20rem + 4.00vw, 7rem);
+  --space-2xl:  clamp(4.5rem,   3.10rem + 7.00vw, 11.5rem);
+}
+
+/* ── PHASE 3: SCROLL-REVEAL UTILITY (js/scroll-animations.js) ──
+   Opacity/transform only — compositor-thread animation, no layout
+   or paint work in the scroll path. */
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal-active {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal { transform: none; transition: opacity 0.3s linear; }
+  .carousel-track,
+  .connector-line { animation: none !important; }
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -344,17 +389,33 @@ body.dark-theme {
 }
 
 :root {
-            
-            --lsc-black:     #181818;
+            /* VDB v2.0 core ramps (Master VDB is source of truth) */
+            --lsc-black:     #0E0E0E;
             --lsc-surface:   #252930;
+            --lsc-charcoal:  #252930;
+            --lsc-surface-dk:#1C1F24;
+            --lsc-surface-lt:#E8E2D9;
+            --lsc-ramp3:     #C4BDB3;
+            --lsc-mid:       #7A7470;
 
-            
-            --lsc-white:     #F0EDE8;   
-            --lsc-terra:     #a84e2e;   
-            --lsc-slate:     #3d4a5c;   
+            --lsc-white:     #F0EDE8;
+            --lsc-terra:     #C0603C;   /* primary CTA only · max 15% of screen */
+            --lsc-terra-lt:  #E8A08A;
+            --lsc-terra-dk:  #8C4832;
+            --lsc-terra-tint:#F7E8E2;
+            --lsc-sage:      #8FA89B;   /* interactive states only · never a CTA fill */
+            --lsc-sage-dk:   #6A8E82;
+            --lsc-sage-tint: #EEF2F0;
+            --lsc-slate:     #3A4756;
 
-            
-            --lsc-rule:      rgba(61, 74, 92, 0.35);   
+            /* VDB radius scale: chip / inner box / container / pill */
+            --radius-chip:      8px;
+            --radius-inner:     16px;
+            --radius-container: 24px;
+            --radius-pill:      999px;
+
+
+            --lsc-rule:      rgba(61, 74, 92, 0.35);
             --lsc-muted:     rgba(240, 237, 232, 0.45);
 
             
@@ -718,36 +779,148 @@ body.dark-theme {
             background-color: var(--lsc-surface);
 }
 
+/* ── VDB CONNECTED NAV — logo node · links pill · CTA pill, goo-merged
+      on one charcoal spine. Replaces the blend-mode text header; solid
+      spine fills cannot blend-invert (sanctioned desktop redesign). ── */
 .navbar {
             background: transparent !important;
             backdrop-filter: none !important;
             -webkit-backdrop-filter: none !important;
             border-bottom: none !important;
-            mix-blend-mode: difference !important; 
-            padding: 0 !important;
-            height: 56px !important;
+            mix-blend-mode: normal !important;
+            padding: var(--space-sm) 0 !important;
+            height: auto !important;
 }
 
 .nav-container {
-            height: 56px !important;
+            height: auto !important;
             justify-content: center !important;
 }
 
-.brand-logo.absolute-logo { display: none !important;
+.nav-spine {
+            position: relative;
+            display: inline-flex;
+            --spine-gap: 7px;
+            --spine-pad-x: 22px;
+            --spine-link-gap: 18px;
+}
+
+/* Goo layer: same flex metrics as the content layer; labels are
+   transparent duplicates so each ghost pill matches its real node. */
+.nav-spine-goo {
+            filter: url(#lscJoint);
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            gap: var(--spine-gap);
+            pointer-events: none;
+}
+
+.spine-node {
+            background: var(--lsc-charcoal);
+            flex: none;
+}
+
+.spine-node-logo {
+            width: 54px;
+            height: 54px;
+            border-radius: 50%;
+}
+
+.spine-node-links {
+            height: 48px;
+            border-radius: var(--radius-pill);
+            display: flex;
+            align-items: center;
+            gap: var(--spine-link-gap);
+            padding: 0 var(--spine-pad-x);
+}
+
+.spine-node-cta {
+            height: 48px;
+            border-radius: var(--radius-pill);
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+}
+
+.ghost-label {
+            font-family: "CS-Felice-Mono", "Outfit", monospace;
+            font-size: var(--fs-xs);
+            letter-spacing: 0.24em;
+            text-transform: uppercase;
+            color: transparent;
+}
+
+.nav-spine-content {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: var(--spine-gap);
+}
+
+.brand-logo.absolute-logo {
+            display: flex !important;
+            position: static !important;   /* lives inside the spine; legacy rule pinned it fixed */
+            top: auto !important;
+            left: auto !important;
+            width: 54px;
+            height: 54px;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+}
+
+.nav-spine-content .nav-logo-desktop {
+            height: 26px !important;       /* legacy layer forces 90px !important */
+            width: auto;
+}
+
+.nav-links {
+            height: 48px;
+            display: flex;
+            align-items: center;
+            gap: var(--spine-link-gap);
+            padding: 0 var(--spine-pad-x);
 }
 
 .nav-links a {
             font-family: "CS-Felice-Mono","Outfit",monospace !important;
-            font-size: 10px !important;
-            letter-spacing: 0.28em !important;
-            color: #FFFFFF !important;          
+            font-size: var(--fs-xs) !important;
+            letter-spacing: 0.24em !important;
+            text-transform: uppercase;
+            color: #9a958c !important;
             text-decoration: none !important;
-            border-bottom: none !important;     
-            mix-blend-mode: difference !important;
-            transition: opacity 0.2s !important;
+            border-bottom: none !important;
+            mix-blend-mode: normal !important;
+            display: inline-flex;
+            align-items: center;
+            min-height: 44px;
+            transition: color 180ms ease-out !important;
 }
 
-.nav-links a:hover { opacity: 0.72 !important;
+/* Hover = sage, mouse contexts only (sticky-tap safety) */
+body.is-mouse .nav-links a:hover { color: var(--lsc-sage) !important;
+}
+
+.nav-cta {
+            height: 48px;
+            border-radius: var(--radius-pill);
+            display: inline-flex;
+            align-items: center;
+            padding: 0 20px;
+            font-family: "CS-Felice-Mono","Outfit",monospace;
+            font-size: var(--fs-xs);
+            letter-spacing: 0.24em;
+            text-transform: uppercase;
+            color: var(--lsc-terra);
+            text-decoration: none;
+            min-height: 44px;
+            transition: color 180ms ease-out;
+}
+
+body.is-mouse .nav-cta:hover { color: var(--lsc-terra-lt);
 }
 
 .absolute-nav { position: static !important; transform: none !important;
@@ -793,7 +966,7 @@ body.dark-theme {
 .hero-interface-layer {
             position: relative;
             z-index: 3;
-            padding: 56px 60px 88px;
+            padding: var(--space-lg) var(--space-lg) var(--space-xl);
             display: flex;
             flex-direction: column;
             justify-content: flex-end;
@@ -821,8 +994,8 @@ body.dark-theme {
             font-family: "Delight", Georgia, serif;
             font-weight: 700;
             letter-spacing: -0.03em;
-            line-height: 0.9;
-            font-size: clamp(3.8rem, 7vw, 8rem);
+            line-height: 0.92;              /* VDB display spec 0.92-1.05 */
+            font-size: var(--fs-display);
             margin: 0;
 }
 
@@ -903,20 +1076,20 @@ svg[aria-hidden="true"] {
 }
 
 .trigger-number {
-            font-family: "CS-Felice-Mono", "Outfit", sans-serif;
-            font-size: 11px;
-            letter-spacing: 0.22em;
-            text-transform: uppercase;
+            font-family: "Delight", Georgia, serif;   /* VDB: numbers carry the display voice */
+            font-weight: 700;
+            font-size: var(--fs-md);
+            letter-spacing: -0.01em;
             color: var(--lsc-terra);
             transition: color 0.25s ease;
 }
 
 .trigger-title {
-            font-family: "Delight", Georgia, serif;
-            font-weight: 600;
-            font-size: clamp(40px, 5vw, 68px);
+            font-family: "CS-Felice-Mono", "Outfit", monospace;   /* VDB: structure runs mono */
+            font-weight: 400;
+            font-size: var(--fs-lg);
             color: var(--lsc-black);
-            letter-spacing: -0.025em;
+            letter-spacing: 0.02em;
             line-height: 1;
             transition: color 0.25s ease;
 }
@@ -935,10 +1108,10 @@ svg[aria-hidden="true"] {
             transition: color 0.25s ease;
 }
 
-.accordion-trigger:hover .capability-icon { color: var(--lsc-terra);
+body.is-mouse .accordion-trigger:hover .capability-icon { color: var(--lsc-terra);
 }
 
-.accordion-trigger:hover .trigger-title { color: var(--lsc-terra);
+body.is-mouse .accordion-trigger:hover .trigger-title { color: var(--lsc-terra);
 }
 
 .accordion-trigger:hover .trigger-number { color: var(--lsc-terra);
@@ -1001,7 +1174,7 @@ svg[aria-hidden="true"] {
 .process-section-title {
             font-family: "Delight", Georgia, serif;
             font-weight: 700;
-            font-size: clamp(56px, 8.5vw, 120px);
+            font-size: var(--fs-xl);
             color: var(--lsc-white);
             letter-spacing: -0.03em;
             line-height: 0.88;
@@ -1033,7 +1206,7 @@ svg[aria-hidden="true"] {
 }
 
 .process-display-body {
-            font-size: clamp(18px, 1.9vw, 26px);
+            font-size: var(--fs-base);
             font-weight: 300;
             line-height: 1.55;
             color: rgba(240, 237, 232, 0.62);
@@ -1174,7 +1347,7 @@ svg[aria-hidden="true"] {
 
 .process-display-title {
             color: var(--lsc-black);
-            font-size: clamp(24px, 4vw, 60px); 
+            font-size: var(--fs-lg); 
             white-space: nowrap;               
             overflow: hidden;
 }
@@ -1258,10 +1431,11 @@ svg[aria-hidden="true"] {
 .process-card.is-hovered .capability-icon { color: var(--lsc-terra);
 }
 
+/* ── VDB FOOTER — minimal mono caption bar on hairline charcoal rule ── */
 .footer {
-            background-color: #0B0B0D;
-            border-top: 1px solid rgba(255,255,255,0.05);
-            padding: 32px 5vw;
+            background-color: var(--lsc-black);
+            border-top: 1px solid var(--lsc-charcoal);
+            padding: var(--space-md) 5vw;
             position: relative;
             z-index: 3;
 }
@@ -1270,26 +1444,35 @@ svg[aria-hidden="true"] {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: var(--space-sm);
 }
 
 .footer-left p,
         .footer-right a {
             font-family: "CS-Felice-Mono", "Outfit", sans-serif;
-            font-size: 11px;
+            font-size: var(--fs-xs);
             letter-spacing: 0.14em;
             text-transform: uppercase;
-            color: rgba(240,237,232,0.4);
+            color: var(--lsc-mid);
             text-decoration: none;
             transition: color 0.2s ease;
 }
 
 .footer-right {
             display: flex;
-            gap: 32px;
+            gap: var(--space-md);
 }
 
-.footer-right a:hover {
-            color: var(--lsc-terra);
+.footer-right a {
+            display: inline-flex;
+            align-items: center;
+            min-height: 44px;
+}
+
+/* Links confirm in sage, never terracotta (VDB colour law);
+   mouse contexts only so taps never stick. */
+body.is-mouse .footer-right a:hover {
+            color: var(--lsc-sage);
 }
 
 .horizontal-scroll-section {
@@ -1335,7 +1518,7 @@ svg[aria-hidden="true"] {
 .works-title {
             font-family: "Delight", Georgia, serif;
             font-weight: 700;
-            font-size: clamp(3rem, 6vw, 5.5rem);
+            font-size: var(--fs-xl);
             color: var(--lsc-white);
             letter-spacing: -0.03em;
             line-height: 1;
@@ -1361,7 +1544,7 @@ svg[aria-hidden="true"] {
             z-index: 2;
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 10px;
+            gap: var(--space-md);
             background: transparent;
 }
 
@@ -1371,7 +1554,7 @@ svg[aria-hidden="true"] {
             overflow: hidden;
             background: #080810;
             border: none;
-            border-radius: 10px;
+            border-radius: var(--radius-inner);
             padding: 0;
             margin: 0;
             cursor: pointer;
@@ -1957,7 +2140,7 @@ svg[aria-hidden="true"] {
 .contact-headline {
             font-family: "Delight", Georgia, serif;
             font-weight: 700;
-            font-size: clamp(48px, 5.5vw, 76px);
+            font-size: var(--fs-xl);
             color: var(--lsc-white);
             text-align: left;
             letter-spacing: -0.03em;
@@ -2025,7 +2208,7 @@ svg[aria-hidden="true"] {
 }
 
 .connector-line {
-            stroke: rgba(240, 237, 232, 0.15);
+            stroke: rgba(58, 71, 86, 0.85);   /* slate accent per VDB */
             stroke-width: 2px;
             stroke-linecap: round;
             stroke-dasharray: 1px 8px;
@@ -2049,6 +2232,7 @@ svg[aria-hidden="true"] {
 
 .contact-cta-btn.massive-btn {
             font-size: 16px;
+            border-radius: var(--radius-pill);
             padding: 22px 44px;
             letter-spacing: 0.15em;
             font-weight: 600;
@@ -2067,11 +2251,12 @@ svg[aria-hidden="true"] {
 
 .contact-cta-btn.secondary-contact-btn {
             font-size: 11px;
-            padding: 14px 28px;
+            border-radius: var(--radius-pill);
+            padding: 16px 28px;
             letter-spacing: 0.1em;
             font-weight: 400;
             background-color: transparent;
-            border: 1px solid var(--lsc-terra);
+            border: 1px solid rgba(240, 237, 232, 0.28);   /* VDB ghost: neutral hairline */
             color: var(--lsc-white);
             cursor: pointer;
             outline: none;
@@ -2083,12 +2268,28 @@ svg[aria-hidden="true"] {
             transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, transform 0.25s ease;
 }
 
-.contact-cta-btn.massive-btn:hover,
-        .contact-cta-btn.secondary-contact-btn:hover {
-            background-color: transparent;
-            border-color: var(--lsc-terra);
-            color: var(--lsc-terra);
+/* VDB button law — primary deepens to terra-dark, ghost confirms in
+   sage; hover is a mouse-context privilege (sticky-tap safety). */
+body.is-mouse .contact-cta-btn.massive-btn:hover {
+            background-color: var(--lsc-terra-dk);
+            border-color: var(--lsc-terra-dk);
+            color: var(--lsc-white);
             transform: translateY(-2px);
+}
+
+body.is-mouse .contact-cta-btn.secondary-contact-btn:hover {
+            border-color: var(--lsc-sage);
+            color: var(--lsc-sage);
+            transform: translateY(-2px);
+}
+
+/* Touch tactile feedback — soft colour shift, no spring mechanics */
+body.is-touch .contact-cta-btn.massive-btn:active {
+            background-color: var(--lsc-terra-dk);
+}
+
+body.is-touch .contact-cta-btn.secondary-contact-btn:active {
+            background-color: rgba(143, 168, 155, 0.14);
 }
 
 .contact-cta-btn.massive-btn svg,
@@ -2098,8 +2299,8 @@ svg[aria-hidden="true"] {
             transition: transform 0.25s ease;
 }
 
-.contact-cta-btn.massive-btn:hover svg,
-        .contact-cta-btn.secondary-contact-btn:hover svg {
+body.is-mouse .contact-cta-btn.massive-btn:hover svg,
+        body.is-mouse .contact-cta-btn.secondary-contact-btn:hover svg {
             transform: translateX(4px);
 }
 
@@ -2136,10 +2337,10 @@ svg[aria-hidden="true"] {
             transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
             z-index: -1;
 }
-.contact-instagram-link:hover {
+body.is-mouse .contact-instagram-link:hover {
             color: var(--lsc-black);
 }
-.contact-instagram-link:hover::before {
+body.is-mouse .contact-instagram-link:hover::before {
             transform: translate(-50%, -50%) scale(1);
 }
 
@@ -2299,7 +2500,7 @@ body.works-hovered .hud-corner {
 .svc-title {
             font-family: "Delight", Georgia, serif;
             font-weight: 700;
-            font-size: clamp(4.5rem, 10vw, 9rem);
+            font-size: var(--fs-xl);
             color: var(--lsc-black);
             letter-spacing: -0.035em;
             line-height: 0.95;
@@ -2309,16 +2510,16 @@ body.works-hovered .hud-corner {
 .svc-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 20px;
+            gap: var(--space-md);
 }
 
 .svc-card {
-            border-radius: 10px;
+            border-radius: var(--radius-inner);
             overflow: hidden;
             transition: transform 0.35s ease, box-shadow 0.35s ease, border-color 0.35s ease;
 }
 
-.svc-card:hover {
+body.is-mouse .svc-card:hover {
             transform: translateY(-4px);
 }
 
@@ -2822,5 +3023,91 @@ body.works-hovered .hud-corner {
         border-left: 9px solid var(--lsc-terra);
         border-top: 6px solid transparent;
         border-bottom: 6px solid transparent;
+    }
+}
+
+/* ============================================================
+   PHASE 2 — VDB GLOBAL LAYOUT: MOBILE / TABLET OVERRIDES ONLY
+   (appended per Desktop Preservation Law — nothing above 992px
+   is affected by anything in this block)
+   ============================================================ */
+@media (max-width: 992px) {
+    /* Spine dismantles on touch layouts: goo layer and CTA pill off,
+       existing fixed logo + drawer architecture takes over. */
+    .nav-spine-goo,
+    .nav-cta { display: none !important;
+    }
+    .navbar { padding: 0 !important;
+    }
+    /* Restore mobile logo pinning (spine rule wins on specificity) */
+    .brand-logo.absolute-logo {
+                position: fixed !important;
+                top: 16px !important;
+                left: 16px !important;
+                width: auto !important;
+                height: auto !important;
+                z-index: 9200 !important;
+    }
+    /* Drawer reskin — VDB dark surface glass, container radius */
+    .nav-links.absolute-nav {
+                height: auto !important;
+                padding: 8px 0 !important;
+                background: rgba(28, 31, 36, 0.88) !important;
+                border: 1px solid rgba(240, 237, 232, 0.12) !important;
+                border-radius: 24px !important;
+                backdrop-filter: blur(24px) !important;
+                -webkit-backdrop-filter: blur(24px) !important;
+    }
+    /* 44px ergonomic tap rows */
+    .nav-links.absolute-nav li a {
+                display: flex !important;
+                align-items: center !important;
+                min-height: 44px !important;
+                padding: 0 24px !important;
+                color: rgba(240, 237, 232, 0.9) !important;
+    }
+    /* Neutralise legacy drawer hover (sticky on touch), re-grant
+       under mouse context only, confirming in sage */
+    .nav-links.absolute-nav li a:hover {
+                background: transparent !important;
+                color: rgba(240, 237, 232, 0.9) !important;
+    }
+    body.is-mouse .nav-links.absolute-nav li a:hover {
+                background: rgba(143, 168, 155, 0.10) !important;
+                color: var(--lsc-sage) !important;
+    }
+    /* Soft background shift on tap — no spring mechanics */
+    body.is-touch .nav-links.absolute-nav li a:active {
+                background: rgba(143, 168, 155, 0.14) !important;
+                color: var(--lsc-sage) !important;
+    }
+    .mobile-menu-toggle {
+                width: 44px !important;
+                height: 44px !important;
+                min-width: 44px !important;
+                min-height: 44px !important;
+    }
+    .footer-right a {
+                display: inline-flex !important;
+                align-items: center !important;
+                min-height: 44px !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .footer-content {
+                flex-direction: column !important;
+                align-items: flex-start !important;
+                gap: 4px !important;
+    }
+    /* iOS zoom immunity — interactive text fields never render
+       below 16px on phone viewports */
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"],
+    input[type="search"],
+    input[type="url"],
+    textarea,
+    select { font-size: 16px !important;
     }
 }

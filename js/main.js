@@ -337,11 +337,13 @@
 (function () {
     var formModal = document.getElementById('contactFormModal');
     var openBtn   = document.getElementById('contactEnquiryBtn');
+    var navBtn    = document.getElementById('navEnquiryBtn');
     var closeBtn  = document.getElementById('contactFormCloseBtn');
     if (!formModal) return;
     function openModal()  { formModal.classList.add('is-active');    document.body.style.overflow = 'hidden'; }
     function closeModal() { formModal.classList.remove('is-active'); document.body.style.overflow = ''; }
     if (openBtn)  openBtn.addEventListener('click', function (e) { e.preventDefault(); openModal(); });
+    if (navBtn)   navBtn.addEventListener('click', function (e) { e.preventDefault(); openModal(); });
     if (closeBtn) closeBtn.addEventListener('click', closeModal);
     formModal.addEventListener('click', function (e) { if (e.target === formModal) closeModal(); });
     document.addEventListener('keydown', function (e) {
@@ -366,6 +368,7 @@
                        '?autoplay=true&loop=true&muted=true&preload=true&responsive=true&controls=false';
     }
     function onEnter() {
+        if (!document.body.classList.contains('is-mouse')) return;   /* touch: tap plays modal, no bg preview */
         clearTimeout(leaveTimer);
         var videoId = this.dataset.videoId;
         if (videoId) loadVideo(videoId);
@@ -376,6 +379,7 @@
         this.classList.add('is-hovered');
     }
     function onLeave() {
+        if (!document.body.classList.contains('is-mouse')) return;
         leaveTimer = setTimeout(function () {
             grid.classList.remove('has-hover');
             document.body.classList.remove('works-hovered');

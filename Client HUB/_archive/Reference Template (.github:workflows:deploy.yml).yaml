@@ -1,0 +1,24 @@
+name: Deploy Integrated Client Hub to Bunny.net
+
+on:
+  push:
+    branches:
+      - main # Automatically runs and mirrors repository on every push to main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+
+      - name: Deploy Workspace Assets to Bunny.net Storage
+        uses: bunnycdn/storage-deploy@v1
+        with:
+          source: '.' # Mirror current working directory root
+          storageZoneName: '${{ secrets.YOUR_BUNNY_STORAGE_ZONE_NAME }}'
+          storagePassword: '${{ secrets.YOUR_BUNNY_STORAGE_PASSWORD_API_KEY }}'
+          pullZoneId: '${{ secrets.YOUR_BUNNY_PULL_ZONE_ID }}' # Clear cache on successful push
+          upload: true
+          remove: false

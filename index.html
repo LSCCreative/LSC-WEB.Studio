@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="LSC Creative — Documentary-style brand films and editorial photography. We don't make ads, we make films that tell the truth about great brands.">
     <title>LSC Creative | Cinematic Video Production</title>
-    <link rel="icon" type="image/png" href="assets/favicon.png">
+    <link rel="icon" type="image/png" href="assets/branding/Logo Light.png">
     <!-- Google Fonts — Outfit retained as CS-Felice-Mono fallback anchor -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,6 +14,17 @@
 
 </head>
 <body class="dark-theme">
+
+    <!-- VDB Signature Joint — goo filter (blur → alpha-threshold), defined
+         once and referenced by any connected-spine component. -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <defs>
+            <filter id="lscJoint">
+                <feGaussianBlur in="SourceGraphic" stdDeviation="9" result="b"></feGaussianBlur>
+                <feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -11"></feColorMatrix>
+            </filter>
+        </defs>
+    </svg>
 
     <!-- ============================================================
          GLOBAL CAMERA HUD — Fixed viewport overlay, persists across
@@ -165,20 +176,42 @@
          ============================================================ -->
     <nav class="navbar" id="navbar">
         <div class="nav-container">
-            <a href="#home" class="brand-logo absolute-logo animate-entrance delay-nav">
-                <img src="assets/branding/lsc-logo.png" alt="LSC Creative Logo" class="nav-logo default-icon nav-logo-desktop">
-                <img src="assets/LSC Logo Type 3.png" alt="LSC Creative Logo" class="nav-logo nav-logo-mobile">
-            </a>
+            <!-- VDB Connected Nav: logo node + links pill + CTA pill, three
+                 nodes goo-merged on one charcoal spine (#lscJoint). The goo
+                 layer mirrors the content layer with transparent labels so
+                 node widths always match; it is decorative only. -->
+            <div class="nav-spine">
+                <div class="nav-spine-goo" aria-hidden="true">
+                    <span class="spine-node spine-node-logo"></span>
+                    <span class="spine-node spine-node-links">
+                        <span class="ghost-label">WORK</span>
+                        <span class="ghost-label">ABOUT</span>
+                        <span class="ghost-label">CONTACT</span>
+                        <span class="ghost-label">CLIENT HUB</span>
+                    </span>
+                    <span class="spine-node spine-node-cta">
+                        <span class="ghost-label">START A PROJECT</span>
+                    </span>
+                </div>
+                <div class="nav-spine-content">
+                    <a href="#home" class="brand-logo absolute-logo animate-entrance delay-nav">
+                        <img src="assets/branding/Logo Light.png" alt="LSC Creative Logo" class="nav-logo default-icon nav-logo-desktop">
+                        <img src="assets/LSC Logo Type 3.png" alt="LSC Creative Logo" class="nav-logo nav-logo-mobile">
+                    </a>
+                    <ul class="nav-links absolute-nav animate-entrance delay-nav">
+                        <li><a href="#portfolio">WORK</a></li>
+                        <li><a href="#" id="aboutNavBtn">ABOUT</a></li>
+                        <li><a href="#contact" id="contactNavBtn">CONTACT</a></li>
+                        <li><a href="client-hub/index.html">CLIENT HUB</a></li>
+                    </ul>
+                    <a href="#contact" id="navEnquiryBtn" class="nav-cta animate-entrance delay-nav">Project Enquiry</a>
+                </div>
+            </div>
             <button class="mobile-menu-toggle" id="mobileMenuToggle" aria-label="Open navigation" aria-expanded="false">
                 <span class="hamburger-bar"></span>
                 <span class="hamburger-bar"></span>
                 <span class="hamburger-bar"></span>
             </button>
-            <ul class="nav-links absolute-nav animate-entrance delay-nav">
-                <li><a href="#portfolio">WORK</a></li>
-                <li><a href="#" id="aboutNavBtn">ABOUT</a></li>
-                <li><a href="#contact" id="contactNavBtn">CONTACT</a></li>
-            </ul>
         </div>
     </nav>
 
@@ -190,7 +223,7 @@
         <section class="hero-canvas" id="home">
             <div class="hero-video-mask">
                 <iframe
-                    src="https://player.mediadelivery.net/embed/662936/6c906ad4-9642-4b1e-9a56-51500020b81f?autoplay=true&loop=true&muted=true&preload=true&responsive=true&controls=false"
+                    src="https://player.mediadelivery.net/embed/662936/98328538-1852-4541-9b49-4b5625ad5d8e?autoplay=true&loop=true&muted=true&preload=true&responsive=true&controls=false"
                     loading="eager"
                     allow="autoplay; encrypted-media;"
                     title="LSC Creative Showreel">
@@ -222,7 +255,7 @@
         <section class="svc-section" id="services" aria-label="Services">
 
             <!-- Section header -->
-            <div class="svc-header">
+            <div class="svc-header reveal">
                 <span class="svc-eyebrow">[ WHAT WE DO ]</span>
                 <h2 class="svc-title">Services.</h2>
             </div>
@@ -231,7 +264,7 @@
             <div class="svc-grid">
 
                 <!-- 01 — Motion -->
-                <div class="svc-card">
+                <div class="svc-card reveal">
                     <div class="svc-card-inner">
                         <span class="svc-card-number">{ 01 }</span>
                         <div class="svc-card-body">
@@ -243,7 +276,7 @@
                 </div>
 
                 <!-- 02 — Stills -->
-                <div class="svc-card">
+                <div class="svc-card reveal" data-reveal-delay="100">
                     <div class="svc-card-inner">
                         <span class="svc-card-number">{ 02 }</span>
                         <div class="svc-card-body">
@@ -277,7 +310,7 @@
             </div>
 
             <!-- Works header -->
-            <div class="works-header">
+            <div class="works-header reveal">
                 <span class="works-eyebrow">[ SELECTED WORK ]</span>
                 <h2 class="works-title">Selected <em>Works.</em></h2>
                 <span class="works-count">04 FILMS — 2024–2026</span>
@@ -288,7 +321,7 @@
 
                 <!-- 01 — Marine Vitalities -->
                 <button
-                    class="works-card playable-tile"
+                    class="works-card playable-tile reveal"
                     data-video-id="89a0b68b-1afe-4c5a-9d83-67fc880a876a"
                     data-project-title="Marine Vitalities"
                     aria-label="Watch Marine Vitalities film">
@@ -321,7 +354,7 @@
 
                 <!-- 02 — BNB AutoHaus -->
                 <button
-                    class="works-card playable-tile"
+                    class="works-card playable-tile reveal" data-reveal-delay="80"
                     data-video-id="b73539f4-26bd-470d-b658-8b2b0870098b"
                     data-project-title="BNB AutoHaus"
                     aria-label="Watch BNB AutoHaus film">
@@ -354,7 +387,7 @@
 
                 <!-- 03 — BakeHouse -->
                 <button
-                    class="works-card playable-tile"
+                    class="works-card playable-tile reveal" data-reveal-delay="160"
                     data-video-id="0d00bcf5-bf60-4c2c-8513-f8e41b490670"
                     data-project-title="BakeHouse"
                     aria-label="Watch BakeHouse film">
@@ -387,7 +420,7 @@
 
                 <!-- 04 — Illawarra Hawks -->
                 <button
-                    class="works-card playable-tile"
+                    class="works-card playable-tile reveal" data-reveal-delay="240"
                     data-video-id="380dcc46-201f-46a1-8157-4e2fb3d88415"
                     data-project-title="Illawarra Hawks"
                     aria-label="Watch Illawarra Hawks film">
@@ -549,7 +582,7 @@
         <section class="lsc-contact-section" id="contact">
             <div class="contact-inner">
                 <div class="contact-asymmetric-layout">
-                    <div class="contact-left-column">
+                    <div class="contact-left-column reveal">
                         <span class="contact-eyebrow">Get In Touch</span>
                         <h2 class="contact-headline">Have a<br>
                         <span class="carousel-mask">
@@ -569,7 +602,7 @@
                             <line x1="0" y1="1" x2="100%" y2="1" class="connector-line"/>
                         </svg>
                     </div>
-                    <div class="contact-right-column">
+                    <div class="contact-right-column reveal" data-reveal-delay="120">
                         <button class="contact-cta-btn massive-btn" id="contactEnquiryBtn">
                             <span>Project Enquiries</span>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -605,13 +638,16 @@
                 <p>LSC Creative &copy; 2025</p>
             </div>
             <div class="footer-right">
-                <a href="mailto:hello@lsccreative.studio">Contact</a>
+                <a href="mailto:hello@creativelsc.studio">Contact</a>
+                <a href="client-hub/index.html?admin=1">admin</a>
             </div>
         </div>
     </footer>
 
     <!-- JavaScript Files -->
+    <script src="js/device-context.js"></script>
     <script src="js/main.js" defer></script>
+    <script src="js/scroll-animations.js" defer></script>
 
 </body>
 </html>

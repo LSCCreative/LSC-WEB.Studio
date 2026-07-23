@@ -1,0 +1,1430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Client Hub — LSC Creative</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  /* @font-face rules are injected at runtime from HUB_CONFIG.assetBase (see script top),
+     so a subdomain cutover only touches assetBase — not this stylesheet. */
+  :root{
+    --lsc-black:#0E0E0E; --lsc-surface:#1C1F24; --lsc-surface-lt:#252930;
+    --lsc-white:#F0EDE8; --lsc-mid:#7A7470; --lsc-rule:rgba(240,237,232,0.12);
+    --lsc-terra:#C0603C; --lsc-terra-dk:#8C4832;
+    --lsc-sage:#8FA89B; --lsc-sage-dk:#6A8E82;
+    --lsc-amber:#D9A441; --lsc-red:#C0503C;
+  }
+  *{box-sizing:border-box;}
+  body{
+    background:var(--lsc-black); color:var(--lsc-white);
+    font-family:"Funnel Sans","Outfit",sans-serif;
+    min-height:100vh; margin:0;
+  }
+  .mono{ font-family:"CS-Felice-Mono","Outfit",monospace; letter-spacing:.08em; }
+  .display{ font-family:"Delight","Outfit",sans-serif; }
+  ::selection{ background:var(--lsc-terra); color:#fff; }
+
+  /* ---- PIN LOCK ---- */
+  .pin-dot{
+    width:16px;height:16px;border-radius:50%;
+    border:1.5px solid var(--lsc-mid); transition:all .15s ease;
+  }
+  .pin-dot.filled{ background:var(--lsc-sage); border-color:var(--lsc-sage); }
+  .pin-dot.error{ background:var(--lsc-red); border-color:var(--lsc-red); }
+  .shake{ animation:shakeAnim .4s ease; }
+  @keyframes shakeAnim{
+    10%,90%{transform:translateX(-2px)}
+    20%,80%{transform:translateX(4px)}
+    30%,50%,70%{transform:translateX(-8px)}
+    40%,60%{transform:translateX(8px)}
+  }
+  .pin-key{
+    width:64px;height:64px;border-radius:50%;
+    background:var(--lsc-surface); border:1px solid var(--lsc-rule);
+    transition:all .15s ease; font-size:1.25rem;
+  }
+  .pin-key:active{ background:var(--lsc-terra); border-color:var(--lsc-terra); transform:scale(.95); }
+
+  /* ---- badges ---- */
+  .badge-reviewing{ background:rgba(217,164,65,.15); color:var(--lsc-amber); border:1px solid rgba(217,164,65,.35);}
+  .badge-changes{ background:rgba(192,80,60,.15); color:var(--lsc-terra); border:1px solid rgba(192,80,60,.35);}
+  .badge-approved{ background:rgba(143,168,155,.15); color:var(--lsc-sage); border:1px solid rgba(143,168,155,.35);}
+  /* smart state badges (F4) — reuse existing tokens */
+  .badge-deposit{ background:rgba(143,168,155,.14); color:var(--lsc-sage); border:1px solid rgba(143,168,155,.4);}
+  .badge-ready{ background:rgba(217,164,65,.14); color:var(--lsc-amber); border:1px solid rgba(217,164,65,.4);}
+  .badge-complete{ background:var(--lsc-sage-dk); color:#fff; border:1px solid var(--lsc-sage);}
+
+  .card{ background:var(--lsc-surface); border:1px solid var(--lsc-rule); }
+  .field{
+    background:var(--lsc-black); border:1px solid var(--lsc-rule); color:var(--lsc-white);
+    border-radius:8px; padding:10px 12px; width:100%; font-size:.9rem;
+  }
+  .field:focus{ outline:none; border-color:var(--lsc-sage); }
+  .field.invalid{ border-color:var(--lsc-red); }
+  .btn-terra{ background:var(--lsc-terra); color:#fff; }
+  .btn-terra:hover{ background:var(--lsc-terra-dk); }
+  .btn-sage{ background:transparent; border:1px solid var(--lsc-sage); color:var(--lsc-sage); }
+  .btn-sage:hover{ background:rgba(143,168,155,.1); }
+  .btn-ghost{ background:transparent; border:1px solid var(--lsc-rule); color:var(--lsc-mid); }
+  .btn-ghost:hover{ color:var(--lsc-white); border-color:var(--lsc-mid); }
+
+  .timestamp-pill{
+    animation:pillIn .2s ease;
+  }
+  @keyframes pillIn{ from{opacity:0; transform:translateY(4px) scale(.9);} to{opacity:1; transform:none;} }
+
+  .toast{ animation:toastIn .3s ease; }
+  @keyframes toastIn{ from{opacity:0; transform:translateY(-8px);} to{opacity:1; transform:none;} }
+
+  ::-webkit-scrollbar{ width:8px; height:8px; }
+  ::-webkit-scrollbar-thumb{ background:var(--lsc-surface-lt); border-radius:4px; }
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<!-- Modular email stub — loads before the main script; exposes window.emailService. -->
+<script src="emailService.js"></script>
+<script>
+/* =========================================================
+   CLIENT PROOFING & DELIVERY HUB — SIMULATE MODE PROTOTYPE
+   No live network calls. State persists to localStorage only.
+   ========================================================= */
+
+/* ---------------------------------------------------------
+   HUB_CONFIG — single source of truth for environment + routing.
+   Non-secret only (see BUILD-PLAN §2). Secrets live ONLY as Bunny
+   Edge Script env vars, never here or anywhere in client-hub/.
+   Subdomain cutover = change basePath / assetBase / mainSiteUrl only.
+   --------------------------------------------------------- */
+const HUB_CONFIG = {
+  mode:           'live',                                  // 'simulate' | 'live'
+  mainSiteUrl:    '../index.html',                         // back-link to host site
+  assetBase:      '../assets/',                            // fonts/images root (font @font-face derives from this)
+  basePath:       './',                                    // hub's own base (for building client links)
+  storageZone:    'clienthubdata',
+  s3Endpoint:     'https://de-s3.storage.bunnycdn.com',
+  storageHost:    'https://storage.bunnycdn.com/clienthubdata/',
+  pullZone:       'https://client-hub-pullzone.b-cdn.net/',
+  pullZoneId:     '6182913',
+  streamLibraryId:'683470',
+  edgeBase:       'https://client-hub-pullzone.b-cdn.net', // Bunny middleware Edge Script (routes /hub/*)
+};
+/* FLIP TO LIVE: set HUB_CONFIG.mode = 'live' AFTER (1) the Edge Script in
+   `Client HUB /hub-edge-script.js` is deployed on the pull-zone middleware,
+   (2) Edge Rules are set (token-auth on, /private blocked, CORS), and (3) the
+   admin has pasted ADMIN_API_KEY (prompted after PIN). Until then, 'simulate'
+   uses localStorage and every /hub/* call is bypassed. */
+
+/* Inject brand @font-face rules from HUB_CONFIG.assetBase so a subdomain
+   move only touches assetBase (these paths are exactly what break on a subdomain). */
+(function injectFonts(){
+  const f = HUB_CONFIG.assetBase + 'fonts/';
+  const css =
+    `@font-face{font-family:"Delight";`+
+      `src:url("${f}delight/Delight-SemiBold.woff2") format("woff2"),`+
+          `url("${f}delight/Delight-Bold.woff2") format("woff2");font-weight:600;}`+
+    `@font-face{font-family:"CS-Felice-Mono";`+
+      `src:url("${f}cs-felice-mono/CSFeliceMono-Regular.woff2") format("woff2"),`+
+          `url("${f}cs-felice-mono/CSFeliceMono-Regular.woff") format("woff");font-weight:400;}`;
+  const el = document.createElement('style'); el.textContent = css; document.head.appendChild(el);
+})();
+
+const PIN = '1234';
+const STORAGE_KEY = 'lsc_hub_projects_v1';
+const AUTH_KEY = 'lsc_hub_auth_v1';
+
+const uid = () => Math.random().toString(36).slice(2, 9);
+const nowStr = () => new Date().toLocaleString('en-AU', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+const isValidUrl = (v) => /^https:\/\/.+/i.test((v||'').trim());
+
+/* ---------------- Sprint C: accounts / persistence layer ---------------- */
+const ADMIN_KEY_SS    = 'lsc_hub_admin_key';    // admin bearer (live only), set once after PIN
+const CLIENT_TOKEN_SS = 'lsc_hub_client_token'; // client session token from /hub/auth
+const REC_PREFIX      = 'lsc_hub_record_';       // SIMULATE published safe record store
+const PRIV_PREFIX     = 'lsc_hub_private_';      // SIMULATE private auth record store
+
+const gen4     = () => String(Math.floor(1000 + Math.random()*9000));      // 4-digit client code
+const genToken = () => (uid()+uid()+uid()+uid()).slice(0,24);              // invite / session token
+const adminKey = () => sessionStorage.getItem(ADMIN_KEY_SS) || '';
+
+async function sha256Hex(str){
+  const data = new TextEncoder().encode(String(str));
+  const buf  = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+// Authed fetch to the Edge Script (live only). `admin:true` attaches the bearer.
+async function hubFetch(path, opts={}){
+  const headers = Object.assign({ 'Content-Type':'application/json' }, opts.headers||{});
+  if(opts.admin) headers['Authorization'] = 'Bearer ' + adminKey();
+  const res = await fetch(HUB_CONFIG.edgeBase + path, { ...opts, headers });
+  if(!res.ok){
+    const err = new Error(path + ' → ' + res.status);
+    err.status = res.status;              // callers branch on 401 (rejected admin key)
+    throw err;
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+/* A rejected admin key is the most common live-mode failure and the least obvious
+   from a generic error. Name it, and clear the bad key so the amber re-entry bar
+   comes straight back instead of leaving the admin stuck retrying. */
+function reportAdminError(e, what){
+  console.error(what + ' failed:', e);
+  if(e && e.status === 401){
+    sessionStorage.removeItem(ADMIN_KEY_SS);
+    toast('⚠ Admin key rejected — re-enter it in the bar above.');
+    render();   // callers may have re-rendered before this cleared — bring the bar back now
+    return;
+  }
+  toast('⚠ ' + what + ' failed — see console.');
+}
+
+// SAFE published subset (§3.2): NEVER includes clientCode, inviteToken, or clientEmail.
+function buildPublishedRecord(p){
+  return {
+    id: p.id, upid: p.upid, name: p.name, message: p.message,
+    invoices: (p.invoices||[]).map(i => ({ type:i.type, name:i.name, url:i.url||'' })),
+    delivered: !!p.delivered,
+    // Portal-compatible asset field names retained (reviewLink/downloadLink/driveLink).
+    assets: (p.assets||[]).map(a => ({
+      id:a.id, type:a.type, title:a.title, status:a.status, comments:a.comments||[],
+      reviewLink:a.reviewLink||'', downloadLink:a.downloadLink||'', driveLink:a.driveLink||''
+    }))
+  };
+}
+
+/* Mode-branched backend. SIMULATE = localStorage; LIVE = Bunny Edge Script.
+   The public read path (fetchRecord via pull zone) is what makes a client link
+   work on their OWN device — the known cross-device blocker. */
+const hubApi = {
+  // ADMIN write: publish the safe record + the private auth record (codeHash only).
+  async publish(p){
+    const record   = buildPublishedRecord(p);
+    const codeHash = p.clientCode ? await sha256Hex(p.clientCode) : null;
+    // priv stays server-side only (Edge-Rule blocked /private). inviteToken here lets the
+    // Edge Script build a token→project index for ?invite= onboarding.
+    const priv     = { projectId:p.id, clientEmail:(p.clientEmail||''), codeHash, delivered:!!p.delivered, inviteToken:(p.inviteToken||'') };
+    if(HUB_CONFIG.mode === 'live'){
+      await hubFetch('/hub/publish', { method:'POST', admin:true, body: JSON.stringify({ record, priv }) });
+    } else {
+      localStorage.setItem(REC_PREFIX + p.id, JSON.stringify(record));
+      localStorage.setItem(PRIV_PREFIX + p.id, JSON.stringify(priv));
+    }
+    p.publishedAt = new Date().toISOString();
+    return record;
+  },
+  // CLIENT auth: email + code → { token, projectIds }. Codes compared as SHA-256 only.
+  async authClient(email, code){
+    if(HUB_CONFIG.mode === 'live'){
+      return hubFetch('/hub/auth', { method:'POST', body: JSON.stringify({ email, code }) });
+    }
+    const codeHash = await sha256Hex(code);
+    const projectIds = [];
+    for(let i=0;i<localStorage.length;i++){
+      const k = localStorage.key(i);
+      if(!k || k.indexOf(PRIV_PREFIX) !== 0) continue;
+      let rec; try{ rec = JSON.parse(localStorage.getItem(k)); }catch(_){ continue; }
+      if(rec && rec.clientEmail && email &&
+         rec.clientEmail.toLowerCase() === email.trim().toLowerCase() &&
+         rec.codeHash === codeHash){ projectIds.push(rec.projectId); }
+    }
+    return projectIds.length ? { token:'sim-'+genToken(), projectIds } : { token:null, projectIds:[] };
+  },
+  // CLIENT read: fetch a published record. Live uses the pre-signed pull-zone URL that
+  // /hub/auth returned (Bunny token-auth); simulate reads the local record store.
+  async fetchRecord(projectId, auth){
+    if(HUB_CONFIG.mode === 'live'){
+      const url = auth && auth.records && auth.records[projectId];
+      if(!url) return null;
+      const res = await fetch(url);
+      return res.ok ? res.json() : null;
+    }
+    const raw = localStorage.getItem(REC_PREFIX + projectId);
+    return raw ? JSON.parse(raw) : null;
+  },
+  // Onboarding: resolve an invite token → { projectId, clientCode? }.
+  async resolveInvite(token){
+    if(HUB_CONFIG.mode === 'live'){
+      return hubFetch('/hub/auth', { method:'POST', body: JSON.stringify({ invite: token }) });
+    }
+    const p = loadProjects().find(x => x.inviteToken === token);
+    return p ? { projectId:p.id, clientCode:p.clientCode } : null;
+  }
+};
+
+function loadProjects(){
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if(!raw) return [];
+  let parsed;
+  try{ parsed = JSON.parse(raw); }
+  catch(e){
+    // Don't silently wipe: back the bad blob up so a future save can't overwrite good data.
+    try{ localStorage.setItem(STORAGE_KEY + '_corrupt_' + Date.now(), raw); }catch(_){}
+    console.error('Client Hub: projects store was corrupt — kept a backup, starting empty.', e);
+    return [];
+  }
+  if(!Array.isArray(parsed)) return [];
+  // Normalise legacy/partial records so missing fields can't crash the tracker.
+  return parsed.map(p => {
+    const assets = Array.isArray(p.assets) ? p.assets : [];
+    let invoices = Array.isArray(p.invoices) ? p.invoices : [];
+    // Migrate legacy single invoiceName → invoices[] final entry. Never wipe unknown fields.
+    if(!invoices.length && p.invoiceName){
+      invoices = [{ id: uid(), type:'final', name: p.invoiceName, url:'' }];
+    }
+    return { ...p, assets, invoices };
+  });
+}
+function saveProjects(list){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); return true; }
+  catch(e){
+    console.error('Client Hub: save failed (storage may be full).', e);
+    toast('⚠ Save failed — storage may be full. Copy your work before retrying.');
+    return false;
+  }
+}
+
+function assetStatusOf(asset){ return asset.status; } // 'reviewing' | 'changes' | 'approved'
+function projectStatusOf(project){
+  const assets = project.assets || [];
+  if(!assets.length) return 'reviewing';
+  if(assets.some(a => a.status === 'changes')) return 'changes';
+  if(assets.every(a => a.status === 'approved')) return 'approved';
+  return 'reviewing';
+}
+const statusMeta = {
+  reviewing:{ label:'Reviewing', dot:'🟡', cls:'badge-reviewing' },
+  changes:{ label:'Changes Requested', dot:'🟠', cls:'badge-changes' },
+  approved:{ label:'Approved & Closed', dot:'🟢', cls:'badge-approved' },
+};
+
+// Smart admin-driven badges (F4). `[Project Complete]` is terminal and overrides the rest.
+function smartBadges(p){
+  const invoices = Array.isArray(p.invoices) ? p.invoices : [];
+  const assets   = Array.isArray(p.assets)   ? p.assets   : [];
+  const complete = p.delivered === true || (assets.length > 0 && assets.every(a => a.status === 'approved'));
+  if(complete) return [{ label:'Project Complete', cls:'badge-complete' }];
+  const out = [];
+  if(invoices.some(i => i.type === 'deposit'))     out.push({ label:'Deposit Paid',    cls:'badge-deposit' });
+  if(assets.some(a => isValidUrl(a.reviewLink)))   out.push({ label:'Ready to Review', cls:'badge-ready'   });
+  return out;
+}
+function smartBadgesHtml(p, extraCls=''){
+  const b = smartBadges(p);
+  if(!b.length) return '';
+  return `<div class="flex flex-wrap gap-1.5 ${extraCls}">${b.map(x =>
+    `<span class="mono text-[9px] px-2 py-1 rounded-full ${x.cls}">${x.label.toUpperCase()}</span>`).join('')}</div>`;
+}
+
+let state = {
+  authed: sessionStorage.getItem(AUTH_KEY) === 'true',
+  pinInput: '',
+  pinError: false,
+  screen: 'tracker',       // tracker | editor | client
+  projects: loadProjects(),
+  editingId: null,
+  draft: null,
+  viewProjectId: null,
+  clientScreen: 'landing', // landing | asset | final
+  activeAssetId: null,
+  revisionOpen: false,
+  revisionDraft: '',
+  pausedAt: null,
+  selectedPhotoIdx: null,
+  toast: null,
+  menuOpenId: null,
+  signature: false,
+  editorError: null,
+  approveModalAssetId: null,
+  clientMode: false,       // true when opened via a public ?project= client link
+  confirmDeleteId: null,   // project id awaiting delete confirmation
+  entry: 'client',         // which door: 'client' (default) | 'admin' (?admin=1) | 'invite' (?invite=)
+  inviteToken: null,       // token from ?invite= (resolved to a project in Sprint C)
+  clientLoginEmail: '',    // client login shell: email field
+  clientCodeInput: '',     // client login shell: 4-digit code progress
+  clientLoginError: false, // client login shell: shake/red state
+  clientLoginMsg: null,    // client login shell: inline feedback line
+  impersonating: false,    // admin viewing the real client portal (persistent bar, no admin chrome)
+  clientRecord: null,      // published record fetched for a real client session (cross-device)
+  inviteResult: null,      // {name,to,url,code,reset?} surfaced to admin after invite/reset
+  confirmResetId: null,    // project id awaiting master-reset confirmation
+};
+
+function setState(patch){ Object.assign(state, patch); render(); }
+
+/* ---------------- guard: pick which door by URL param ----------------
+   ?admin=1        → admin PIN → workspace
+   ?invite=<token> → client onboarding (login shell for now; token resolves in Sprint C)
+   ?project=<id>   → legacy public client link (kept)
+   (no param)      → client login (default door — the top-nav CLIENT HUB link) */
+(function guard(){
+  const params = new URLSearchParams(location.search);
+  if(params.get('logout') === '1'){ sessionStorage.removeItem(AUTH_KEY); state.authed = false; }
+
+  const pid    = params.get('project');
+  const invite = params.get('invite');
+  const isAdmin= params.get('admin') === '1';
+
+  if(pid){
+    // Public client entry — bypasses the admin PIN and opens straight into the portal.
+    // NOTE (live build): reads the project from this browser's localStorage. A real client
+    // on another device won't have it — swap getViewProject() for a fetch of a published
+    // record (Bunny Storage JSON / edge KV) before leaving simulate mode.
+    state.clientMode = true;
+    state.viewProjectId = pid;
+    state.screen = 'client';
+    state.clientScreen = 'landing';
+    return;
+  }
+  if(invite){
+    // Onboarding: Sprint C resolves the token → project + reveals/confirms the code.
+    // For Sprint A this lands on the client-login shell with invite copy.
+    state.entry = 'invite';
+    state.inviteToken = invite;
+    return;
+  }
+  if(isAdmin){
+    // Admin door → PIN (render() gates on state.authed).
+    state.entry = 'admin';
+    return;
+  }
+  // Default door → client login shell.
+  state.entry = 'client';
+})();
+
+/* ================= LOCK SCREEN ================= */
+function renderLock(){
+  const dots = [0,1,2,3].map(i => {
+    let cls = 'pin-dot';
+    if(state.pinError) cls += ' filled error';
+    else if(i < state.pinInput.length) cls += ' filled';
+    return `<div class="${cls}"></div>`;
+  }).join('');
+
+  const keys = ['1','2','3','4','5','6','7','8','9','','0','del'];
+  const keyHtml = keys.map(k => {
+    if(k === '') return `<div></div>`;
+    if(k === 'del') return `<button data-key="del" class="pin-key mono flex items-center justify-center text-[var(--lsc-mid)]">⌫</button>`;
+    return `<button data-key="${k}" class="pin-key mono flex items-center justify-center">${k}</button>`;
+  }).join('');
+
+  return `
+  <div class="min-h-screen flex flex-col items-center justify-center px-6">
+    <a href="${HUB_CONFIG.mainSiteUrl}" class="mono text-xs text-[var(--lsc-mid)] mb-10 hover:text-[var(--lsc-white)] transition">← BACK TO SITE</a>
+    <div class="mono text-xs text-[var(--lsc-mid)] mb-3 tracking-[0.3em]">CLIENT HUB · ADMIN ACCESS</div>
+    <div class="display text-2xl mb-8">Enter PIN</div>
+    <div id="pin-dots" class="flex gap-4 mb-10">${dots}</div>
+    <div class="grid grid-cols-3 gap-4">${keyHtml}</div>
+    <div class="mono text-[10px] text-[var(--lsc-mid)] mt-10 opacity-50">SIMULATE MODE · DEMO PIN 1234</div>
+  </div>`;
+}
+
+function pressKey(k){
+  if(state.pinError) return;
+  if(k === 'del'){ state.pinInput = state.pinInput.slice(0,-1); render(); return; }
+  if(state.pinInput.length >= 4) return;
+  state.pinInput += k;
+  if(state.pinInput.length === 4){
+    if(state.pinInput === PIN){
+      sessionStorage.setItem(AUTH_KEY, 'true');
+      state.authed = true; state.pinInput=''; state.screen='tracker';
+      render();
+    } else {
+      state.pinError = true;
+      render();
+      const dotsEl = document.getElementById('pin-dots');
+      if(dotsEl) dotsEl.classList.add('shake');
+      setTimeout(() => { state.pinError=false; state.pinInput=''; render(); }, 500);
+    }
+  } else {
+    render();
+  }
+}
+
+/* ================= CLIENT LOGIN (shell — Sprint A) =================
+   Email + 4-digit code entry. UI only in SIMULATE; real verification
+   (POST /hub/auth → token → fetch published record) wires in Sprint C. */
+function renderClientLogin(){
+  const invite = state.entry === 'invite';
+  const dots = [0,1,2,3].map(i => {
+    let cls = 'pin-dot';
+    if(state.clientLoginError) cls += ' filled error';
+    else if(i < state.clientCodeInput.length) cls += ' filled';
+    return `<div class="${cls}"></div>`;
+  }).join('');
+
+  const keys = ['1','2','3','4','5','6','7','8','9','','0','del'];
+  const keyHtml = keys.map(k => {
+    if(k === '') return `<div></div>`;
+    if(k === 'del') return `<button data-ckey="del" class="pin-key mono flex items-center justify-center text-[var(--lsc-mid)]">⌫</button>`;
+    return `<button data-ckey="${k}" class="pin-key mono flex items-center justify-center">${k}</button>`;
+  }).join('');
+
+  return `
+  <div class="min-h-screen flex flex-col items-center justify-center px-6 py-16">
+    <a href="${HUB_CONFIG.mainSiteUrl}" class="mono text-xs text-[var(--lsc-mid)] mb-10 hover:text-[var(--lsc-white)] transition">← BACK TO SITE</a>
+    <div class="mono text-xs text-[var(--lsc-mid)] mb-3 tracking-[0.3em]">CLIENT HUB · CLIENT ACCESS</div>
+    <div class="display text-2xl mb-2 text-center">${invite ? 'Welcome — activate your access' : 'Sign in to your delivery'}</div>
+    <div class="mono text-xs text-[var(--lsc-mid)] mb-8 text-center max-w-xs leading-relaxed">${invite ? 'Enter your email and the 4-digit code from your invitation.' : 'Enter your email and the 4-digit code the studio sent you.'}</div>
+
+    <div class="w-full max-w-xs mb-8">
+      <input id="client-login-email" class="field text-center" type="email" placeholder="you@company.com" value="${escapeAttr(state.clientLoginEmail)}" autocomplete="email">
+    </div>
+
+    <div class="mono text-[10px] text-[var(--lsc-mid)] mb-3 tracking-[0.25em]">4-DIGIT CODE</div>
+    <div id="client-code-dots" class="flex gap-4 mb-8">${dots}</div>
+    <div class="grid grid-cols-3 gap-4">${keyHtml}</div>
+
+    ${invite && state.inviteHint && state.inviteHint.code ? `<div class="mono text-[11px] text-[var(--lsc-sage)] mt-8 text-center">Your access code is <span class="text-[var(--lsc-white)] tracking-[0.3em]">${escapeHtml(state.inviteHint.code)}</span> — enter it above to continue.</div>` : ''}
+    ${state.clientLoginMsg ? `<div class="mono text-[11px] text-[var(--lsc-sage)] mt-8 text-center max-w-xs leading-relaxed">${escapeHtml(state.clientLoginMsg)}</div>` : ''}
+    <button id="client-forgot" class="mono text-[11px] text-[var(--lsc-mid)] hover:text-[var(--lsc-white)] mt-8 underline underline-offset-4 transition">Forgot your code?</button>
+    <div class="mono text-[10px] text-[var(--lsc-mid)] mt-6 opacity-50">${HUB_CONFIG.mode === 'live' ? 'SECURE CLIENT ACCESS' : 'SIMULATE MODE · localStorage accounts'}</div>
+  </div>`;
+}
+
+function pressClientKey(k){
+  if(state.clientLoginError) return;
+  if(k === 'del'){ state.clientCodeInput = state.clientCodeInput.slice(0,-1); render(); return; }
+  if(state.clientCodeInput.length >= 4) return;
+  state.clientCodeInput += k;
+  if(state.clientCodeInput.length === 4){ submitClientLogin(); }
+  else { render(); }
+}
+
+function failClientLogin(msg){
+  state.clientLoginError = true; render();
+  const d = document.getElementById('client-code-dots'); if(d) d.classList.add('shake');
+  setTimeout(() => setState({ clientLoginError:false, clientCodeInput:'', clientLoginMsg: msg }), 500);
+}
+
+async function submitClientLogin(){
+  // Real email + 4-digit-code verification. SIMULATE compares SHA-256 against the private
+  // auth records in localStorage; LIVE POSTs to /hub/auth. On success we fetch the published
+  // record (pull zone in live) and drop into the portal — this is the cross-device path.
+  const email = (state.clientLoginEmail || '').trim();
+  const code  = state.clientCodeInput;
+  if(!email || !/.+@.+\..+/.test(email)){
+    return failClientLogin('Enter a valid email above, then your 4-digit code.');
+  }
+  state.clientLoginMsg = 'Checking…'; render();
+  try {
+    const auth = await hubApi.authClient(email, code);
+    if(!auth || !auth.token || !auth.projectIds || !auth.projectIds.length){
+      return failClientLogin('That email and code didn’t match. Check your invitation and try again.');
+    }
+    sessionStorage.setItem(CLIENT_TOKEN_SS, auth.token);
+    const pid = auth.projectIds[0]; // (multi-project selector = future work)
+    const record = await hubApi.fetchRecord(pid, auth);
+    if(!record){ return failClientLogin('Your delivery couldn’t be loaded. Please contact the studio.'); }
+    state.clientRecord = record;
+    setState({ clientMode:true, viewProjectId:pid, screen:'client', clientScreen:'landing',
+      clientCodeInput:'', clientLoginError:false, clientLoginMsg:null, inviteHint:null });
+  } catch(e){
+    console.error('client auth failed:', e);
+    failClientLogin('Sign-in failed (network). Please try again.');
+  }
+}
+
+async function clientForgotCode(){
+  const email = (state.clientLoginEmail || '').trim();
+  if(!email){ return setState({ clientLoginMsg:'Enter your email above first, then tap “Forgot your code?”.' }); }
+  // Privacy: never reveal whether the email is on file.
+  try {
+    if(HUB_CONFIG.mode === 'live'){
+      await hubFetch('/hub/notify', { method:'POST', body: JSON.stringify({ kind:'reset', email }) });
+    } else {
+      const p = loadProjects().find(x => (x.clientEmail||'').toLowerCase() === email.toLowerCase());
+      if(p && p.inviteToken) await emailService.sendCodeReset(p, HUB_CONFIG);
+    }
+  } catch(e){ console.error(e); }
+  setState({ clientLoginMsg:'If that email is on file, a reset code has been sent. Check your inbox.' });
+}
+
+function bindClientLogin(){
+  const emailEl = document.getElementById('client-login-email');
+  if(emailEl) emailEl.addEventListener('input', () => { state.clientLoginEmail = emailEl.value; });
+  document.querySelectorAll('[data-ckey]').forEach(btn => { btn.onclick = () => pressClientKey(btn.dataset.ckey); });
+  // Re-bind idempotently so re-renders never stack duplicate keydown listeners.
+  document.removeEventListener('keydown', clientLoginKeyHandler);
+  document.addEventListener('keydown', clientLoginKeyHandler);
+  const forgot = document.getElementById('client-forgot');
+  if(forgot) forgot.onclick = clientForgotCode;
+
+  // Invite onboarding: resolve the ?invite= token once to prefill email + reveal the code.
+  if(state.entry === 'invite' && state.inviteToken && !state.inviteHint){
+    state.inviteHint = {}; // sentinel guards against re-resolving on every re-render
+    hubApi.resolveInvite(state.inviteToken).then(res => {
+      if(!res || !res.projectId){ return; }        // leave the {} sentinel; no code hint shown
+      state.inviteHint = { code: res.clientCode || '', projectId: res.projectId };
+      // Mark active (simulate, same-device). Live: the edge sets clientStatus server-side.
+      if(HUB_CONFIG.mode !== 'live'){
+        const proj = state.projects.find(x => x.id === res.projectId);
+        if(proj){
+          if(proj.clientStatus !== 'active'){ proj.clientStatus = 'active'; saveProjects(state.projects); }
+          if(!state.clientLoginEmail && proj.clientEmail) state.clientLoginEmail = proj.clientEmail;
+        }
+      }
+      render();
+    }).catch(e => console.error('invite resolve failed:', e));
+  }
+}
+
+function clientLoginKeyHandler(e){
+  if(state.entry !== 'client' && state.entry !== 'invite'){ document.removeEventListener('keydown', clientLoginKeyHandler); return; }
+  const tag = (e.target.tagName || '').toUpperCase();
+  if(tag === 'INPUT' || tag === 'TEXTAREA') return; // don't hijack typing in the email field
+  if(/^[0-9]$/.test(e.key)) pressClientKey(e.key);
+  if(e.key === 'Backspace') pressClientKey('del');
+}
+
+/* ================= ADMIN: TRACKER ================= */
+function renderTracker(){
+  const cards = state.projects.length ? state.projects.map(p => {
+    const st = projectStatusOf(p);
+    const meta = statusMeta[st];
+    return `
+    <div class="card rounded-xl p-5 relative">
+      <div class="flex items-start justify-between mb-3">
+        <div>
+          <div class="mono text-[10px] text-[var(--lsc-mid)] mb-1">${escapeHtml(p.upid)}</div>
+          <div class="display text-lg leading-tight">${escapeHtml(p.name)}</div>
+        </div>
+        <div class="relative">
+          <button data-menu="${p.id}" class="text-[var(--lsc-mid)] hover:text-white px-2">⋯</button>
+          ${state.menuOpenId === p.id ? `
+          <div class="absolute right-0 top-8 z-10 card rounded-lg overflow-hidden w-48 shadow-xl">
+            <button data-edit="${p.id}" class="block w-full text-left px-4 py-2 text-sm hover:bg-[var(--lsc-surface-lt)]">Edit Project</button>
+            <button data-impersonate="${p.id}" class="block w-full text-left px-4 py-2 text-sm hover:bg-[var(--lsc-surface-lt)]">Impersonate Client</button>
+            <button data-invite="${p.id}" class="block w-full text-left px-4 py-2 text-sm hover:bg-[var(--lsc-surface-lt)]">${p.clientStatus ? 'Resend Invitation' : 'Invite Client'}</button>
+            <button data-publish="${p.id}" class="block w-full text-left px-4 py-2 text-sm hover:bg-[var(--lsc-surface-lt)]">Publish / Update</button>
+            <button data-delivered="${p.id}" class="block w-full text-left px-4 py-2 text-sm hover:bg-[var(--lsc-surface-lt)]">${p.delivered ? 'Mark Undelivered' : 'Mark Delivered'}</button>
+            <button data-copylink="${p.id}" class="block w-full text-left px-4 py-2 text-sm hover:bg-[var(--lsc-surface-lt)]">Copy Client Link</button>
+            <button data-askreset="${p.id}" class="block w-full text-left px-4 py-2 text-sm text-[var(--lsc-amber)] hover:bg-[var(--lsc-surface-lt)]">Master Reset Code</button>
+            <button data-askdelete="${p.id}" class="block w-full text-left px-4 py-2 text-sm text-[var(--lsc-terra)] hover:bg-[var(--lsc-surface-lt)]">Delete</button>
+          </div>` : ''}
+        </div>
+      </div>
+      <div class="text-sm text-[var(--lsc-mid)] mb-1">${escapeHtml(p.clientName || 'No client name')}</div>
+      <div class="mono text-[10px] text-[var(--lsc-mid)] mb-3">${p.clientStatus ? '● ' + p.clientStatus.toUpperCase() + (p.publishedAt ? ' · published' : '') : '○ not invited'}</div>
+      ${smartBadgesHtml(p, 'mb-4')}
+      <div class="flex items-center justify-between">
+        <span class="mono text-[10px] px-2 py-1 rounded-full ${meta.cls}">${meta.dot} ${meta.label}</span>
+        <span class="mono text-[10px] text-[var(--lsc-mid)]">${p.assets.length} asset${p.assets.length===1?'':'s'}</span>
+      </div>
+    </div>`;
+  }).join('') : `
+    <div class="col-span-full text-center py-20 text-[var(--lsc-mid)]">
+      <div class="text-4xl mb-4">📁</div>
+      <div class="mono text-sm">No active projects yet</div>
+    </div>`;
+
+  return `
+  <div class="min-h-screen">
+    ${renderAdminHeader('tracker')}
+    ${(HUB_CONFIG.mode === 'live' && !adminKey()) ? renderAdminKeyBar() : ''}
+    <div class="max-w-6xl mx-auto px-6 py-10">
+      <div class="flex items-center justify-between mb-8">
+        <div>
+          <div class="display text-2xl">Master Project Tracker</div>
+          <div class="mono text-xs text-[var(--lsc-mid)] mt-1">${state.projects.length} project${state.projects.length===1?'':'s'} · ${HUB_CONFIG.mode} mode</div>
+        </div>
+        <button id="new-project" class="btn-terra rounded-lg px-5 py-3 mono text-xs">+ NEW PROJECT</button>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">${cards}</div>
+    </div>
+    ${state.confirmDeleteId ? renderDeleteConfirm() : ''}
+    ${state.confirmResetId ? renderResetConfirm() : ''}
+    ${state.inviteResult ? renderInviteResult() : ''}
+  </div>`;
+}
+
+// Live-only: admin pastes ADMIN_API_KEY once after PIN; held in sessionStorage, sent as Bearer.
+function renderAdminKeyBar(){
+  return `
+  <div class="bg-[var(--lsc-amber)] text-[var(--lsc-black)] px-6 py-2 flex items-center gap-3 mono text-xs">
+    <span class="whitespace-nowrap">LIVE MODE — paste ADMIN_API_KEY to enable admin writes:</span>
+    <input id="admin-key-input" type="password" class="flex-1 bg-black/10 rounded px-2 py-1 text-[var(--lsc-black)]" placeholder="ADMIN_API_KEY">
+    <button id="admin-key-save" class="bg-[var(--lsc-black)] text-[var(--lsc-white)] rounded px-3 py-1">SAVE</button>
+  </div>`;
+}
+
+function renderResetConfirm(){
+  const p = state.projects.find(x => x.id === state.confirmResetId);
+  const nm = p ? escapeHtml(p.name || p.upid) : 'this project';
+  return `
+  <div class="fixed inset-0 z-40 flex items-center justify-center p-6" style="background:rgba(14,14,14,.7); backdrop-filter:blur(6px);">
+    <div class="card rounded-xl p-6 max-w-sm w-full">
+      <div class="display text-lg mb-2">Reset client code?</div>
+      <p class="text-sm text-[var(--lsc-mid)] mb-6">A new 4-digit code will be generated for “${nm}”, the old code stops working immediately, and a reset email is sent to the client.</p>
+      <div class="flex gap-3">
+        <button id="confirm-reset" class="btn-terra rounded-lg px-4 py-2 mono text-xs">REGENERATE CODE</button>
+        <button id="cancel-reset" class="btn-ghost rounded-lg px-4 py-2 mono text-xs">CANCEL</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// Surfaces the code + onboarding link to the admin after invite / reset (email is stubbed).
+function renderInviteResult(){
+  const r = state.inviteResult || {};
+  return `
+  <div class="fixed inset-0 z-40 flex items-center justify-center p-6" style="background:rgba(14,14,14,.7); backdrop-filter:blur(6px);">
+    <div class="card rounded-xl p-6 max-w-md w-full">
+      <div class="display text-lg mb-1">${r.reset ? 'Code reset' : 'Client invited'}</div>
+      <p class="text-sm text-[var(--lsc-mid)] mb-4">${escapeHtml(r.name || '')} · ${escapeHtml(r.to || 'no email')} — ${HUB_CONFIG.mode === 'live' ? 'email dispatched via the Edge Script.' : 'email payload logged to the console (simulate).'}</p>
+      <div class="card rounded-lg p-4 mb-2 bg-[var(--lsc-black)]">
+        <div class="mono text-[10px] text-[var(--lsc-mid)] mb-1">4-DIGIT CODE</div>
+        <div class="display text-2xl tracking-[0.4em]">${escapeHtml(r.code || '----')}</div>
+      </div>
+      ${r.url ? `<div class="mono text-[10px] text-[var(--lsc-mid)] break-all mb-4">${escapeHtml(r.url)}</div>` : '<div class="mb-4"></div>'}
+      <div class="flex gap-3">
+        ${r.url ? `<button id="copy-invite" class="btn-sage rounded-lg px-4 py-2 mono text-xs">COPY LINK</button>` : ''}
+        <button id="close-invite" class="btn-terra rounded-lg px-4 py-2 mono text-xs">DONE</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderDeleteConfirm(){
+  const p = state.projects.find(x => x.id === state.confirmDeleteId);
+  const nm = p ? escapeHtml(p.name || p.upid) : 'this project';
+  return `
+  <div id="delete-modal-backdrop" class="fixed inset-0 z-40 flex items-center justify-center p-6" style="background:rgba(14,14,14,.7); backdrop-filter:blur(6px);">
+    <div class="card rounded-xl p-6 max-w-sm w-full">
+      <div class="display text-lg mb-2">Delete project?</div>
+      <p class="text-sm text-[var(--lsc-mid)] mb-6">“${nm}” and its review history will be permanently removed. This can't be undone.</p>
+      <div class="flex gap-3">
+        <button id="confirm-delete" class="btn-terra rounded-lg px-4 py-2 mono text-xs">DELETE</button>
+        <button id="cancel-delete" class="btn-ghost rounded-lg px-4 py-2 mono text-xs">CANCEL</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderAdminHeader(active){
+  return `
+  <div class="border-b border-[var(--lsc-rule)]">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="mono text-xs tracking-[0.2em] text-[var(--lsc-white)]">LSC · CLIENT HUB</div>
+        <span class="mono text-[10px] px-2 py-0.5 rounded-full border border-[var(--lsc-rule)] text-[var(--lsc-mid)]">ADMIN</span>
+      </div>
+      <div class="flex items-center gap-4">
+        <a href="${HUB_CONFIG.mainSiteUrl}" class="mono text-xs text-[var(--lsc-mid)] hover:text-white transition">VIEW SITE</a>
+        <button id="logout-btn" class="mono text-xs text-[var(--lsc-mid)] hover:text-[var(--lsc-terra)] transition">LOG OUT</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ================= ADMIN: EDITOR ================= */
+function blankDraft(){
+  return { id: uid(), upid: 'UPID-' + Math.floor(1000+Math.random()*9000), name:'', clientName:'', clientEmail:'', message:'',
+    invoices:[], assets:[],
+    clientCode:'', inviteToken:'', clientStatus:'', delivered:false, publishedAt:null };
+}
+/* ---- invoices[] helpers (F2) ---- */
+function invoiceOf(p, type){ return (Array.isArray(p.invoices) ? p.invoices : []).find(i => i.type === type); }
+function setInvoice(d, type, name, url){
+  d.invoices = Array.isArray(d.invoices) ? d.invoices : [];
+  const existing = d.invoices.find(i => i.type === type);
+  if(existing){ existing.name = name; existing.url = url; }
+  else { d.invoices.push({ id: uid(), type, name, url }); }
+}
+// Editor upload zone for one invoice type. Remove control sits OUTSIDE the <label>
+// so it can't re-trigger the hidden file input.
+function renderInvoiceZone(d, type, label){
+  const inv = invoiceOf(d, type);
+  return `
+    <div>
+      <label class="block border border-dashed border-[var(--lsc-rule)] rounded-lg p-5 text-center cursor-pointer hover:border-[var(--lsc-sage)] transition">
+        <input type="file" data-invoice-input="${type}" accept="application/pdf" class="hidden">
+        <div class="mono text-[10px] text-[var(--lsc-mid)] mb-1 tracking-[0.15em]">${label}</div>
+        <div class="mono text-xs ${inv ? 'text-[var(--lsc-sage)]' : 'text-[var(--lsc-mid)]'} truncate">${inv ? '📄 ' + escapeHtml(inv.name) : 'Drag & drop PDF, or click to select'}</div>
+      </label>
+      ${inv ? `<button type="button" data-invoice-remove="${type}" class="mono text-[10px] text-[var(--lsc-terra)] mt-2 hover:underline">✕ remove</button>` : `<div class="h-4 mt-2"></div>`}
+    </div>`;
+}
+function newAsset(type){
+  return { id: uid(), type, title:'', reviewLink:'', downloadLink:'', driveLink:'', status:'reviewing', comments:[] };
+}
+
+function renderEditor(){
+  const d = state.draft;
+  const assetTabs = d.assets.map((a,idx) => `
+    <div class="card rounded-lg p-4 mb-3" data-asset-block="${a.id}">
+      <div class="flex items-center justify-between mb-3">
+        <div class="mono text-xs text-[var(--lsc-mid)]">${a.type === 'video' ? '🎬 VIDEO ASSET' : '🖼 PHOTO LIBRARY'} #${idx+1}</div>
+        <button data-remove-asset="${a.id}" class="text-[var(--lsc-mid)] hover:text-[var(--lsc-terra)] text-xs mono">REMOVE</button>
+      </div>
+      <input data-field="title" data-asset="${a.id}" class="field mb-2" placeholder="Deliverable title (e.g. Promo Film)" value="${escapeAttr(a.title)}">
+      <input data-field="reviewLink" data-asset="${a.id}" class="field mb-2 ${a.reviewLink && !isValidUrl(a.reviewLink)?'invalid':''}" placeholder="Review Asset Link (Bunny Stream) — https://" value="${escapeAttr(a.reviewLink)}">
+      <input data-field="downloadLink" data-asset="${a.id}" class="field mb-2 ${a.downloadLink && !isValidUrl(a.downloadLink)?'invalid':''}" placeholder="Main Download Link (Bunny Storage) — https://" value="${escapeAttr(a.downloadLink)}">
+      <input data-field="driveLink" data-asset="${a.id}" class="field ${a.driveLink && !isValidUrl(a.driveLink)?'invalid':''}" placeholder="Google Drive Backup Link — https://" value="${escapeAttr(a.driveLink)}">
+    </div>`).join('');
+
+  return `
+  <div class="min-h-screen">
+    ${renderAdminHeader('editor')}
+    <div class="max-w-3xl mx-auto px-6 py-10">
+      <button id="back-tracker" class="mono text-xs text-[var(--lsc-mid)] hover:text-white mb-6">← BACK TO TRACKER</button>
+      <div class="display text-2xl mb-8">${state.editingId ? 'Edit Project' : 'New Project Setup'}</div>
+
+      <div class="card rounded-xl p-6 mb-6">
+        <div class="mono text-[10px] text-[var(--lsc-mid)] mb-4">PROJECT PARAMETERS</div>
+        <div class="grid grid-cols-2 gap-3 mb-3">
+          <input data-field="name" class="field" placeholder="Project Name" value="${escapeAttr(d.name)}">
+          <input data-field="upid" class="field" placeholder="Unique Project ID" value="${escapeAttr(d.upid)}">
+        </div>
+        <div class="grid grid-cols-2 gap-3 mb-3">
+          <input data-field="clientName" class="field" placeholder="Client Name / CRM Info" value="${escapeAttr(d.clientName)}">
+          <input data-field="clientEmail" class="field" placeholder="Client Email" value="${escapeAttr(d.clientEmail)}">
+        </div>
+        <textarea data-field="message" class="field mb-4" rows="3" placeholder="Personal message to client">${escapeAttr(d.message)}</textarea>
+        <div class="mono text-[10px] text-[var(--lsc-mid)] mb-2 tracking-[0.15em]">INVOICES</div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          ${renderInvoiceZone(d, 'deposit', 'PAID DEPOSIT INVOICE')}
+          ${renderInvoiceZone(d, 'final', 'FINAL INVOICE')}
+        </div>
+      </div>
+
+      <div class="card rounded-xl p-6 mb-6">
+        <div class="flex items-center justify-between mb-4">
+          <div class="mono text-[10px] text-[var(--lsc-mid)]">DELIVERABLE ASSETS</div>
+          <div class="flex gap-2">
+            <button id="add-video" class="btn-sage rounded-lg px-3 py-2 mono text-[10px]">+ ADD VIDEO</button>
+            <button id="add-photo" class="btn-sage rounded-lg px-3 py-2 mono text-[10px]">+ ADD PHOTO LIBRARY</button>
+          </div>
+        </div>
+        ${assetTabs || `<div class="text-sm text-[var(--lsc-mid)] text-center py-6">No assets yet — add a video or photo library above.</div>`}
+      </div>
+
+      ${state.editorError ? `<div class="mono text-xs text-[var(--lsc-terra)] mb-3">${escapeHtml(state.editorError)}</div>` : ''}
+      <div class="flex gap-3">
+        <button id="save-project" class="btn-terra rounded-lg px-6 py-3 mono text-xs">SAVE PROJECT</button>
+        <button id="cancel-project" class="btn-ghost rounded-lg px-6 py-3 mono text-xs">CANCEL</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ================= CLIENT PORTAL (simulated "view as client") ================= */
+function getViewProject(){
+  // A real client session runs off the fetched published record (works cross-device).
+  // Admin "impersonate" / same-device uses the full local project object.
+  if(state.clientRecord && state.clientRecord.id === state.viewProjectId) return state.clientRecord;
+  return state.projects.find(p => p.id === state.viewProjectId);
+}
+
+function renderClientNotFound(){
+  return `
+  <div class="min-h-screen flex flex-col items-center justify-center px-6 text-center">
+    <div class="text-4xl mb-4">🎬</div>
+    <div class="display text-xl mb-2">Link not available</div>
+    <div class="mono text-xs text-[var(--lsc-mid)] max-w-sm leading-relaxed">This delivery link is invalid, or hasn't been published to this device yet. Please contact the studio for an updated link.</div>
+  </div>`;
+}
+
+function renderClientChrome(inner){
+  const p = getViewProject();
+  // ONE persistent impersonation bar when an admin is viewing the real client portal.
+  const impersonateBar = state.impersonating ? `
+    <div class="bg-[var(--lsc-terra)] text-white px-6 py-2 flex items-center justify-between mono text-[11px]">
+      <span>IMPERSONATING · ${escapeHtml(p.clientName || p.name || 'client')} — you are seeing exactly what the client sees</span>
+      <button id="exit-impersonate" class="underline underline-offset-2 hover:opacity-80">Exit impersonation →</button>
+    </div>` : '';
+  return `
+  <div class="min-h-screen">
+    ${impersonateBar}
+    <div class="border-b border-[var(--lsc-rule)] sticky top-0 bg-[var(--lsc-black)] z-20">
+      <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div>
+          <div class="mono text-[10px] text-[var(--lsc-mid)]">${escapeHtml(p.upid)}</div>
+          <div class="display text-base">${escapeHtml(p.name)}</div>
+          ${smartBadgesHtml(p, 'mt-1.5')}
+        </div>
+        <div class="flex items-center gap-3">
+          ${(state.clientMode && !state.impersonating) ? `<button id="client-logout" class="mono text-xs text-[var(--lsc-mid)] hover:text-[var(--lsc-terra)]">LOG OUT</button>` : ''}
+        </div>
+      </div>
+    </div>
+    ${inner}
+  </div>`;
+}
+
+// Shared bindings for the client chrome (impersonation exit + real-client logout).
+function bindClientChrome(){
+  const ei = document.getElementById('exit-impersonate');
+  if(ei) ei.onclick = () => setState({ screen:'tracker', viewProjectId:null, impersonating:false, clientRecord:null });
+  const cl = document.getElementById('client-logout');
+  if(cl) cl.onclick = () => {
+    sessionStorage.removeItem(CLIENT_TOKEN_SS);
+    state.clientRecord = null;
+    setState({ clientMode:false, entry:'client', viewProjectId:null, screen:'clientLogin',
+      clientCodeInput:'', clientLoginEmail:'', clientLoginMsg:null, inviteHint:null });
+  };
+}
+
+function renderClientLanding(){
+  const p = getViewProject();
+  const cards = p.assets.map(a => `
+    <button data-open-asset="${a.id}" class="card rounded-xl p-6 text-left hover:border-[var(--lsc-sage)] transition">
+      <div class="text-3xl mb-3">${a.type==='video'?'🎬':'🖼'}</div>
+      <div class="display text-lg mb-1">View ${escapeHtml(a.title || (a.type==='video'?'Video':'Photo Library'))}</div>
+      <span class="mono text-[10px] px-2 py-1 rounded-full ${statusMeta[a.status].cls}">${statusMeta[a.status].dot} ${statusMeta[a.status].label}</span>
+    </button>`).join('') || `<div class="col-span-full text-center py-16 text-[var(--lsc-mid)] mono text-sm">No deliverables added yet.</div>`;
+
+  return renderClientChrome(`
+    <div class="max-w-5xl mx-auto px-6 py-12">
+      <div class="mb-8">
+        <div class="mono text-xs text-[var(--lsc-mid)] mb-2">A MESSAGE FROM THE STUDIO</div>
+        <p class="text-[var(--lsc-white)] max-w-xl">${escapeHtml(p.message) || 'Thanks for the opportunity to work on this campaign — please review the deliverables below.'}</p>
+      </div>
+      ${renderInvoicesBlock(p)}
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">${cards}</div>
+    </div>
+  `);
+}
+
+// Client landing Invoices block (F2). Deposit shows immediately (paid upfront);
+// final invoice stays gated until delivery (project.delivered — Sprint D toggle).
+// Empty → returns '' so the block is hidden gracefully (no error state).
+function renderInvoicesBlock(p){
+  const deposit = invoiceOf(p, 'deposit');
+  const finalInv = invoiceOf(p, 'final');
+  const rows = [];
+  if(deposit) rows.push(invoiceRow(deposit, 'Deposit Invoice', true));
+  if(finalInv && p.delivered) rows.push(invoiceRow(finalInv, 'Final Invoice', false));
+  if(!rows.length) return '';
+  return `
+    <div class="mb-10">
+      <div class="mono text-xs text-[var(--lsc-mid)] mb-3">INVOICES</div>
+      <div class="space-y-2 max-w-xl">${rows.join('')}</div>
+    </div>`;
+}
+function invoiceRow(inv, label, paid){
+  return `
+    <div class="card rounded-lg p-4 flex items-center justify-between gap-3">
+      <div class="min-w-0">
+        <div class="mono text-[10px] text-[var(--lsc-mid)] mb-0.5">${escapeHtml(label).toUpperCase()}</div>
+        <div class="text-sm truncate">📄 ${escapeHtml(inv.name || 'invoice.pdf')}</div>
+      </div>
+      ${paid ? '<span class="mono text-[10px] px-2 py-1 rounded-full badge-approved whitespace-nowrap">PAID</span>' : ''}
+    </div>`;
+}
+
+function renderClientAsset(){
+  const p = getViewProject();
+  const a = p.assets.find(x => x.id === state.activeAssetId);
+  const tabs = p.assets.map(x => `
+    <button data-switch-asset="${x.id}" class="mono text-xs px-4 py-2 border-b-2 ${x.id===a.id?'border-[var(--lsc-sage)] text-white':'border-transparent text-[var(--lsc-mid)]'}">${escapeHtml(x.title || x.type)}</button>
+  `).join('');
+
+  const canvas = a.type === 'video' ? renderVideoCanvas(a) : renderPhotoCanvas(a);
+
+  const commentLog = a.comments.length ? `
+    <div class="mt-6">
+      <div class="mono text-[10px] text-[var(--lsc-mid)] mb-2">ACTIVITY LOG</div>
+      <div class="space-y-2">
+        ${a.comments.map(c => `
+          <div class="card rounded-lg p-3 text-sm">
+            ${c.timestamp ? `<span class="mono text-[10px] text-[var(--lsc-terra)] mr-2">⏱️ ${c.timestamp}</span>` : ''}
+            ${c.photoIdx != null ? `<span class="mono text-[10px] text-[var(--lsc-sage)] mr-2">PHOTO #${c.photoIdx+1}</span>` : ''}
+            <span>${escapeHtml(c.text)}</span>
+            <div class="mono text-[9px] text-[var(--lsc-mid)] mt-1">${c.at}</div>
+          </div>`).join('')}
+      </div>
+    </div>` : '';
+
+  const gateway = a.status === 'approved' ? `
+    <div class="mt-6 card rounded-lg p-4 text-center">
+      <span class="mono text-xs ${statusMeta.approved.cls} px-3 py-1 rounded-full">🟢 APPROVED</span>
+    </div>` : `
+    <div class="mt-6 flex flex-wrap gap-3">
+      <button id="want-revisions" class="btn-sage rounded-lg px-5 py-3 mono text-xs">${state.revisionOpen ? 'REVISION FORM OPEN' : 'I WANT REVISIONS FOR THIS'}</button>
+      <button id="approve-asset" class="btn-terra rounded-lg px-5 py-3 mono text-xs">APPROVE CONTENT — I'M READY TO RECEIVE THIS</button>
+    </div>
+    ${state.revisionOpen ? renderRevisionForm(a) : ''}
+  `;
+
+  const approveModal = state.approveModalAssetId === a.id ? `
+    <div id="approve-modal-backdrop" class="fixed inset-0 z-30 flex items-center justify-center p-6" style="background:rgba(14,14,14,.7); backdrop-filter:blur(6px);">
+      <div class="card rounded-xl p-6 max-w-sm w-full">
+        <div class="display text-lg mb-3">Final check</div>
+        <p class="text-sm text-[var(--lsc-white)] mb-6">This will finalise this content production and you will be sent to download a copy as final handover.</p>
+        <div class="flex gap-3">
+          <button id="confirm-approve" class="btn-terra rounded-lg px-4 py-2 mono text-xs">CONFIRM APPROVAL</button>
+          <button id="cancel-approve" class="btn-ghost rounded-lg px-4 py-2 mono text-xs">GO BACK</button>
+        </div>
+      </div>
+    </div>` : '';
+
+  return renderClientChrome(`
+    <div class="border-b border-[var(--lsc-rule)] max-w-5xl mx-auto px-6 flex gap-2">${tabs}</div>
+    <div class="max-w-5xl mx-auto px-6 py-10">
+      ${canvas}
+      ${gateway}
+      ${commentLog}
+    </div>
+    ${approveModal}
+  `);
+}
+
+function renderVideoCanvas(a){
+  const pill = state.pausedAt ? `<div class="timestamp-pill mono text-[10px] bg-[var(--lsc-terra)] text-white px-2 py-1 rounded-full inline-block mb-2">⏱️ ${state.pausedAt}</div>` : '';
+  return `
+    <div class="aspect-video bg-[var(--lsc-surface)] rounded-xl flex items-center justify-center mb-2 relative overflow-hidden">
+      <div class="text-center">
+        <div class="text-5xl mb-3">▶</div>
+        <div class="mono text-xs text-[var(--lsc-mid)]">BUNNY STREAM — TOKEN-AUTHENTICATED PREVIEW</div>
+      </div>
+      <div class="absolute bottom-0 left-0 right-0 h-1 bg-[var(--lsc-black)]">
+        <div id="scrub" class="h-full bg-[var(--lsc-terra)]" style="width:32%"></div>
+      </div>
+      <div class="absolute bottom-3 right-4 flex gap-2">
+        <button id="video-play" class="mono text-[10px] px-2 py-1 rounded btn-ghost">▶ PLAY</button>
+        <button id="video-pause" class="mono text-[10px] px-2 py-1 rounded btn-ghost">⏸ PAUSE (01:24)</button>
+      </div>
+    </div>
+    ${pill}
+  `;
+}
+
+function renderPhotoCanvas(a){
+  const opts = Array.from({length:8}).map((_,i) => `<option value="${i}" ${state.selectedPhotoIdx===i?'selected':''}>Photo ${i+1}</option>`).join('');
+  const grid = Array.from({length:8}).map((_,i) => `
+    <div data-photo="${i}" class="aspect-square rounded-lg bg-[var(--lsc-surface)] flex items-center justify-center cursor-pointer border-2 ${state.selectedPhotoIdx===i?'border-[var(--lsc-sage)]':'border-transparent'}">
+      <span class="mono text-xs text-[var(--lsc-mid)]">#${i+1}</span>
+    </div>`).join('');
+  return `
+    <div class="grid grid-cols-4 gap-2 mb-4">${grid}</div>
+    <div class="mono text-[10px] text-[var(--lsc-mid)] mb-1">SELECT PHOTO FOR FEEDBACK</div>
+    <select id="photo-select" class="field w-56">
+      <option value="">— choose a photo —</option>
+      ${opts}
+    </select>
+  `;
+}
+
+function renderRevisionForm(a){
+  const hasComments = a.comments.length > 0;
+  return `
+  <div class="card rounded-lg p-4 mt-3">
+    <textarea id="revision-text" class="field mb-3" rows="3" placeholder="Describe the revision needed...">${escapeAttr(state.revisionDraft)}</textarea>
+    <div class="flex gap-3 items-center">
+      <button id="submit-revision" class="btn-terra rounded-lg px-4 py-2 mono text-xs" ${a.type==='photo' && state.selectedPhotoIdx==null ? 'disabled style="opacity:.4;cursor:not-allowed;"' : ''}>SUBMIT REVISION</button>
+      <button id="cancel-revision" class="btn-ghost rounded-lg px-4 py-2 mono text-xs ${hasComments?'opacity-40 cursor-not-allowed':''}" ${hasComments? `title="remove revisions below to cancel and go back"` : ''}>✕ CANCEL REVISIONS</button>
+      ${a.type==='photo' ? `<span class="mono text-[10px] text-[var(--lsc-mid)]">${state.selectedPhotoIdx==null ? 'select a photo number above to enable submit' : ''}</span>` : ''}
+    </div>
+  </div>`;
+}
+
+function renderClientFinal(){
+  const p = getViewProject();
+  const invs = Array.isArray(p.invoices) ? p.invoices : [];
+  const invoiceReaders = invs.length ? invs.map(inv => `
+      <div class="card rounded-xl p-6 mb-6">
+        <div class="mono text-[10px] text-[var(--lsc-mid)] mb-3">${inv.type==='deposit'?'DEPOSIT INVOICE':'FINAL INVOICE'}</div>
+        <div class="bg-[var(--lsc-surface)] rounded-lg h-64 flex items-center justify-center">
+          <div class="text-center text-[var(--lsc-mid)]">
+            <div class="text-3xl mb-2">📄</div>
+            <div class="mono text-xs">${escapeHtml(inv.name || 'invoice.pdf')} — embedded reader</div>
+          </div>
+        </div>
+      </div>`).join('') : `
+      <div class="card rounded-xl p-6 mb-6">
+        <div class="mono text-[10px] text-[var(--lsc-mid)] mb-3">INVOICE</div>
+        <div class="bg-[var(--lsc-surface)] rounded-lg h-40 flex items-center justify-center">
+          <div class="mono text-xs text-[var(--lsc-mid)]">No invoice attached</div>
+        </div>
+      </div>`;
+  return renderClientChrome(`
+    <div class="max-w-3xl mx-auto px-6 py-12">
+      <div class="card rounded-xl p-4 mb-6 toast flex items-center gap-3">
+        <span>✅</span>
+        <span class="text-sm">An email with a copy of the invoice and download links has been sent to your email. <span class="mono text-[10px] text-[var(--lsc-sage)]">Sent 🟢</span></span>
+      </div>
+
+      <div class="display text-2xl mb-2">Final Delivery</div>
+      <div class="text-sm text-[var(--lsc-mid)] mb-8">All deliverables approved — production is finalised.</div>
+
+      ${invoiceReaders}
+
+      <div class="space-y-3 mb-6">
+        ${p.assets.map(a => `
+          <div class="card rounded-lg p-4 flex items-center justify-between">
+            <div class="mono text-xs">${escapeHtml(a.title || a.type)}</div>
+            <div class="flex gap-2">
+              <button class="btn-terra rounded px-3 py-2 mono text-[10px]">DOWNLOAD CONTENT</button>
+              <button class="btn-sage rounded px-3 py-2 mono text-[10px]">GOOGLE DRIVE BACKUP</button>
+            </div>
+          </div>`).join('')}
+      </div>
+
+      <div class="card rounded-xl p-6">
+        <div class="mono text-[10px] text-[var(--lsc-mid)] mb-3">SIGN-OFF</div>
+        <canvas id="sig-canvas" width="600" height="120" class="bg-[var(--lsc-surface)] rounded-lg w-full" style="touch-action:none;"></canvas>
+        <div class="mono text-[10px] text-[var(--lsc-mid)] mt-2">${state.signature ? '✓ signature captured' : 'sign above with mouse or touch'}</div>
+      </div>
+    </div>
+  `);
+}
+
+/* ================= helpers ================= */
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeAttr(s){ return escapeHtml(s); }
+function toast(msg){
+  // Lightweight DOM toast — deliberately not part of render() so it survives re-renders.
+  const t = document.createElement('div');
+  t.className = 'toast fixed top-4 left-1/2 -translate-x-1/2 z-50 card rounded-lg px-4 py-2 mono text-xs';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3200);
+}
+
+/* ================= RENDER ROOT ================= */
+function render(){
+  const root = document.getElementById('app');
+  if(state.clientMode){
+    // Public client entry point (?project=) — never shows the admin PIN or tracker.
+    if(!getViewProject()){ root.innerHTML = renderClientNotFound(); return; }
+    if(state.clientScreen === 'asset'){ root.innerHTML = renderClientAsset(); bindClientAsset(); return; }
+    if(state.clientScreen === 'final'){ root.innerHTML = renderClientFinal(); bindClientFinal(); return; }
+    root.innerHTML = renderClientLanding(); bindClientLanding(); return;
+  }
+  // Client door (default) + invite onboarding → client login shell. The admin PIN
+  // is reachable ONLY via the ?admin=1 door, never from a client session.
+  if(state.entry === 'client' || state.entry === 'invite'){
+    root.innerHTML = renderClientLogin(); bindClientLogin(); return;
+  }
+  if(!state.authed){ root.innerHTML = renderLock(); bindLock(); return; }
+  if(state.screen === 'tracker'){ root.innerHTML = renderTracker(); bindTracker(); return; }
+  if(state.screen === 'editor'){ root.innerHTML = renderEditor(); bindEditor(); return; }
+  if(state.screen === 'client'){
+    if(state.clientScreen === 'landing'){ root.innerHTML = renderClientLanding(); bindClientLanding(); return; }
+    if(state.clientScreen === 'asset'){ root.innerHTML = renderClientAsset(); bindClientAsset(); return; }
+    if(state.clientScreen === 'final'){ root.innerHTML = renderClientFinal(); bindClientFinal(); return; }
+  }
+}
+
+/* ================= BINDINGS ================= */
+function bindLock(){
+  document.querySelectorAll('[data-key]').forEach(btn => {
+    btn.addEventListener('click', () => pressKey(btn.dataset.key));
+  });
+  document.addEventListener('keydown', lockKeyHandler);
+}
+function lockKeyHandler(e){
+  if(state.authed) { document.removeEventListener('keydown', lockKeyHandler); return; }
+  if(/^[0-9]$/.test(e.key)) pressKey(e.key);
+  if(e.key === 'Backspace') pressKey('del');
+}
+
+function bindTracker(){
+  document.getElementById('new-project').onclick = () => setState({ screen:'editor', draft: blankDraft(), editingId: null, editorError:null });
+  document.getElementById('logout-btn').onclick = () => { sessionStorage.removeItem(AUTH_KEY); setState({ authed:false, pinInput:'', screen:'tracker' }); };
+  document.querySelectorAll('[data-menu]').forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); setState({ menuOpenId: state.menuOpenId === btn.dataset.menu ? null : btn.dataset.menu }); };
+  });
+  document.querySelectorAll('[data-edit]').forEach(btn => {
+    btn.onclick = () => { const p = state.projects.find(x=>x.id===btn.dataset.edit); setState({ screen:'editor', draft: JSON.parse(JSON.stringify(p)), editingId: p.id, menuOpenId:null, editorError:null }); };
+  });
+  document.querySelectorAll('[data-impersonate]').forEach(btn => {
+    // True impersonation: real client portal, no admin chrome, one persistent bar.
+    btn.onclick = () => setState({ screen:'client', viewProjectId: btn.dataset.impersonate, clientScreen:'landing', impersonating:true, clientRecord:null, menuOpenId:null });
+  });
+  document.querySelectorAll('[data-invite]').forEach(btn => {
+    btn.onclick = () => inviteClient(btn.dataset.invite);
+  });
+  document.querySelectorAll('[data-publish]').forEach(btn => {
+    btn.onclick = () => publishProject(btn.dataset.publish);
+  });
+  document.querySelectorAll('[data-delivered]').forEach(btn => {
+    btn.onclick = () => toggleDelivered(btn.dataset.delivered);
+  });
+  document.querySelectorAll('[data-copylink]').forEach(btn => {
+    btn.onclick = () => {
+      const p = state.projects.find(x => x.id === btn.dataset.copylink);
+      const base = location.origin + location.pathname.replace(/[^/]*$/, '') + 'index.html';
+      const url = (p && p.inviteToken) ? base + '?invite=' + p.inviteToken : base;
+      navigator.clipboard?.writeText(url);
+      toast(p && p.inviteToken ? 'Invite link copied.' : 'Client login link copied (invite the client to set a code).');
+      setState({ menuOpenId:null });
+    };
+  });
+  document.querySelectorAll('[data-askreset]').forEach(btn => {
+    btn.onclick = () => setState({ confirmResetId: btn.dataset.askreset, menuOpenId:null });
+  });
+  document.querySelectorAll('[data-askdelete]').forEach(btn => {
+    btn.onclick = () => setState({ confirmDeleteId: btn.dataset.askdelete, menuOpenId:null });
+  });
+  const confirmDel = document.getElementById('confirm-delete');
+  if(confirmDel) confirmDel.onclick = () => {
+    const list = state.projects.filter(x => x.id !== state.confirmDeleteId);
+    saveProjects(list);
+    // best-effort clean the published/private stores for the removed project (simulate)
+    localStorage.removeItem(REC_PREFIX + state.confirmDeleteId);
+    localStorage.removeItem(PRIV_PREFIX + state.confirmDeleteId);
+    setState({ projects:list, confirmDeleteId:null });
+  };
+  const cancelDel = document.getElementById('cancel-delete');
+  if(cancelDel) cancelDel.onclick = () => setState({ confirmDeleteId:null });
+
+  const confirmReset = document.getElementById('confirm-reset');
+  if(confirmReset) confirmReset.onclick = () => masterReset(state.confirmResetId);
+  const cancelReset = document.getElementById('cancel-reset');
+  if(cancelReset) cancelReset.onclick = () => setState({ confirmResetId:null });
+
+  const copyInvite = document.getElementById('copy-invite');
+  if(copyInvite) copyInvite.onclick = () => { if(state.inviteResult?.url){ navigator.clipboard?.writeText(state.inviteResult.url); toast('Link copied.'); } };
+  const closeInvite = document.getElementById('close-invite');
+  if(closeInvite) closeInvite.onclick = () => setState({ inviteResult:null });
+
+  const keySave = document.getElementById('admin-key-save');
+  if(keySave) keySave.onclick = () => {
+    const v = (document.getElementById('admin-key-input')?.value || '').trim();
+    if(v){ sessionStorage.setItem(ADMIN_KEY_SS, v); toast('Admin key saved for this session.'); render(); }
+  };
+}
+
+/* ---- Sprint C admin actions ---- */
+async function inviteClient(projectId){
+  const p = state.projects.find(x => x.id === projectId);
+  if(!p){ return; }
+  if(!(p.clientEmail||'').trim()){ setState({ menuOpenId:null }); toast('Add a client email in Edit Project first.'); return; }
+  // Snapshot so a failed publish never leaves a code the client was never actually sent.
+  const prev = { code:p.clientCode, token:p.inviteToken, status:p.clientStatus, publishedAt:p.publishedAt };
+  p.clientCode   = gen4();
+  p.inviteToken  = p.inviteToken || genToken();
+  p.clientStatus = 'invited';
+  let payload;
+  try {
+    await hubApi.publish(p);
+    payload = await emailService.sendInvitation(p, HUB_CONFIG);
+  } catch(e){
+    p.clientCode = prev.code; p.inviteToken = prev.token;
+    p.clientStatus = prev.status; p.publishedAt = prev.publishedAt;
+    setState({ menuOpenId:null });
+    reportAdminError(e, 'Invite');
+    return;                                  // no "Client invited" modal on a failed publish
+  }
+  saveProjects(state.projects);
+  setState({ menuOpenId:null, inviteResult: { name:p.name, to:p.clientEmail, url:payload.url, code:p.clientCode } });
+}
+
+async function publishProject(projectId){
+  const p = state.projects.find(x => x.id === projectId);
+  if(!p){ return; }
+  try { await hubApi.publish(p); saveProjects(state.projects); toast('Published to client.'); }
+  catch(e){ reportAdminError(e, 'Publish'); }
+  setState({ menuOpenId:null });
+}
+
+async function toggleDelivered(projectId){
+  const p = state.projects.find(x => x.id === projectId);
+  if(!p){ return; }
+  p.delivered = !p.delivered;               // drives [Project Complete] + un-gates the final invoice
+  if(p.publishedAt){
+    try { await hubApi.publish(p); }
+    catch(e){
+      p.delivered = !p.delivered;           // roll back: the client's record still says otherwise
+      setState({ menuOpenId:null });
+      reportAdminError(e, 'Delivery update');
+      return;
+    }
+  }
+  saveProjects(state.projects);
+  setState({ menuOpenId:null });
+  toast(p.delivered ? 'Marked delivered — final invoice unlocked for the client.' : 'Marked undelivered.');
+}
+
+async function masterReset(projectId){
+  const p = state.projects.find(x => x.id === projectId);
+  if(!p){ return setState({ confirmResetId:null }); }
+  // Snapshot: a failed publish must not invalidate the client's working code locally.
+  const prev = { code:p.clientCode, token:p.inviteToken, status:p.clientStatus, publishedAt:p.publishedAt };
+  p.clientCode = gen4();
+  p.inviteToken = p.inviteToken || genToken();
+  if(!p.clientStatus) p.clientStatus = 'invited';
+  let payload;
+  try { await hubApi.publish(p); payload = await emailService.sendCodeReset(p, HUB_CONFIG); }
+  catch(e){
+    p.clientCode = prev.code; p.inviteToken = prev.token;
+    p.clientStatus = prev.status; p.publishedAt = prev.publishedAt;
+    setState({ confirmResetId:null, menuOpenId:null });
+    reportAdminError(e, 'Code reset');
+    return;
+  }
+  saveProjects(state.projects);
+  setState({ confirmResetId:null, menuOpenId:null, inviteResult: { name:p.name, to:p.clientEmail, url:payload.url, code:p.clientCode, reset:true } });
+}
+
+function bindEditor(){
+  document.getElementById('back-tracker').onclick = document.getElementById('cancel-project').onclick =
+    () => setState({ screen:'tracker', draft:null, editingId:null, editorError:null });
+
+  document.querySelectorAll('[data-field]:not([data-asset])').forEach(el => {
+    el.addEventListener('input', () => { state.draft[el.dataset.field] = el.value; });
+  });
+  document.querySelectorAll('[data-field][data-asset]').forEach(el => {
+    el.addEventListener('input', () => {
+      const asset = state.draft.assets.find(a => a.id === el.dataset.asset);
+      asset[el.dataset.field] = el.value;
+    });
+  });
+  document.querySelectorAll('[data-invoice-input]').forEach(inp => {
+    inp.addEventListener('change', () => {
+      if(!inp.files[0]) return;
+      const type = inp.dataset.invoiceInput;
+      // SIMULATE: store the filename only. LIVE (Sprint B live): POST the file to
+      // HUB_CONFIG.edgeBase + '/hub/upload' (admin bearer) → returns a pull-zone URL under
+      // clienthubdata/invoices/<projectId>/<file>; store that as the invoice url.
+      setInvoice(state.draft, type, inp.files[0].name, '');
+      render();
+    });
+  });
+  document.querySelectorAll('[data-invoice-remove]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.preventDefault();
+      const type = btn.dataset.invoiceRemove;
+      state.draft.invoices = (state.draft.invoices || []).filter(i => i.type !== type);
+      render();
+    };
+  });
+
+  document.getElementById('add-video').onclick = () => { state.draft.assets.push(newAsset('video')); render(); };
+  document.getElementById('add-photo').onclick = () => { state.draft.assets.push(newAsset('photo')); render(); };
+  document.querySelectorAll('[data-remove-asset]').forEach(btn => {
+    btn.onclick = () => { state.draft.assets = state.draft.assets.filter(a => a.id !== btn.dataset.removeAsset); render(); };
+  });
+
+  document.getElementById('save-project').onclick = () => {
+    const d = state.draft;
+    if(!d.name.trim()){ setState({ editorError: 'Project Name is required.' }); return; }
+    const badLink = d.assets.some(a => (a.reviewLink && !isValidUrl(a.reviewLink)) || (a.downloadLink && !isValidUrl(a.downloadLink)) || (a.driveLink && !isValidUrl(a.driveLink)));
+    if(badLink){ setState({ editorError: 'All links must start with https:// — check highlighted fields.' }); return; }
+    let list = state.projects;
+    if(state.editingId){ list = list.map(p => p.id === state.editingId ? d : p); }
+    else { list = [d, ...list]; }
+    if(!saveProjects(list)){ setState({ editorError: 'Save failed — storage may be full. Copy your work before retrying.' }); return; }
+    setState({ projects:list, screen:'tracker', draft:null, editingId:null, editorError:null });
+  };
+}
+
+function bindClientLanding(){
+  bindClientChrome();
+  document.querySelectorAll('[data-open-asset]').forEach(btn => {
+    btn.onclick = () => setState({ clientScreen:'asset', activeAssetId: btn.dataset.openAsset, revisionOpen:false, selectedPhotoIdx:null, pausedAt:null, approveModalAssetId:null });
+  });
+}
+
+function bindClientAsset(){
+  bindClientChrome();
+  document.querySelectorAll('[data-switch-asset]').forEach(btn => {
+    btn.onclick = () => setState({ activeAssetId: btn.dataset.switchAsset, revisionOpen:false, selectedPhotoIdx:null, pausedAt:null, approveModalAssetId:null });
+  });
+
+  const p = getViewProject();
+  const a = p.assets.find(x => x.id === state.activeAssetId);
+
+  const playBtn = document.getElementById('video-play');
+  const pauseBtn = document.getElementById('video-pause');
+  if(playBtn) playBtn.onclick = () => setState({ pausedAt:null });
+  if(pauseBtn) pauseBtn.onclick = () => setState({ pausedAt:'01:24' });
+
+  document.querySelectorAll('[data-photo]').forEach(el => {
+    el.onclick = () => { const idx = Number(el.dataset.photo); setState({ selectedPhotoIdx: idx }); const sel = document.getElementById('photo-select'); if(sel) sel.value = idx; };
+  });
+  const photoSelect = document.getElementById('photo-select');
+  if(photoSelect) photoSelect.onchange = () => setState({ selectedPhotoIdx: photoSelect.value === '' ? null : Number(photoSelect.value) });
+
+  const wantRev = document.getElementById('want-revisions');
+  if(wantRev) wantRev.onclick = () => setState({ revisionOpen: !state.revisionOpen });
+
+  const approveBtn = document.getElementById('approve-asset');
+  if(approveBtn) approveBtn.onclick = () => setState({ approveModalAssetId: a.id });
+
+  const confirmApprove = document.getElementById('confirm-approve');
+  if(confirmApprove) confirmApprove.onclick = () => {
+    a.status = 'approved';
+    persistViewProject();
+    const allApproved = p.assets.every(x => x.status === 'approved');
+    setState({ clientScreen: allApproved ? 'final' : 'asset', revisionOpen:false, approveModalAssetId:null });
+  };
+  const cancelApprove = document.getElementById('cancel-approve');
+  if(cancelApprove) cancelApprove.onclick = () => setState({ approveModalAssetId:null });
+
+  const revText = document.getElementById('revision-text');
+  if(revText) revText.addEventListener('input', () => { state.revisionDraft = revText.value; });
+
+  const submitRev = document.getElementById('submit-revision');
+  if(submitRev) submitRev.onclick = () => {
+    if(!state.revisionDraft.trim()) return;
+    if(a.type === 'photo' && state.selectedPhotoIdx == null) return;
+    a.comments.push({
+      text: state.revisionDraft.trim(),
+      timestamp: a.type === 'video' && state.pausedAt ? state.pausedAt : null,
+      photoIdx: a.type === 'photo' ? state.selectedPhotoIdx : null,
+      at: nowStr(),
+    });
+    a.status = 'changes';
+    persistViewProject();
+    setState({ revisionDraft:'', revisionOpen:false });
+  };
+
+  const cancelRev = document.getElementById('cancel-revision');
+  if(cancelRev) cancelRev.onclick = () => { if(a.comments.length) return; setState({ revisionOpen:false, revisionDraft:'' }); };
+}
+
+function bindClientFinal(){
+  bindClientChrome();
+  const canvas = document.getElementById('sig-canvas');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  ctx.strokeStyle = '#F0EDE8'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+  let drawing = false;
+  const pos = (e) => {
+    const r = canvas.getBoundingClientRect();
+    const cx = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
+    const cy = (e.touches ? e.touches[0].clientY : e.clientY) - r.top;
+    return [cx * (canvas.width / r.width), cy * (canvas.height / r.height)];
+  };
+  const start = (e) => { drawing = true; const [x,y] = pos(e); ctx.beginPath(); ctx.moveTo(x,y); };
+  const move = (e) => { if(!drawing) return; const [x,y] = pos(e); ctx.lineTo(x,y); ctx.stroke(); };
+  const end = () => { if(!drawing) return; drawing = false; state.signature = true; const el = canvas.nextElementSibling; if(el) el.textContent = '✓ signature captured'; };
+  canvas.addEventListener('mousedown', start); canvas.addEventListener('mousemove', move); canvas.addEventListener('mouseup', end); canvas.addEventListener('mouseleave', end);
+  canvas.addEventListener('touchstart', start); canvas.addEventListener('touchmove', move); canvas.addEventListener('touchend', end);
+}
+
+function persistViewProject(){
+  const p = getViewProject();
+  if(!p) return;
+  // Real client on a fetched published record (not in state.projects).
+  if(state.clientRecord && state.clientRecord.id === p.id){
+    // SIMULATE: cache back to the local record store so a reload keeps their progress.
+    // LIVE seam: client-authored approvals/revisions need a /hub/feedback write endpoint so
+    // they reach the studio cross-device (follow-up — not in the Sprint C read-path gate).
+    if(HUB_CONFIG.mode !== 'live'){ localStorage.setItem(REC_PREFIX + p.id, JSON.stringify(p)); }
+    return;
+  }
+  const list = state.projects.map(x => x.id === p.id ? p : x);
+  saveProjects(list);
+  state.projects = list;
+}
+
+/* close context menu on outside click */
+document.addEventListener('click', (e) => {
+  if(state.menuOpenId && !e.target.closest('[data-menu]') && !e.target.closest(`[data-edit],[data-impersonate],[data-invite],[data-publish],[data-delivered],[data-copylink],[data-askreset],[data-askdelete]`)){
+    state.menuOpenId = null; render();
+  }
+});
+
+render();
+</script>
+</body>
+</html>
