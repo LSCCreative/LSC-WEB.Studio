@@ -1,0 +1,27 @@
+# ─────────────────────────────────────────────────────────────────────
+#  ⚠️  THIS REPO IS MIRRORED TO THE LIVE PUBLIC SITE by Bunny CI/CD.
+#  Anything committed here becomes publicly reachable on lsccreative.studio.
+#  Keep internal planning docs and ALL credentials out of it.
+# ─────────────────────────────────────────────────────────────────────
+
+# Internal workspace: planning docs, runbooks, Bunny credentials.
+# Never published.
+client-hub-docs/
+
+# Credentials — belt and braces, in case a file is ever moved out of the folder above.
+*.rtf
+*.env
+.env*
+secrets*
+*credentials*
+
+# OS / editor junk (this is what produced the 58 stale deletions in the tree)
+.DS_Store
+._*
+desktop.ini
+Thumbs.db
+*.swp
+
+# Local dev tooling / scratch — not site content
+.claude/
+_to_delete/

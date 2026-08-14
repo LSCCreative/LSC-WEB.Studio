@@ -337,11 +337,13 @@
 (function () {
     var formModal = document.getElementById('contactFormModal');
     var openBtn   = document.getElementById('contactEnquiryBtn');
+    var navBtn    = document.getElementById('navEnquiryBtn');
     var closeBtn  = document.getElementById('contactFormCloseBtn');
     if (!formModal) return;
     function openModal()  { formModal.classList.add('is-active');    document.body.style.overflow = 'hidden'; }
     function closeModal() { formModal.classList.remove('is-active'); document.body.style.overflow = ''; }
     if (openBtn)  openBtn.addEventListener('click', function (e) { e.preventDefault(); openModal(); });
+    if (navBtn)   navBtn.addEventListener('click', function (e) { e.preventDefault(); openModal(); });
     if (closeBtn) closeBtn.addEventListener('click', closeModal);
     formModal.addEventListener('click', function (e) { if (e.target === formModal) closeModal(); });
     document.addEventListener('keydown', function (e) {
@@ -366,6 +368,7 @@
                        '?autoplay=true&loop=true&muted=true&preload=true&responsive=true&controls=false';
     }
     function onEnter() {
+        if (!document.body.classList.contains('is-mouse')) return;   /* touch: tap plays modal, no bg preview */
         clearTimeout(leaveTimer);
         var videoId = this.dataset.videoId;
         if (videoId) loadVideo(videoId);
@@ -376,6 +379,7 @@
         this.classList.add('is-hovered');
     }
     function onLeave() {
+        if (!document.body.classList.contains('is-mouse')) return;
         leaveTimer = setTimeout(function () {
             grid.classList.remove('has-hover');
             document.body.classList.remove('works-hovered');
@@ -448,4 +452,74 @@
         }, { passive: false });
     });
     processLeft.addEventListener('mouseleave', clearAll);
+})();
+
+/* ============================================================
+   SERVICES — gooey "joint" dropdown disciplines
+   Hover reveals on mouse devices; tap/click pins on touch.
+   Keeps blurred shape heights in sync with the content boxes
+   so the metaball merge tracks the panel as it expands.
+   ============================================================ */
+(function () {
+    var section = document.getElementById('services');
+    if (!section) return;
+    var items = Array.prototype.slice.call(section.querySelectorAll('.svc-dd'));
+    if (!items.length) return;
+
+    function sync() {
+        items.forEach(function (dd) {
+            var joint = dd.querySelector('.lsc-joint');
+            if (!joint) return;
+            var tShape = joint.querySelector('.j-trigger-shape');
+            var tBox   = joint.querySelector('.j-trigger-box');
+            if (tShape && tBox) tShape.style.height = tBox.offsetHeight + 'px';
+            var pShape = joint.querySelector('.j-panel-shape');
+            var pBox   = joint.querySelector('.j-panel-box');
+            if (pShape && pBox) {
+                pShape.style.height = (dd.getAttribute('data-open') === 'true')
+                    ? pBox.offsetHeight + 'px' : '0px';
+            }
+            joint.classList.add('joint-ready');
+        });
+    }
+
+    function setOpen(dd, open) {
+        dd.setAttribute('data-open', open ? 'true' : 'false');
+        var btn = dd.querySelector('.dd-trigger');
+        if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        // Let the CSS transition run, then re-measure a couple of times.
+        sync();
+        window.requestAnimationFrame(sync);
+        window.setTimeout(sync, 220);
+        window.setTimeout(function () {
+            section.classList.toggle('svc-any-open',
+                items.some(function (d) { return d.getAttribute('data-open') === 'true'; }));
+        }, 0);
+    }
+
+    // Reads body.is-mouse live on each event rather than caching a device
+    // snapshot at load, so hybrid devices (trackpad/mouse attached or
+    // detached mid-session) never get stuck with stale hover behaviour.
+    items.forEach(function (dd) {
+        var btn = dd.querySelector('.dd-trigger');
+        if (!btn) return;
+        dd.addEventListener('mouseenter', function () {
+            if (!document.body.classList.contains('is-mouse')) return;
+            setOpen(dd, true);
+        });
+        dd.addEventListener('mouseleave', function () {
+            if (!document.body.classList.contains('is-mouse')) return;
+            setOpen(dd, false);
+        });
+        btn.addEventListener('focus', function () { setOpen(dd, true); });
+        btn.addEventListener('blur',  function () { setOpen(dd, false); });
+        // Click still toggles (touch tap, keyboard, trackpad) without fighting hover.
+        btn.addEventListener('click', function () {
+            setOpen(dd, dd.getAttribute('data-open') !== 'true');
+        });
+    });
+
+    window.addEventListener('resize', sync);
+    window.requestAnimationFrame(sync);
+    window.setTimeout(sync, 300);
 })();
