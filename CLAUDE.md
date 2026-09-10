@@ -20,3 +20,9 @@ You must treat desktop viewports and mobile screens as two entirely distinct vis
 ### 4. Typography & Modal Scaling Matrix
 - All massive desktop typography (`.display-title`, `.contact-headline`) must drop their hardcoded sizes on small viewports. Implement aggressive mobile font reductions using responsive `clamp()` architectures or explicit mobile size overrides.
 - Modals, pop-ups, and embedded forms must scale fluidly to `100vw` and `100vh` boundaries on mobile. If internal copy or structural columns exceed vertical screen height, the modal must seamlessly switch to inner scrolling (`overflow-y: auto`).
+
+## 🗃️ `_archive/` Folder
+
+`_archive/` (gitignored, never published) holds superseded assets and stale docs kept only as a fallback — old service/work images, unused branding duplicates, raw source fonts, and outdated setup docs. It is not part of the live build and nothing in it is referenced by `index.html`, `css/`, or `js/`.
+
+Do not read or search `_archive/` by default. Only look inside it if information needed for the current task is missing from the active project (e.g. a reference asset was deleted by mistake, or you're unsure whether an old approach was already tried and abandoned).
