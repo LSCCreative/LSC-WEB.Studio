@@ -951,7 +951,8 @@ body.is-mouse .nav-cta:hover { color: var(--lsc-terra-lt);
             overflow: hidden;
 }
 
-.hero-video-mask iframe {
+.hero-video-mask iframe,
+.hero-video-mask video {
             width: 100vw;
             height: 56.25vw;
             min-height: 100vh;
@@ -961,6 +962,7 @@ body.is-mouse .nav-cta:hover { color: var(--lsc-terra-lt);
             left: 50%;
             transform: translate(-50%, -50%);
             border: 0;
+            object-fit: cover;
 }
 
 .hero-interface-layer {
@@ -1722,17 +1724,19 @@ body.is-mouse .footer-right a:hover {
             overflow: hidden;
 }
 
-.works-bg-video iframe {
+.works-bg-video iframe,
+.works-bg-video video {
             position: absolute;
             top: 50%;
             left: 50%;
-            
+
             width: 100%;
             height: 100%;
-            min-width: calc(177.78% * 1); 
+            min-width: calc(177.78% * 1);
             transform: translate(-50%, -50%);
             border: none;
             display: block;
+            object-fit: cover;
 }
 
 .works-grid.has-hover .works-card:not(.is-hovered) {
@@ -3052,7 +3056,8 @@ body.works-hovered .hud-corner {
                 height: 100% !important;
                 overflow: hidden !important;
     }
-    .hero-video-mask iframe {
+    .hero-video-mask iframe,
+    .hero-video-mask video {
                 width: 177.78vh !important;
                 min-width: 100% !important;
                 height: 100% !important;

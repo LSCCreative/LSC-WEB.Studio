@@ -355,23 +355,31 @@
 (function () {
     var section  = document.getElementById('portfolio');
     var bgVideo  = document.getElementById('works-bg-video');
-    var bgIframe = document.getElementById('works-bg-iframe');
-    if (!section || !bgVideo || !bgIframe) return;
+    var bgPlayer = document.getElementById('works-bg-player');
+    if (!section || !bgVideo || !bgPlayer) return;
     var grid  = section.querySelector('.works-grid');
     var cards = section.querySelectorAll('.works-card');
     if (!grid || !cards.length) return;
-    var activeId = null, leaveTimer = null, LIB = '662936';
-    function loadVideo(videoId) {
-        if (videoId === activeId) return;
-        activeId = videoId;
-        bgIframe.src = 'https://player.mediadelivery.net/embed/' + LIB + '/' + videoId +
-                       '?autoplay=true&loop=true&muted=true&preload=true&responsive=true&controls=false';
+    var activeSlug = null, leaveTimer = null, hlsInstance = null;
+    function stopVideo() {
+        if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+        bgPlayer.removeAttribute('src');
+        bgPlayer.load();
+        activeSlug = null;
+    }
+    function loadVideo(slug) {
+        if (slug === activeSlug) return;
+        if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+        activeSlug = slug;
+        hlsInstance = loadHlsVideo(bgPlayer, slug, stopVideo);
+        var playPromise = bgPlayer.play();
+        if (playPromise && playPromise.catch) playPromise.catch(function () {});
     }
     function onEnter() {
         if (!document.body.classList.contains('is-mouse')) return;   /* touch: tap plays modal, no bg preview */
         clearTimeout(leaveTimer);
-        var videoId = this.dataset.videoId;
-        if (videoId) loadVideo(videoId);
+        var slug = this.dataset.videoSlug;
+        if (slug) loadVideo(slug);
         bgVideo.style.opacity = '1';
         grid.classList.add('has-hover');
         document.body.classList.add('works-hovered');
@@ -386,10 +394,7 @@
             bgVideo.style.opacity = '0';
             cards.forEach(function (c) { c.classList.remove('is-hovered'); });
             setTimeout(function () {
-                if (!grid.classList.contains('has-hover')) {
-                    bgIframe.src = '';
-                    activeId = null;
-                }
+                if (!grid.classList.contains('has-hover')) stopVideo();
             }, 600);   /* clear src after fade completes */
         }, 80);        /* grace period — next card's mouseenter cancels */
     }
@@ -522,4 +527,13 @@
     window.addEventListener('resize', sync);
     window.requestAnimationFrame(sync);
     window.setTimeout(sync, 300);
+})();
+
+/* ── 10. Hero showreel — hls.js-driven native <video> (replaces Bunny iframe) ── */
+(function () {
+    var video = document.getElementById('heroVideo');
+    if (!video) return;
+
+    // Fallback-on-failure (poster/last-frame) is handled in Slice 10.
+    loadHlsVideo(video, 'hero');
 })();

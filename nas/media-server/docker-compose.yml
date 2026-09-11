@@ -1,0 +1,16 @@
+services:
+  media-server:
+    image: caddy:2-alpine
+    container_name: lsc-media-server
+    restart: unless-stopped
+    networks:
+      - media_net
+    ports:
+      - "127.0.0.1:8096:8096"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - "/volume4/LSC Creative_Media/LSC Creative Website_Media:/srv/media:ro"
+
+networks:
+  media_net:
+    name: media_net

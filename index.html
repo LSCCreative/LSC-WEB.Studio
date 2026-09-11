@@ -222,12 +222,15 @@
              ============================================================ -->
         <section class="hero-canvas" id="home">
             <div class="hero-video-mask">
-                <iframe
-                    src="https://player.mediadelivery.net/embed/662936/98328538-1852-4541-9b49-4b5625ad5d8e?autoplay=true&loop=true&muted=true&preload=true&responsive=true&controls=false"
-                    loading="eager"
-                    allow="autoplay; encrypted-media;"
-                    title="LSC Creative Showreel">
-                </iframe>
+                <video
+                    id="heroVideo"
+                    autoplay
+                    muted
+                    loop
+                    playsinline
+                    preload="auto"
+                    aria-label="LSC Creative Showreel">
+                </video>
             </div>
 
             <div class="hero-interface-layer">
@@ -362,12 +365,12 @@
 
             <!-- Full-section bg video — fades in on card hover (muted preview) -->
             <div class="works-bg-video" id="works-bg-video" aria-hidden="true">
-                <iframe
-                    id="works-bg-iframe"
-                    frameborder="0"
-                    allow="autoplay; fullscreen; picture-in-picture"
-                    allowfullscreen
-                    title="Project preview"></iframe>
+                <video
+                    id="works-bg-player"
+                    muted
+                    loop
+                    playsinline
+                    preload="none"></video>
             </div>
 
             <!-- Works header -->
@@ -384,6 +387,7 @@
                 <button
                     class="works-card playable-tile reveal"
                     data-video-id="89a0b68b-1afe-4c5a-9d83-67fc880a876a"
+                    data-video-slug="marine-vitalities"
                     data-project-title="Marine Vitalities"
                     aria-label="Watch Marine Vitalities film">
                     <div class="wc-corner wc-tl" aria-hidden="true"></div>
@@ -417,6 +421,7 @@
                 <button
                     class="works-card playable-tile reveal" data-reveal-delay="80"
                     data-video-id="b73539f4-26bd-470d-b658-8b2b0870098b"
+                    data-video-slug="bnb-autohaus"
                     data-project-title="BNB AutoHaus"
                     aria-label="Watch BNB AutoHaus film">
                     <div class="wc-corner wc-tl" aria-hidden="true"></div>
@@ -450,6 +455,7 @@
                 <button
                     class="works-card playable-tile reveal" data-reveal-delay="160"
                     data-video-id="0d00bcf5-bf60-4c2c-8513-f8e41b490670"
+                    data-video-slug="bakehouse"
                     data-project-title="BakeHouse"
                     aria-label="Watch BakeHouse film">
                     <div class="wc-corner wc-tl" aria-hidden="true"></div>
@@ -483,6 +489,7 @@
                 <button
                     class="works-card playable-tile reveal" data-reveal-delay="240"
                     data-video-id="380dcc46-201f-46a1-8157-4e2fb3d88415"
+                    data-video-slug="illawarra-hawks"
                     data-project-title="Illawarra Hawks"
                     aria-label="Watch Illawarra Hawks film">
                     <div class="wc-corner wc-tl" aria-hidden="true"></div>
@@ -706,6 +713,8 @@
 
     <!-- JavaScript Files -->
     <script src="js/device-context.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+    <script src="js/media-config.js"></script>
     <script src="js/main.js" defer></script>
     <script src="js/scroll-animations.js" defer></script>
 

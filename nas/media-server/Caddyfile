@@ -1,0 +1,25 @@
+:8096 {
+	root * /srv/media
+	encode gzip
+
+	@allowedOrigin header Origin https://lsccreative.studio
+	header @allowedOrigin Access-Control-Allow-Origin "https://lsccreative.studio"
+	header Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
+	header Access-Control-Allow-Headers "Range"
+	header Access-Control-Expose-Headers "Content-Length, Content-Range"
+	header Timing-Allow-Origin "https://lsccreative.studio"
+
+	@manifest path *.m3u8
+	header @manifest Content-Type "application/vnd.apple.mpegurl"
+	header @manifest Cache-Control "no-cache"
+
+	@segments path *.ts
+	header @segments Content-Type "video/mp2t"
+
+	@fmp4segments path *.m4s
+	header @fmp4segments Content-Type "video/mp4"
+
+	file_server {
+		precompressed gzip
+	}
+}
