@@ -133,7 +133,8 @@ const HUB_CONFIG = {
   const el = document.createElement('style'); el.textContent = css; document.head.appendChild(el);
 })();
 
-const PIN = '1234';
+const ADMIN_EMAIL = 'lachlan@creativelsc.com';
+const PIN = '2803';
 const STORAGE_KEY = 'lsc_hub_projects_v1';
 const AUTH_KEY = 'lsc_hub_auth_v1';
 
@@ -323,6 +324,7 @@ function smartBadgesHtml(p, extraCls=''){
 
 let state = {
   authed: sessionStorage.getItem(AUTH_KEY) === 'true',
+  adminEmailInput: '',
   pinInput: '',
   pinError: false,
   screen: 'tracker',       // tracker | editor | client
@@ -418,9 +420,12 @@ function renderLock(){
     <a href="${HUB_CONFIG.mainSiteUrl}" class="mono text-xs text-[var(--lsc-mid)] mb-10 hover:text-[var(--lsc-white)] transition">← BACK TO SITE</a>
     <div class="mono text-xs text-[var(--lsc-mid)] mb-3 tracking-[0.3em]">CLIENT HUB · ADMIN ACCESS</div>
     <div class="display text-2xl mb-8">Enter PIN</div>
+    <div class="w-full max-w-xs mb-6">
+      <input id="admin-login-email" class="field text-center" type="email" placeholder="you@company.com" value="${escapeAttr(state.adminEmailInput)}" autocomplete="email">
+    </div>
     <div id="pin-dots" class="flex gap-4 mb-10">${dots}</div>
     <div class="grid grid-cols-3 gap-4">${keyHtml}</div>
-    <div class="mono text-[10px] text-[var(--lsc-mid)] mt-10 opacity-50">SIMULATE MODE · DEMO PIN 1234</div>
+    <div class="mono text-[10px] text-[var(--lsc-mid)] mt-10 opacity-50">${HUB_CONFIG.mode === 'live' ? 'SECURE ADMIN ACCESS' : 'SIMULATE MODE'}</div>
   </div>`;
 }
 
@@ -430,7 +435,8 @@ function pressKey(k){
   if(state.pinInput.length >= 4) return;
   state.pinInput += k;
   if(state.pinInput.length === 4){
-    if(state.pinInput === PIN){
+    const emailOk = (state.adminEmailInput||'').trim().toLowerCase() === ADMIN_EMAIL;
+    if(emailOk && state.pinInput === PIN){
       sessionStorage.setItem(AUTH_KEY, 'true');
       state.authed = true; state.pinInput=''; state.screen='tracker';
       render();
@@ -1114,13 +1120,19 @@ function render(){
 
 /* ================= BINDINGS ================= */
 function bindLock(){
+  const emailEl = document.getElementById('admin-login-email');
+  if(emailEl) emailEl.addEventListener('input', () => { state.adminEmailInput = emailEl.value; });
   document.querySelectorAll('[data-key]').forEach(btn => {
     btn.addEventListener('click', () => pressKey(btn.dataset.key));
   });
+  // Re-bind idempotently so re-renders never stack duplicate keydown listeners.
+  document.removeEventListener('keydown', lockKeyHandler);
   document.addEventListener('keydown', lockKeyHandler);
 }
 function lockKeyHandler(e){
   if(state.authed) { document.removeEventListener('keydown', lockKeyHandler); return; }
+  const tag = (e.target.tagName || '').toUpperCase();
+  if(tag === 'INPUT' || tag === 'TEXTAREA') return; // don't hijack typing in the email field
   if(/^[0-9]$/.test(e.key)) pressKey(e.key);
   if(e.key === 'Backspace') pressKey('del');
 }
