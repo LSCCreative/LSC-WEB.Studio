@@ -1,28 +1,64 @@
-## 📱 CROSS-DEVICE RESPONSIVE ARCHITECTURE & VIEWPORT LOCKS
+## Tech Stack
 
-You must treat desktop viewports and mobile screens as two entirely distinct visual mediums. Never write blended CSS rules that compromise one device for the sake of another. 
+Static site: plain HTML/CSS/JS, no build step, no package manager. `index.html` +
+`css/` + `js/` is the main marketing site. `client-hub-app/index.html` is a
+single-file JS app (inline `<script>`, Tailwind via CDN, local state) for the
+client project tracker. `CNAME` implies GitHub Pages hosting.
 
-### 1. The Desktop Preservation Law (Immutable)
-- All baseline CSS selectors must remain strictly reserved for the locked desktop experience (viewports > 992px).
-- You are absolutely prohibited from altering, refactoring, or deleting existing desktop styles or absolute animation variables when adjusting mobile layouts.
-- Every single mobile or tablet adjustment must be exclusively corralled inside explicit media queries (`@media (max-width: 992px)` or `@media (max-width: 768px)`) appended cleanly to the absolute bottom of the global stylesheet.
+## Build / Run / Test
 
-### 2. Navigation & Header Screen Optimization
-- **Computer Screens (> 768px):** The navbar must display full text links inline (`WORK`, `ABOUT`, `CONTACT`) across the top utility area, keeping spatial hierarchy wide and editorial.
-- **Phone Screens (≤ 768px):** Inline text links are prohibited due to horizontal spatial crowding. They must cleanly collapse into a modern, minimal `<button class="mobile-menu-toggle">` element containing a hairline SVG icon. The navigation drawer itself must leverage an active toggle state (`.is-active`) to gracefully reveal links via a slide-down or full-screen glassmorphic overlay.
+- No build step. Open `index.html` or `client-hub-app/index.html` directly in
+  a browser, or serve the repo root with any static file server.
+- No automated test suite. Verify changes by loading the page and checking
+  the relevant viewport(s) manually (desktop + mobile — see below).
 
-### 3. Structural Component Adaptation (Horizontal vs. Vertical)
-- **The Touch Gesture Paradigm:** Desktop hover triggers do not exist on touch screens. Any interaction model relying on hover states (`:hover`) must automatically fallback to a native touch gesture or become permanently visible on phone viewports.
-- **Portfolio Layout Realignment:** Complex horizontal scrolling pinning mechanisms must be completely dismantled on mobile screens to prevent frozen layout bugs. 
-  * Transform heavy horizontal tracks (`.horizontal-gallery`, `.film-frames-grid`) into a clean, magazine-style **Cinematic Vertical Feed** or an optimized horizontal touch track using `overflow-x: auto !important; -webkit-overflow-scrolling: touch;`.
-  * Ensure child elements (`.project-tile`, `.project-info-overlay`) reset from absolute positioning to relative layouts on phone screens, stacking perfectly down the page with strict, bounded widths (`max-width: 100%`) so they never break the viewport edge.
+## Coding Standards
 
-### 4. Typography & Modal Scaling Matrix
-- All massive desktop typography (`.display-title`, `.contact-headline`) must drop their hardcoded sizes on small viewports. Implement aggressive mobile font reductions using responsive `clamp()` architectures or explicit mobile size overrides.
-- Modals, pop-ups, and embedded forms must scale fluidly to `100vw` and `100vh` boundaries on mobile. If internal copy or structural columns exceed vertical screen height, the modal must seamlessly switch to inner scrolling (`overflow-y: auto`).
+- Follow the Cross-Device Responsive Architecture rules below for all CSS/layout work.
+- Keep the client-hub-app as a single self-contained HTML file unless asked to split it.
+- Don't touch `_archive/` unless a task explicitly needs something from it (see below).
+
+## 📱 Cross-Device Responsive Architecture & Viewport Locks
+
+Treat desktop and mobile as two distinct visual mediums. Never write blended
+CSS that compromises one device for the other.
+
+1. **Desktop Preservation Law (Immutable)** — baseline selectors stay reserved
+   for the locked desktop experience (>992px). Never alter, refactor, or
+   delete existing desktop styles or animation variables when adjusting
+   mobile layouts. Every mobile/tablet adjustment goes exclusively inside
+   `@media (max-width: 992px)` / `@media (max-width: 768px)` blocks appended
+   to the bottom of the stylesheet.
+2. **Nav** — desktop (>768px): full inline text links (`WORK`, `ABOUT`,
+   `CONTACT`). Mobile (≤768px): collapse into `<button class="mobile-menu-toggle">`
+   with a hairline SVG icon, toggled via `.is-active`, revealing a slide-down
+   or full-screen glassmorphic overlay.
+3. **Structural adaptation** — `:hover`-only interactions need a touch
+   fallback or must become permanently visible on phones. Horizontal
+   scroll/pinning tracks (`.horizontal-gallery`, `.film-frames-grid`) must be
+   dismantled on mobile into a vertical feed or `overflow-x: auto !important;
+   -webkit-overflow-scrolling: touch;`. Absolutely-positioned children
+   (`.project-tile`, `.project-info-overlay`) reset to relative, stacked,
+   `max-width: 100%` on phones.
+4. **Typography & modals** — large desktop type (`.display-title`,
+   `.contact-headline`) must shrink on small viewports via `clamp()` or
+   explicit overrides. Modals/forms scale to `100vw`/`100vh` on mobile with
+   `overflow-y: auto` if content overflows.
 
 ## 🗃️ `_archive/` Folder
 
-`_archive/` (gitignored, never published) holds superseded assets and stale docs kept only as a fallback — old service/work images, unused branding duplicates, raw source fonts, and outdated setup docs. It is not part of the live build and nothing in it is referenced by `index.html`, `css/`, or `js/`.
+Gitignored, never published, not referenced by `index.html`/`css/`/`js/`.
+Holds superseded assets and stale docs. Don't read or search it by default —
+only look inside if something needed for the current task is missing from
+the active project.
 
-Do not read or search `_archive/` by default. Only look inside it if information needed for the current task is missing from the active project (e.g. a reference asset was deleted by mistake, or you're unsure whether an old approach was already tried and abandoned).
+## Agent Handoff Protocol
+
+- On session start, read `feature-spec.md`, `buildplan.md`, and
+  `scratchpad.md` before doing anything else.
+- Work strictly on the first unchecked task (`[ ]`) in `buildplan.md`. Don't
+  jump ahead to later slices.
+- Log active progress, test failures, and execution state in `scratchpad.md`
+  as you go.
+- Before session end or a context wipe: update `scratchpad.md` with handoff
+  notes for the next agent, and mark finished items `[x]` in `buildplan.md`.
