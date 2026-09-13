@@ -32,7 +32,7 @@ function loadHlsVideo(videoEl, slug, onError) {
         hls.attachMedia(videoEl);
         if (onError) {
             hls.on(Hls.Events.ERROR, function (event, data) {
-                if (data.fatal) onError();
+                if (data.fatal) { window.__hlsFatalDebug = data; onError(); }
             });
         }
         return hls;
