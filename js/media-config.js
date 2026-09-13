@@ -45,8 +45,10 @@ function loadHlsVideo(videoEl, slug, onError) {
         var hls = new Hls();
         hls.loadSource(src);
         hls.attachMedia(videoEl);
+        window.__loadHlsVideoDebug = { branch: 'hlsjs', src: src };
         if (onError) {
             hls.on(Hls.Events.ERROR, function (event, data) {
+                window.__loadHlsVideoDebug.lastError = { type: data.type, details: data.details, fatal: data.fatal };
                 if (data.fatal) onError();
             });
         }
@@ -54,6 +56,7 @@ function loadHlsVideo(videoEl, slug, onError) {
     }
 
     if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+        window.__loadHlsVideoDebug = { branch: 'native', src: src };
         videoEl.src = src;
         if (onError) {
             videoEl.addEventListener('error', function handler() {
@@ -64,6 +67,7 @@ function loadHlsVideo(videoEl, slug, onError) {
         return null;
     }
 
+    window.__loadHlsVideoDebug = { branch: 'onErrorImmediate', src: src };
     if (onError) onError();
     return null;
 }
