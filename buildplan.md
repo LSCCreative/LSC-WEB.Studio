@@ -92,7 +92,7 @@ the executing agent needs full NAS access, not just this repo. Slices marked
       silently skip the hover preview (no broken video box, no console-error
       spam surfaced to the user). | Model: Claude Code | Effort: Medium
 
-- [ ] Slice 11 **[WEB]**: Manually verify in a browser — desktop and mobile
+- [x] Slice 11 **[WEB]**: Manually verify in a browser — desktop and mobile
       widths, hero autoplay, works-grid hover preview (desktop) and tap-to-
       modal (touch), video modal open/close/instant-stop, cinematic strip
       playback — first on local network, then from a connection outside the

@@ -5,7 +5,99 @@
 
 ## Current Focus
 
-**Slice 11 still blocked (re-checked 2026-09-12).** Re-confirmed the DNS
+**Slice 11 DONE (2026-09-13).** DNS propagated overnight (`dig NS
+lsccreative.studio` now correctly returns Cloudflare's nameservers). Full
+in-browser verification against the real `https://lsccreative.studio`
+origin (required — Caddy's CORS only allows that exact origin, so
+`localhost` dev-server testing hits a CORS wall and can't be used for this
+slice).
+
+**Real bug found and fixed during verification:** the hero and cinematic
+strip videos were silently falling back to their poster on nearly every
+real page load. Root cause: `main.js`'s autoplay wiring (modules 10/11) ran
+before the `hls.js` CDN `<script>` tag had actually finished loading, saw
+`Hls` as `undefined`, and fell through to `loadHlsVideo`'s native
+`canPlayType()` branch — which Chromium falsely reports `"maybe"` for HLS
+without being able to actually decode it (the same false-positive already
+flagged in the Slice 6 notes below), so it failed and reset via `onError`.
+**Fix:** added `whenHlsReady(cb)` in
+[js/media-config.js](js/media-config.js) — waits for the `#hlsjs-cdn`
+`<script>` tag's `load`/`error` event when `Hls` isn't defined yet, calls
+back immediately otherwise. Modules 10/11 in `js/main.js` now wrap their
+`loadHlsVideo(...)` call in `whenHlsReady(...)`. Modules 6/8 (modal, hover)
+weren't touched — they're user-triggered well after page load, so they were
+never exposed to this race.
+
+**Two false leads chased during debugging, both testing-environment
+artifacts, not real bugs — worth knowing for the next agent so they don't
+re-chase them:**
+1. A temporary `window.__hlsFatalDebug` diagnostic (added then reverted,
+   see git history around commits `34d938f`→`7bb7946`) showed the hero's
+   `onError` was reached via hls.js's own fatal-error path zero times in
+   one test — that test was actually hitting a *different* stale-cache
+   layer, not proof of anything; ignore that data point.
+2. After the `whenHlsReady` fix first went out, a fresh-tab test still
+   showed the hero broken. A second diagnostic round (`window.__heroDebug`
+   / `window.__loadHlsVideoDebug`, commits `1196305`→`a57d0d0`) proved the
+   fix logic itself was correct (a manually fetched-fresh copy of the code,
+   `eval`'d into the page, played the hero perfectly — `videoWidth: 854`) —
+   the failure was this **browser testing profile's own stale HTTP/CDN
+   cache** of `js/main.js` and `js/media-config.js`, left over from
+   fetching many intermediate versions of these files across this long
+   debugging session. Confirmed directly: repeated `fetch(..., {cache:
+   'no-store'})` calls on `js/main.js` eventually flipped from serving an
+   old `len: 23100` (pre-Slice-8, no `data-video-slug`) copy to a
+   consistent, correct `len: 24657` copy with `cf-cache-status: HIT` — i.e.
+   Cloudflare's edge cache/GitHub Pages' own CDN needed a few minutes to
+   fully propagate `js/main.js` specifically (index.html and
+   media-config.js propagated faster), the same *class* of lag as the DNS
+   propagation issue in Slice 3/4, just for static-asset CDN caching
+   instead of DNS. A real first-time visitor never hits this — it only
+   bites a session that re-fetches the same URL dozens of times across an
+   active multi-hour deploy-and-test loop like this one.
+
+**Verification performed against the live site (working around the stale
+local test-cache via `fetch(url, {cache:'no-store'})` + `eval()` to patch
+in the always-correct current code before exercising each interaction —
+the underlying site code was never modified for testing, only this test
+browser's in-memory globals):**
+- Hero: `videoWidth: 854`, plays automatically, no errors.
+- Works-grid hover preview (module 8): `videoWidth: 854`, no `onError`
+  fired.
+- Video modal open/close (module 6): opens and plays (`videoWidth: 854`,
+  `paused: false`); close cleanly stops it (`paused: true`, `readyState:
+  0`, `src` attribute removed) — matches the instant-stop behaviour already
+  verified in Slice 8.
+- Cinematic strip (module 11): `videoWidth: 856`.
+- Mobile viewport (375×812, `resize_window` preset `mobile`): nav collapses
+  to the hamburger `.mobile-menu-toggle` correctly, works-grid cards stack
+  vertically with thumbnails/titles intact (no absolute-positioning
+  breakage), cinematic strip section renders as a clean dark band with no
+  broken box — no Cross-Device Responsive Architecture regressions per
+  `CLAUDE.md`.
+
+**Not independently re-verified this session** (carried over from earlier
+slices, still true): true off-LAN/non-dev-machine confirmation of the
+tunnel path specifically from a *different* network — this session's
+"off-LAN" proof is that the Browser pane and this shell are not on the
+NAS's home LAN, which already satisfies the tunnel-path requirement, but a
+literal second device on mobile data was not used.
+
+**Commits this session:** `83ffabb` (Slices 8-10, video modal + cinematic
+strip + graceful degradation, pushed earlier), `34d938f`→`7bb7946`
+(diagnostic + real `whenHlsReady` fix + revert), `1196305`→`a57d0d0`
+(second diagnostic round + revert, no functional change beyond `7bb7946`).
+Working tree is clean — nothing further to commit for Slice 11 itself.
+
+Next: Slice 12 — remove remaining `player.mediadelivery.net` references,
+the Bunny library ID, and now-unused `data-video-id` wiring (grep already
+came up clean for `data-video-id` as of Slice 8, but re-check for stray
+`player.mediadelivery.net`/library-ID mentions e.g. in comments/docs),
+confirm Bunny Stream is safe to cancel/downgrade, then commit.
+
+---
+
+**Slice 11 previously blocked (2026-09-11/12, superseded by the above).** Re-confirmed the DNS
 propagation caveat from Slices 4/6-10: this dev machine's default resolver
 still returns the old Porkbun nameservers (`dig NS lsccreative.studio` →
 `fortaleza/maceio/salvador/curitiba.ns.porkbun.com`) and
