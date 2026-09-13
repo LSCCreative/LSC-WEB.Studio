@@ -303,27 +303,33 @@
 /* ── 6. CINEMATIC VIDEO MODAL — works cards ── */
 (function () {
     var videoModal  = document.getElementById('videoModal');
-    var videoIframe = document.getElementById('videoModalIframe');
+    var videoPlayer = document.getElementById('videoModalPlayer');
     var videoTitle  = document.getElementById('videoModalTitle');
     var closeBtn    = document.getElementById('videoModalCloseBtn');
-    if (!videoModal || !videoIframe) return;
-    function openVideoModal(videoId, projectTitle) {
-        videoIframe.src = 'https://player.mediadelivery.net/embed/662936/' + videoId + '?autoplay=true';
+    if (!videoModal || !videoPlayer) return;
+    var hlsInstance = null;
+    function openVideoModal(slug, projectTitle) {
+        hlsInstance = loadHlsVideo(videoPlayer, slug, null);
+        var playPromise = videoPlayer.play();
+        if (playPromise && playPromise.catch) playPromise.catch(function () {});
         if (videoTitle) videoTitle.textContent = projectTitle;
         videoModal.classList.add('is-active');
         document.body.style.overflow = 'hidden';
     }
     function closeVideoModal() {
         videoModal.classList.remove('is-active');
-        videoIframe.src = '';                       /* kill stream + audio instantly */
+        videoPlayer.pause();                        /* kill stream + audio instantly */
+        if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+        videoPlayer.removeAttribute('src');
+        videoPlayer.load();
         document.body.style.overflow = '';
     }
     document.querySelectorAll('.playable-tile').forEach(function (tile) {
         tile.addEventListener('click', function (e) {
             e.preventDefault();
             e.stopPropagation();
-            var videoId = tile.getAttribute('data-video-id');
-            if (videoId) openVideoModal(videoId, tile.getAttribute('data-project-title') || 'Project Film');
+            var slug = tile.getAttribute('data-video-slug');
+            if (slug) openVideoModal(slug, tile.getAttribute('data-project-title') || 'Project Film');
         });
     });
     if (closeBtn) closeBtn.addEventListener('click', closeVideoModal);
@@ -534,6 +540,27 @@
     var video = document.getElementById('heroVideo');
     if (!video) return;
 
-    // Fallback-on-failure (poster/last-frame) is handled in Slice 10.
-    loadHlsVideo(video, 'hero');
+    var hlsInstance = null;
+    function onError() {
+        // NAS/tunnel unreachable — drop back to the poster instead of a black/broken box.
+        if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+        video.removeAttribute('src');
+        video.load();
+    }
+    hlsInstance = loadHlsVideo(video, 'hero', onError);
+})();
+
+/* ── 11. Cinematic video strip — hls.js-driven native <video> (replaces Bunny iframe) ── */
+(function () {
+    var video = document.getElementById('cinematicStripVideo');
+    if (!video) return;
+
+    var hlsInstance = null;
+    function onError() {
+        // NAS/tunnel unreachable — drop back to the poster instead of a black/broken box.
+        if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+        video.removeAttribute('src');
+        video.load();
+    }
+    hlsInstance = loadHlsVideo(video, 'cinematic-strip', onError);
 })();

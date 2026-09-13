@@ -75,18 +75,18 @@ the executing agent needs full NAS access, not just this repo. Slices marked
       behaviour and the `loadVideo(videoId)` de-dupe-on-same-tile logic. |
       Model: Claude Code | Effort: Medium
 
-- [ ] Slice 8 **[WEB]**: Replace the video modal iframe
+- [x] Slice 8 **[WEB]**: Replace the video modal iframe
       ([index.html:143](index.html:143), wired in
       [js/main.js:303-328](js/main.js:303)) with a native `<video controls
       autoplay>` + hls.js, keeping the instant-stop-on-close behaviour (swap
       `iframe.src = ''` for pausing + detaching the hls.js instance/removing
       the `<source>`). | Model: Claude Code | Effort: Medium
 
-- [ ] Slice 9 **[WEB]**: Replace the cinematic video strip iframe
+- [x] Slice 9 **[WEB]**: Replace the cinematic video strip iframe
       ([index.html:630](index.html:630)) with the same native
       `<video>` + hls.js pattern. | Model: Claude Code | Effort: Low
 
-- [ ] Slice 10 **[WEB]**: Add graceful-degradation handling: if an HLS
+- [x] Slice 10 **[WEB]**: Add graceful-degradation handling: if an HLS
       manifest fails to load (NAS/tunnel down or slow), fall back to a
       static poster/last-frame image for the hero and cinematic strip, and
       silently skip the hover preview (no broken video box, no console-error

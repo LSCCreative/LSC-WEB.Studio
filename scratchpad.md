@@ -5,21 +5,154 @@
 
 ## Current Focus
 
+**Slice 11 still blocked (re-checked 2026-09-12).** Re-confirmed the DNS
+propagation caveat from Slices 4/6-10: this dev machine's default resolver
+still returns the old Porkbun nameservers (`dig NS lsccreative.studio` →
+`fortaleza/maceio/salvador/curitiba.ns.porkbun.com`) and
+`media.lsccreative.studio` still resolves locally to the dead Porkbun
+parking IPs (`207.207.210.x`). Public resolvers (1.1.1.1/8.8.8.8) correctly
+show the live Cloudflare delegation, and `curl --resolve
+media.lsccreative.studio:443:172.67.203.150 https://media.lsccreative.studio/hero/hls/master.m3u8`
+returns a clean `200` with a valid multi-bitrate playlist — so the NAS/
+tunnel/manifest path itself is confirmed working, only this machine's local
+DNS is stale. The Browser pane's own navigation to
+`https://media.lsccreative.studio/...` was also denied/failed for the same
+reason — it can't resolve the host either.
+
+**User decision this session (2026-09-12): do NOT temporarily override
+`/etc/hosts` to force through verification** — wait for natural DNS
+propagation instead. So Slice 11 (in-browser desktop/mobile/hover/modal/
+cinematic-strip playback verification) stays unchecked in `buildplan.md`
+until either (a) this machine's resolver picks up the new Cloudflare NS on
+its own, or (b) the user tests manually from a device with fresh DNS (e.g.
+mobile data) and reports back, or (c) they later authorize a temporary
+hosts-file override. **Next agent: re-run the `dig NS lsccreative.studio`
+check above before doing anything else on this feature** — if it now
+returns `celeste`/`lex.ns.cloudflare.com`, DNS has propagated and Slice 11
+can proceed with full in-browser verification (desktop + mobile widths,
+hero autoplay, hover preview, tap-to-modal, modal open/close/instant-stop,
+cinematic strip, then off-LAN confirmation) before checking it off and
+moving to Slice 12.
+
+**Slice 10 DONE (2026-09-11).** Graceful-degradation for hero + cinematic
+strip: added `poster="assets/hero-poster.jpg"` / `poster="assets/cinematic-
+poster.jpg"` to the two `<video>` elements
+([index.html:230](index.html:230), [index.html:638](index.html:638)) and
+gave modules 10/11 in `js/main.js` an `onError` callback (mirrors the
+existing `stopVideo`/`closeVideoModal` cleanup pattern from Slices 6-8):
+on a fatal hls.js error, destroy the hls instance, `removeAttribute('src')`,
+`.load()` — this drops the element back to showing its `poster` image
+instead of a black/broken video box. No CSS changes needed (existing
+`object-fit: cover` rule already applies to the poster image too).
+
+**Poster image files do not exist yet** — `assets/hero-poster.jpg` and
+`assets/cinematic-poster.jpg` are placeholder paths (per user decision this
+session: "extract from NAS later"). Until those files are added, the
+fallback is a 404'd poster (silently ignored by the browser — no visible
+broken-image icon) sitting on the existing solid dark section background,
+which is still a clean, non-broken degradation. **Next agent/user:** once
+the NAS share is mounted, grab a representative frame from
+`hero/hls/thumbnail*.jpg` and `cinematic-strip/hls/thumbnail*.jpg` (or any
+frame from the source master) and drop them in at those two exact paths —
+no code changes needed once the files exist.
+
+The works-grid hover preview (Slice 7) already silently resets on failure
+via its own `stopVideo` `onError` callback — no changes needed there for
+Slice 10; only the hero and cinematic strip needed new fallback wiring.
+
+**Verification:** confirmed via the Browser pane (same local-DNS caveat as
+every prior slice) that both `heroVideo` and `cinematicStripVideo` end up
+with no `src` attribute and empty `currentSrc` after the manifest fetch
+fails — i.e. they cleanly fall back to their `poster` attribute rather than
+being left in a half-loaded/broken state. Screenshot confirms no broken
+video box on the hero section.
+
+Next: Slice 11 (manual desktop/mobile/tunnel verification) — still blocked
+on the same DNS propagation caveat for full playback testing from this
+machine.
+
+**Slice 9 DONE (2026-09-11).** Cinematic video strip
+`<iframe>` ([index.html:630-639](index.html:630), was the Bunny embed
+`bd34bf23-fe47-4c89-85c7-4bac613b269c`) → native
+`<video id="cinematicStripVideo" autoplay muted loop playsinline
+preload="none">`, wired with a new module 11 in
+[js/main.js:548-554](js/main.js:548) calling
+`loadHlsVideo(video, 'cinematic-strip')` — same hls.js-first pattern as
+modules 7/8/10, no new helper needed. CSS: `.cinematic-video-strip iframe`
+→ `.cinematic-video-strip iframe, .cinematic-video-strip video` in
+[css/main.css:2074](css/main.css:2074) (added `object-fit: cover` for the
+video case; iframe rule itself untouched — same non-additive-but-safe swap
+as Slice 8's modal, since the iframe is now fully gone from this section).
+No mobile-specific override existed for `.cinematic-video-strip` before
+this slice, so none was needed now.
+
+Fallback-on-failure (poster/last-frame) is explicitly deferred to Slice 10,
+same as the hero — this slice just does the iframe→video swap per the
+buildplan's own scope note.
+
+**Verification:** confirmed via the Browser pane — the `<video>` element
+is in the DOM with the iframe fully gone, `getManifestUrl('cinematic-strip')`
+resolves correctly, and manually attaching hls.js to it fires the expected
+`manifestLoadError` (network error, fatal) — same known local-DNS caveat
+as every prior slice (`media.lsccreative.studio` doesn't resolve on this
+dev machine yet; a bare `fetch()` to the manifest URL also fails with
+"Failed to fetch"). This confirms the wiring is correct; full playback
+verification is still blocked on DNS/tunnel access from this machine, per
+the same note carried since Slice 6/7/8 — re-check once resolved.
+
+**Slice 8 DONE (2026-09-11).** Video modal iframe
+([index.html:141-148](index.html:141), was `#videoModalIframe`) → native
+`<video id="videoModalPlayer" controls playsinline>`, wired via the shared
+`loadHlsVideo(videoEl, slug, onError)` helper (module 6 in
+[js/main.js:303-334](js/main.js:303)). CSS: `.video-modal-player-wrapper
+iframe` → `.video-modal-player-wrapper video` (added `background: #000`
+for letterboxing before the manifest loads) — same rule, not a new
+additive one, since the iframe is now fully gone from this modal (no
+Desktop Preservation Law conflict — this is a functional swap, not a
+mobile-layout adjustment).
+
+**`data-video-id` retired entirely** (per user sign-off) — removed from
+all 4 `.playable-tile` buttons in `index.html`
+(marine-vitalities/bnb-autohaus/bakehouse/illawarra-hawks). `data-video-slug`
+is now the single source of truth for both the works-grid hover preview
+(Slice 7) and the video modal (this slice). The old Bunny embed URL
+construction (`player.mediadelivery.net/embed/662936/<guid>`) is gone from
+`js/main.js` — grep confirms no remaining `data-video-id` or
+`videoModalIframe` references anywhere in `index.html`/`js/`/`css/`.
+
+Close behavior: `closeVideoModal()` now calls `videoPlayer.pause()` +
+`hlsInstance.destroy()` + `removeAttribute('src')` + `.load()` (replaces
+the old `iframe.src = ''` instant-kill) — verified this actually stops
+playback and clears the `blob:` MSE source immediately, no delayed
+audio/video tick-over.
+
+**Verification:** confirmed via the Browser pane — clicking a
+`.playable-tile` sets `videoModal` to `.is-active`, `loadHlsVideo` attaches
+hls.js (MSE `blob:` URL on `<video>`, `paused: false`), and the close
+button correctly deactivates the modal, pauses the element, and clears
+`src`. Same DNS/tunnel caveat as Slices 6/7 — `media.lsccreative.studio`
+doesn't resolve from this dev machine yet, so the manifest itself never
+actually loads/plays here; full playback needs re-verification once DNS/
+tunnel access is available. **Note for next agent:** the local static
+preview server aggressively HTTP-caches `js/main.js` — a plain reload can
+silently keep serving a stale script after an edit. Hard-reload
+(cmd+shift+r) isn't always enough either; if `fetch('js/main.js')` still
+looks stale, re-inject the `<script>` tag with a cache-busting query param
+to confirm, or just restart the preview server.
+
 **Slice 7 DONE (2026-09-11).** Works-grid hover-preview `<iframe id="works-bg-iframe">`
 → native `<video id="works-bg-player" muted loop playsinline preload="none">`
 ([index.html:367-373](index.html:367)), CSS extended additively
 (`.works-bg-video iframe, .works-bg-video video` + `object-fit: cover` in
 [css/main.css:1727](css/main.css:1727) — no existing rule altered).
 
-Each `.works-card` button now carries a new `data-video-slug` attribute
+Each `.works-card` button carried a new `data-video-slug` attribute
 (`marine-vitalities`, `bnb-autohaus`, `bakehouse`, `illawarra-hawks`)
-**alongside** the existing `data-video-id` (Bunny GUID) — deliberately did
-NOT repurpose `data-video-id` itself, since the video-modal click handler
-(module 6 in `js/main.js`, Slice 8's job) still reads `data-video-id` to
-build the Bunny iframe URL and would break if it were overwritten with a
-slug this slice. Slice 8 should either add its own switch to
-`loadHlsVideo(..., slug)` reading `data-video-slug`, or fully retire
-`data-video-id` at that point once the modal is also converted.
+**alongside** the existing `data-video-id` (Bunny GUID) at the time —
+deliberately not repurposed then, since the video-modal click handler
+still read `data-video-id`. **Now retired as of Slice 8** (see above):
+`data-video-id` is gone from all 4 buttons, `data-video-slug` is the only
+attribute either surface reads.
 
 Module 8 in `js/main.js` (`loadVideo`/`onEnter`/`onLeave`) rewritten to call
 the shared `loadHlsVideo(videoEl, slug, onError)` helper from

@@ -139,13 +139,12 @@
         <button class="video-modal-close" id="videoModalCloseBtn" aria-label="Close video player">✕</button>
         <div class="video-modal-container">
             <div class="video-modal-player-wrapper">
-                <iframe 
-                    id="videoModalIframe"
-                    src=""
-                    allow="autoplay; encrypted-media; fullscreen"
-                    allowfullscreen
+                <video
+                    id="videoModalPlayer"
+                    controls
+                    playsinline
                     title="Project Video Player">
-                </iframe>
+                </video>
             </div>
             <div class="video-modal-meta">
                 <span class="video-modal-eyebrow">{ Selected Work }</span>
@@ -229,6 +228,7 @@
                     loop
                     playsinline
                     preload="auto"
+                    poster="assets/hero-poster.jpg"
                     aria-label="LSC Creative Showreel">
                 </video>
             </div>
@@ -386,7 +386,6 @@
                 <!-- 01 — Marine Vitalities -->
                 <button
                     class="works-card playable-tile reveal"
-                    data-video-id="89a0b68b-1afe-4c5a-9d83-67fc880a876a"
                     data-video-slug="marine-vitalities"
                     data-project-title="Marine Vitalities"
                     aria-label="Watch Marine Vitalities film">
@@ -420,7 +419,6 @@
                 <!-- 02 — BNB AutoHaus -->
                 <button
                     class="works-card playable-tile reveal" data-reveal-delay="80"
-                    data-video-id="b73539f4-26bd-470d-b658-8b2b0870098b"
                     data-video-slug="bnb-autohaus"
                     data-project-title="BNB AutoHaus"
                     aria-label="Watch BNB AutoHaus film">
@@ -454,7 +452,6 @@
                 <!-- 03 — BakeHouse -->
                 <button
                     class="works-card playable-tile reveal" data-reveal-delay="160"
-                    data-video-id="0d00bcf5-bf60-4c2c-8513-f8e41b490670"
                     data-video-slug="bakehouse"
                     data-project-title="BakeHouse"
                     aria-label="Watch BakeHouse film">
@@ -488,7 +485,6 @@
                 <!-- 04 — Illawarra Hawks -->
                 <button
                     class="works-card playable-tile reveal" data-reveal-delay="240"
-                    data-video-id="380dcc46-201f-46a1-8157-4e2fb3d88415"
                     data-video-slug="illawarra-hawks"
                     data-project-title="Illawarra Hawks"
                     aria-label="Watch Illawarra Hawks film">
@@ -633,15 +629,15 @@
              CINEMATIC VIDEO STRIP — PROCESS / CONTACT INTERSTITIAL
              ============================================================ -->
         <section class="cinematic-video-strip" aria-hidden="true">
-            <iframe
-                src="https://player.mediadelivery.net/embed/662936/bd34bf23-fe47-4c89-85c7-4bac613b269c?autoplay=true&loop=true&muted=true&preload=true&responsive=true&controls=false"
-                loading="lazy"
-                style="border:0;"
-                allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
-                allowfullscreen="true"
-                muted="muted"
-                playsinline="true">
-            </iframe>
+            <video
+                id="cinematicStripVideo"
+                autoplay
+                muted
+                loop
+                playsinline
+                preload="none"
+                poster="assets/cinematic-poster.jpg">
+            </video>
         </section>
 
         <!-- ============================================================
