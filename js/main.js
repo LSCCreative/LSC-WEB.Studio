@@ -541,20 +541,13 @@
     if (!video) return;
 
     var hlsInstance = null;
-    window.__heroDebug = { hlsAtRegister: typeof Hls };
     function onError() {
         // NAS/tunnel unreachable — drop back to the poster instead of a black/broken box.
-        window.__heroDebug.onErrorCalled = true;
         if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
         video.removeAttribute('src');
         video.load();
     }
-    whenHlsReady(function () {
-        window.__heroDebug.cbFired = true;
-        window.__heroDebug.hlsAtCb = typeof Hls;
-        hlsInstance = loadHlsVideo(video, 'hero', onError);
-        window.__heroDebug.hlsInstanceReturned = !!hlsInstance;
-    });
+    whenHlsReady(function () { hlsInstance = loadHlsVideo(video, 'hero', onError); });
 })();
 
 /* ── 11. Cinematic video strip — hls.js-driven native <video> (replaces Bunny iframe) ── */
