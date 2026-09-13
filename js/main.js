@@ -547,7 +547,7 @@
         video.removeAttribute('src');
         video.load();
     }
-    hlsInstance = loadHlsVideo(video, 'hero', onError);
+    whenHlsReady(function () { hlsInstance = loadHlsVideo(video, 'hero', onError); });
 })();
 
 /* ── 11. Cinematic video strip — hls.js-driven native <video> (replaces Bunny iframe) ── */
@@ -562,5 +562,5 @@
         video.removeAttribute('src');
         video.load();
     }
-    hlsInstance = loadHlsVideo(video, 'cinematic-strip', onError);
+    whenHlsReady(function () { hlsInstance = loadHlsVideo(video, 'cinematic-strip', onError); });
 })();
