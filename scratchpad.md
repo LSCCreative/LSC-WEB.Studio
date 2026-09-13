@@ -5,6 +5,17 @@
 
 ## Current Focus
 
+**Slice 12 DONE (2026-09-13).** No code changes needed — grep confirmed
+zero remaining `player.mediadelivery.net`, Bunny library ID (`662936`),
+`data-video-id`, or old iframe IDs (`videoModalIframe`, `works-bg-iframe`)
+anywhere in `index.html`/`css/`/`js/` (all already removed across Slices
+6-8). Remaining "Bunny" mentions in the repo are all in `client-hub-app/`
+(a separate Bunny Storage/Edge Script integration for file hosting, out of
+scope per `feature-spec.md`) plus a couple of harmless historical comments
+in `js/main.js`/`js/media-config.js`. User confirmed Bunny Stream (the
+video product specifically) is cancelled/downgraded. **Feature complete —
+all 12 slices done.**
+
 **Slice 11 DONE (2026-09-13).** DNS propagated overnight (`dig NS
 lsccreative.studio` now correctly returns Cloudflare's nameservers). Full
 in-browser verification against the real `https://lsccreative.studio`

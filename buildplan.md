@@ -100,7 +100,7 @@ the executing agent needs full NAS access, not just this repo. Slices marked
       Responsive Architecture regressions per `CLAUDE.md`. | Model: Claude
       Code | Effort: Low
 
-- [ ] Slice 12 **[WEB]**: Remove all remaining `player.mediadelivery.net`
+- [x] Slice 12 **[WEB]**: Remove all remaining `player.mediadelivery.net`
       references, the Bunny library ID, and now-unused `data-video-id`
       wiring left over from the old scheme; confirm Bunny Stream can be
       cancelled/downgraded. Commit. | Model: Claude Code | Effort: Low
