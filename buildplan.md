@@ -1,106 +1,119 @@
 # Build Plan
 
-## Feature: Self-hosted NAS video streaming (replaces Bunny Stream)
+## Feature: Client Hub v2 — Self-Hosted NAS Backend & Video Delivery
 
-Slices marked **[NAS]** run on the NAS itself (Docker, files, Cloudflare) —
-the executing agent needs full NAS access, not just this repo. Slices marked
-**[WEB]** run in this repo. Work strictly top-to-bottom; don't skip ahead.
+Slices marked **[NAS]** run on the NAS itself (Docker, files, Cloudflare
+Tunnel dashboard) — the executing agent needs full NAS access, not just
+this repo. Slices marked **[WEB]** run in `client-hub-app/index.html` in
+this repo. Work strictly top-to-bottom; don't skip ahead.
+
+Full context: [.design/client-hub-nas-backend/DESIGN_BRIEF.md](.design/client-hub-nas-backend/DESIGN_BRIEF.md)
+and [.design/client-hub-nas-backend/TASKS.md](.design/client-hub-nas-backend/TASKS.md)
+(this file mirrors that task list in the repo's own execution-tracking
+format — keep both in sync if either changes).
 
 ## Task Slices
 
-- [x] Slice 1 **[NAS]**: The user is dropping video folders into
-      `LSC Creative_Media/LSC Website_Media`, each named after the video
-      (not necessarily matching the slugs below) and — for videos that were
-      previously hosted on Bunny — already containing a full Bunny HLS
-      export (`master.m3u8`/`playlist.m3u8`, `240p/ 360p/ 480p/ 720p/
-      1080p/` folders of `.ts` segments, `play_*.mp4` progressive
-      fallbacks, `original/` master, thumbnails/previews). Your job:
-      rename/reorganise those folders to fit the site's convention — one
-      folder per project using the slugs `hero/`, `marine-vitalities/`,
-      `bnb-autohaus/`, `bakehouse/`, `illawarra-hawks/`, `cinematic-strip/`
-      (match by content/filename to figure out which dropped folder is
-      which project; ask the user if a match is ambiguous), each split into
-      `source/` (the `original/` master only) and `hls/` (everything else
-      from the Bunny export — `master.m3u8`/`playlist.m3u8`, the resolution
-      folders, progressive `play_*.mp4`, thumbnails/previews — used as-is,
-      no re-transcoding). For any project with no pre-existing Bunny export
-      (raw source file only), just place it in `source/` and leave `hls/`
-      empty for Slice 2. | Model: Claude Code | Effort: Low
+- [x] Slice 1 **[NAS]**: Add a new `client-hub-api` service (Node +
+      Express + SQLite) to the NAS Docker Compose setup, on the same
+      `media_net` network as `lsc-media-server`
+      ([nas/media-server/docker-compose.yml](nas/media-server/docker-compose.yml)).
+      Persistent volume for the SQLite DB. Create a new client deliverables
+      folder on Storage Pool 4, parallel to `LSC Website_Media` (e.g.
+      `LSC Creative_Media/Client Deliverables/`, one subfolder per
+      project), and mount it read-only into the container. | Model: Claude
+      Code | Effort: Medium
 
-- [x] Slice 2 **[NAS]**: For any project whose `hls/` folder is still empty
-      after Slice 1 (no pre-existing Bunny export was available), stand up
-      an `ffmpeg`-based transcode step (Docker container or script) to
-      package its `source/` master into multi-bitrate HLS in the matching
-      `hls/` folder — matching the Bunny export structure/renditions already
-      used by the other projects. Then, regardless of how each `hls/`
-      folder was populated, add a web server container (Caddy or Nginx)
-      serving `LSC Website_Media/**/hls/` with correct MIME types
-      (`application/vnd.apple.mpegurl`, `video/mp2t` or `video/mp4` for
-      fMP4 segments), HTTP range-request support, and
-      `Access-Control-Allow-Origin: https://lsccreative.studio`. | Model:
+- [x] Slice 2 **[NAS]**: Add a new public hostname (e.g.
+      `hub-api.lsccreative.studio`) to the same Cloudflare Tunnel used for
+      `media.lsccreative.studio`, routed to the `client-hub-api`
+      container's port. Verify it resolves over HTTPS from outside the
+      home LAN. | Model: Claude Code | Effort: Low
+
+- [x] Slice 3 **[NAS]**: Reimplement the four data routes from
+      [client-hub-docs/hub-edge-script.js](client-hub-docs/hub-edge-script.js)
+      (`/hub/publish`, `/hub/auth`, `/hub/sign`, `/hub/notify`) in
+      Express against SQLite tables instead of flat Bunny Storage JSON
+      blobs — same request/response shapes, same email-hash/code-hash/
+      invite-token indexing logic. Add a new `POST /hub/admin-auth` route
+      that checks email + PIN against a server-only value (env var or DB
+      row — never shipped to the client) and issues an HttpOnly session
+      cookie/token on success. Add session-check middleware gating
+      `/hub/publish` and `/hub/notify`. | Model: Claude Code | Effort: High
+
+- [x] Slice 4 **[NAS]**: Implement the NAS video URL scheme — each file in
+      the client deliverables folder gets a stable, unguessable URL
+      (random path segment or long-lived query token), served by
+      `client-hub-api` with HTTP Range support for MP4 scrubbing/resuming.
+      No expiring-signature system for video specifically (record/auth
+      data already gets real access control via `/hub/auth`; video links
+      keep the same trust level as today's pasted Bunny Stream URLs).
+      Document the admin's actual workflow (where to drop a file, what URL
+      to paste into the asset editor) in `client-hub-docs/`. | Model:
       Claude Code | Effort: Medium
 
-- [x] Slice 3 **[NAS]**: Add a `cloudflared` container to the compose stack,
-      authenticate it against the Cloudflare account that owns the
-      `lsccreative.studio` zone, and add a Tunnel public hostname
-      (`media.lsccreative.studio`, or confirm final choice with the user)
-      routing to the web server container. Verify the hostname resolves and
-      serves an HLS manifest from a network outside the home LAN. | Model:
-      Claude Code | Effort: Medium
+- [x] Slice 5 **[WEB]**: Point `HUB_CONFIG.edgeBase` at the new
+      `hub-api.lsccreative.studio` hostname; update `hubFetch`/`hubApi` to
+      send `credentials:'include'` so the session cookie flows
+      automatically instead of the old `Authorization: Bearer
+      ADMIN_API_KEY` header. | Model: Claude Code | Effort: Low
 
-- [x] Slice 4 **[NAS]**: Transcode and publish the 5 required assets (hero
-      showreel, cinematic strip video, Marine Vitalities, BNB AutoHaus,
-      BakeHouse, Illawarra Hawks — 6 total) into their `hls/` folders and
-      confirm each manifest URL loads over the public tunnel hostname. Note
-      the final manifest path/slug for each in `scratchpad.md` for the
-      **[WEB]** slices to consume. | Model: Claude Code | Effort: Low
+- [x] Slice 6 **[WEB]**: Admin PIN screen
+      ([client-hub-app/index.html:433-448](client-hub-app/index.html:433)):
+      replace the client-side `emailOk && pinInput === PIN` compare with an
+      async POST to `/hub/admin-auth`. Add checking (disable keypad,
+      existing pin-dot fill animation), wrong-PIN (existing red
+      `.pin-dot.error` shake, unchanged), and network/NAS-unreachable
+      (small `text-[var(--lsc-mid)]` mono message below the dots, keypad
+      re-enables) states. Remove the hardcoded `ADMIN_EMAIL`/`PIN`
+      constants ([client-hub-app/index.html:136-137](client-hub-app/index.html:136))
+      from the shipped file entirely. | Model: Claude Code | Effort: Medium
 
-- [x] Slice 5 **[WEB]**: Add `js/media-config.js` (or a top-of-file const
-      block in `js/main.js`) mapping project slug → HLS manifest URL under
-      the confirmed NAS base URL, replacing the Bunny library ID (`662936`)
-      + GUID scheme. Load hls.js from a CDN `<script>` tag (or vendor it
-      into `js/`) in `index.html`. | Model: Claude Code | Effort: Low
+- [ ] Slice 7 **[WEB]**: Remove `renderAdminKeyBar`,
+      `ADMIN_KEY_SS`/`adminKey()`, and the `admin:true` bearer-header
+      wiring in `hubFetch`
+      ([client-hub-app/index.html:652-658](client-hub-app/index.html:652))
+      — the session cookie from Slice 6 now carries all admin auth. | Model:
+      Claude Code | Effort: Low
 
-- [x] Slice 6 **[WEB]**: Replace the hero showreel Bunny `<iframe>`
-      ([index.html:225](index.html:225)) with a native `<video autoplay
-      muted loop playsinline>` wired to hls.js (native HLS fallback via
-      `canPlayType('application/vnd.apple.mpegurl')` for Safari/iOS),
-      preserving current autoplay/loop/muted/no-controls behaviour and
-      layering (`.hero-video-mask`). | Model: Claude Code | Effort: Medium
+- [ ] Slice 8 **[WEB]**: Add a small low-emphasis "Admin" text link at the
+      bottom of the client login screen, styled like the existing
+      "SIMULATE MODE" footer caption
+      ([client-hub-app/index.html:428](client-hub-app/index.html:428)),
+      navigating to the admin PIN screen. `?admin=1` keeps working as a
+      direct deep link. | Model: Claude Code | Effort: Low
 
-- [x] Slice 7 **[WEB]**: Replace the works-grid hover-preview background
-      iframe ([index.html:364-371](index.html:364), wired in
-      [js/main.js:358-380](js/main.js:358)) with a native `<video>` +
-      hls.js, keeping the existing hover-to-show / mouse-only / touch-skips
-      behaviour and the `loadVideo(videoId)` de-dupe-on-same-tile logic. |
-      Model: Claude Code | Effort: Medium
+- [ ] Slice 9 **[WEB]**: Add an optional "Backup link (Google Drive)"
+      `.field` to each asset row in the admin editor, alongside the
+      existing reviewLink/downloadLink/driveLink inputs, and persist it
+      through `buildPublishedRecord`
+      ([client-hub-app/index.html:189-200](client-hub-app/index.html:189)).
+      In the client asset view, on video load error, swap the player for a
+      `.card` with a short unavailable message and — only if a backup link
+      is set for that asset — a `.btn-sage` "View on Google Drive" button
+      opening it in a new tab. | Model: Claude Code | Effort: Medium
 
-- [x] Slice 8 **[WEB]**: Replace the video modal iframe
-      ([index.html:143](index.html:143), wired in
-      [js/main.js:303-328](js/main.js:303)) with a native `<video controls
-      autoplay>` + hls.js, keeping the instant-stop-on-close behaviour (swap
-      `iframe.src = ''` for pausing + detaching the hls.js instance/removing
-      the `<source>`). | Model: Claude Code | Effort: Medium
+- [ ] Slice 10 **[WEB]**: Responsive pass — confirm the new login link,
+      checking/error states, fallback card, and editor field all work at
+      mobile widths using existing responsive components only; any new
+      rules go in the existing `@media (max-width: 768px)` block per
+      `CLAUDE.md`'s Cross-Device Responsive Architecture rules. Then an
+      accessibility pass: keyboard operability of PIN keypad/login form,
+      visible-text state announcements, visible focus state on the Drive
+      fallback button. | Model: Claude Code | Effort: Low
 
-- [x] Slice 9 **[WEB]**: Replace the cinematic video strip iframe
-      ([index.html:630](index.html:630)) with the same native
-      `<video>` + hls.js pattern. | Model: Claude Code | Effort: Low
+- [ ] Slice 11 **[WEB + NAS]**: End-to-end verification — admin logs in
+      live against the NAS from a network outside the house (proves the
+      tunnel path, mirrors the marketing-site feature's Slice 11); client
+      watches/downloads a NAS-hosted video; force a video load failure and
+      confirm the Drive fallback appears correctly (and stays hidden when
+      no backup link is set). | Model: Claude Code | Effort: Low
 
-- [x] Slice 10 **[WEB]**: Add graceful-degradation handling: if an HLS
-      manifest fails to load (NAS/tunnel down or slow), fall back to a
-      static poster/last-frame image for the hero and cinematic strip, and
-      silently skip the hover preview (no broken video box, no console-error
-      spam surfaced to the user). | Model: Claude Code | Effort: Medium
-
-- [x] Slice 11 **[WEB]**: Manually verify in a browser — desktop and mobile
-      widths, hero autoplay, works-grid hover preview (desktop) and tap-to-
-      modal (touch), video modal open/close/instant-stop, cinematic strip
-      playback — first on local network, then from a connection outside the
-      NAS's LAN to prove the tunnel path. Confirm no Cross-Device
-      Responsive Architecture regressions per `CLAUDE.md`. | Model: Claude
-      Code | Effort: Low
-
-- [x] Slice 12 **[WEB]**: Remove all remaining `player.mediadelivery.net`
-      references, the Bunny library ID, and now-unused `data-video-id`
-      wiring left over from the old scheme; confirm Bunny Stream can be
-      cancelled/downgraded. Commit. | Model: Claude Code | Effort: Low
+- [ ] Slice 12 **[WEB]**: Once the NAS path is verified working end-to-end,
+      drop the now-unused `HUB_CONFIG` Bunny fields
+      (`storageZone`/`s3Endpoint`/`storageHost`/`pullZone`/`pullZoneId`/
+      `streamLibraryId`), decide with the user whether
+      `client-hub-docs/hub-edge-script.js` is kept for reference or
+      deleted, and confirm the Bunny plan covering the client hub can be
+      downgraded/cancelled (mirrors the marketing-site feature's Slice 12).
+      Commit. | Model: Claude Code | Effort: Low

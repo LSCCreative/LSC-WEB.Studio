@@ -5,98 +5,72 @@
 
 ## Feature Name & Goal
 
-Self-hosted NAS video streaming: replace Bunny Stream (`player.mediadelivery.net`)
-with video served directly from the user's always-on NAS.
+Client Hub v2: self-hosted NAS backend. Fix the broken admin login, remove
+the manual `ADMIN_API_KEY` paste step, and migrate `client-hub-app`'s data
+layer + video delivery off Bunny (Storage, Edge Script, Stream) onto the
+user's Ugreen NAS — reusing the Docker/Cloudflare Tunnel pattern already
+proven by the (completed) marketing-site video migration in
+`buildplan.md`'s history.
 
-Source media lives on a dedicated NVMe pool (**Storage Pool 4**) at
-`LSC Creative_Media / LSC Website_Media` (with subfolders per project/section
-for organisation). The NAS runs Docker and will host: an HLS
-transcode/packaging pipeline, a web server for the packaged output, and a
-Cloudflare Tunnel container to expose that server publicly without port-
-forwarding. The static site (GitHub Pages, domain `lsccreative.studio`) then
-plays video from that NAS origin instead of Bunny.
-
-This spec covers the full slice end-to-end: NAS-side Docker/media setup AND
-the website-side player changes. A later agent with full NAS access executes
-the NAS-side slices; slices in this repo are executed here.
+Full context: [.design/client-hub-nas-backend/DESIGN_BRIEF.md](.design/client-hub-nas-backend/DESIGN_BRIEF.md)
+and [.design/client-hub-nas-backend/TASKS.md](.design/client-hub-nas-backend/TASKS.md).
 
 ### Decisions already made (do not re-litigate without user sign-off)
 
-- **Exposure:** Cloudflare Tunnel (`cloudflared` container on the NAS) — no
-  router port-forwarding, no exposed home IP, free TLS via Cloudflare.
-- **Format:** Adaptive multi-bitrate HLS (`.m3u8` + segments), produced by an
-  `ffmpeg`-based transcode step in Docker. Matches the quality-switching
-  behaviour Bunny Stream currently provides.
-- **Cutover:** Full retirement of Bunny Stream once the NAS path is verified
-  working end-to-end — no CDN pass-through, no dual-running fallback kept
-  long-term.
-- **Public hostname (assumed, confirm before DNS slice):** `media.lsccreative.studio`,
-  a Cloudflare Tunnel hostname added under the existing `lsccreative.studio`
-  domain/zone.
+- **Admin auth**: email + PIN is the entire security boundary. PIN check
+  moves server-side (NAS API) — no more hardcoded PIN/email in shipped JS,
+  no `ADMIN_API_KEY` paste. Server issues a session cookie/token on success.
+- **Admin entry point**: dedicated login screen (the existing `renderLock`
+  PIN screen, reused), reached via a visible low-emphasis link at the
+  bottom of the client login screen — not just the hidden `?admin=1` URL
+  param (which keeps working as a direct link).
+- **Backend**: Node + Express + SQLite in Docker on the NAS, on the same
+  `media_net` network as the existing `lsc-media-server` container, exposed
+  via a new Cloudflare Tunnel public hostname (not raw port-forwarding).
+- **Video**: MP4 progressive download/playback only. No HLS/transcoding for
+  client deliverables (unlike the marketing site's video, which does use
+  HLS).
+- **Video URL scheme**: stable, unguessable per-file URL (matches today's
+  "admin pastes a URL into the asset field" workflow) — not a short-lived
+  signed-URL system. Record/auth data gets real server-side access control;
+  individual video links keep the same trust level as the current Bunny
+  Stream links.
+- **Resilience**: NAS is primary and considered reliable. Per-deliverable
+  optional Google Drive backup link; if the NAS video fails to load client-
+  side, show a fallback card with that link instead of a broken player.
+- **Cutover**: full retirement of Bunny for the client hub once verified —
+  no long-term dual-running, mirrors the marketing site's Slice 12.
 
 ### Current state (Bunny-based, being replaced)
 
-- Hero showreel: `<iframe src="https://player.mediadelivery.net/embed/662936/<guid>?...">`
-  in [index.html:225](index.html:225).
-- Works grid hover-preview background iframe, built at runtime from
-  `data-video-id` in [js/main.js:358-370](js/main.js:358).
-- Video modal (click a work card → full film), built from `data-video-id` in
-  [js/main.js:303-328](js/main.js:303).
-- Cinematic video strip interstitial iframe in [index.html:630](index.html:630).
-- Bunny library ID `662936`; four project video GUIDs in the works grid
-  ([index.html:386,419,452,485](index.html:386)).
+- `client-hub-app/index.html` — single-file app, `HUB_CONFIG.mode='live'`
+  talks to a Bunny Edge Script via `hubFetch`/`hubApi`.
+- `client-hub-docs/hub-edge-script.js` — the Edge Script: `/hub/publish`,
+  `/hub/auth`, `/hub/sign`, `/hub/notify`, backed by Bunny Storage JSON
+  blobs and a Bunny CDN pull-zone token-auth scheme.
+- Admin auth today: hardcoded `ADMIN_EMAIL`/`PIN` client-side
+  ([client-hub-app/index.html:136-137](client-hub-app/index.html:136)),
+  plus a manually-pasted `ADMIN_API_KEY` bearer token stored in
+  `sessionStorage` after PIN entry.
+- Reference precedent: `nas/media-server/docker-compose.yml` + `Caddyfile`
+  — Caddy container on `media_net`, Cloudflare Tunnel to
+  `media.lsccreative.studio`, already live for the marketing site's video
+  (unrelated to this feature but the infra pattern to follow).
 
 ## Acceptance Criteria
 
-**NAS / infrastructure**
-- [ ] `LSC Website_Media` has a clear, documented subfolder convention (one
-      folder per project/section, raw source separated from packaged HLS
-      output) that the media-organising agent will populate.
-- [ ] Docker Compose stack on the NAS runs: transcode pipeline, HLS web
-      server (correct MIME types, byte-range/CORS support), and `cloudflared`
-      tunnel — documented as a compose file checked into this repo for
-      reference even though it's deployed on the NAS.
-- [ ] Web server sends `Access-Control-Allow-Origin` permitting
-      `https://lsccreative.studio` (and any preview/staging origins in use)
-      so the browser can fetch HLS manifests/segments cross-origin.
-- [ ] `media.lsccreative.studio` (or confirmed final hostname) resolves via
-      Cloudflare Tunnel to the NAS web server, over HTTPS, reachable from
-      outside the home network (tested off local Wi-Fi).
-- [ ] At least the 4 existing works videos + hero showreel + cinematic strip
-      video are transcoded to HLS and reachable at stable manifest URLs.
-
-**Website (this repo)**
-- [ ] Bunny iframe embeds (hero, works grid preview, video modal, cinematic
-      strip) are replaced with native `<video>` elements driven by hls.js
-      (with native HLS fallback for Safari/iOS via `canPlayType`).
-- [ ] A single config point (e.g. `js/media-config.js` or a const at the top
-      of `main.js`) holds the NAS media base URL and the per-project
-      manifest path/slug, replacing the Bunny library ID + GUID scheme.
-- [ ] Autoplay/loop/muted hero and hover-preview behaviour is preserved
-      exactly as it is today.
-- [ ] If the NAS origin is unreachable or slow (unlike a CDN, a home NAS can
-      go offline), the hero section degrades gracefully to its poster/last
-      frame image rather than showing a broken video box; a failed hover
-      preview simply doesn't show rather than erroring visibly.
-- [ ] No regressions to the Cross-Device Responsive Architecture rules in
-      `CLAUDE.md` — desktop CSS untouched, mobile/touch fallbacks for the
-      hover-preview behaviour still work.
-- [ ] Manually verified in a browser at desktop and mobile widths, and
-      verified from a network that is NOT on the same LAN as the NAS (to
-      prove the tunnel path, not just local access).
-- [ ] Bunny `<iframe>` markup, `player.mediadelivery.net` URLs, and the
-      Bunny library ID are fully removed from `index.html`/`js/main.js` once
-      cutover is verified.
+See the per-task checklist in
+[.design/client-hub-nas-backend/TASKS.md](.design/client-hub-nas-backend/TASKS.md)
+— that file is the authoritative task breakdown; `buildplan.md` mirrors it
+in this repo's own slice format for session-to-session execution tracking.
 
 ## Out of Scope
 
-- Migrating `client-hub-app/index.html` or any other consumer of Bunny (none
-  currently exist outside `index.html`/`js/main.js`).
-- Building a custom transcode UI/automation for future uploads — this pass
-  only needs the existing 4 works films + hero showreel + cinematic strip
-  video moved over. A repeatable "drop a new file in, get an HLS folder out"
-  script is a nice-to-have, not required for this feature to ship.
-- NAS-wide Docker/network hardening beyond what's needed to safely expose
-  this one media service (no VPN redesign, no unrelated container migrations).
-- Changing the domain/DNS provider — assumes `lsccreative.studio` DNS is
-  already on/movable to Cloudflare for the Tunnel to attach a hostname.
+- Migrating the main marketing site's video (already done, see
+  `buildplan.md` history / git log "Close out Slice 12").
+- Adaptive bitrate/HLS for client deliverables.
+- Multi-admin accounts, roles, or password reset flows.
+- Migrating existing Bunny-hosted client records/videos to the NAS (a
+  one-time data migration pass, follow-up task, not part of this build).
+- NAS-wide hardening/redundancy beyond what this one additional Docker
+  service needs.

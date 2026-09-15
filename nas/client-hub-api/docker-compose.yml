@@ -1,0 +1,54 @@
+# Client Hub API — deployment unit for the DXP4800 Pro.
+#
+# Deployed to /volume4/client-hub-api/app on the NAS; this repo copy is the
+# source of truth. Rebuild after changes:
+#
+#   cd /volume4/client-hub-api/app && docker compose up -d --build
+#
+# `media_net` is owned by the media-server stack, so it's declared external.
+# Joining it lets cloudflared-tunnel reach this container at
+# `client-hub-api:8097` for a Zero Trust Public Hostname (Slice 2).
+
+# Pinned explicitly: the deploy directory is also called `app`, which would
+# otherwise put this stack in the same Compose project as lsc-billing and make
+# each look like the other's orphan.
+name: client-hub-api
+
+services:
+  client-hub-api:
+    build: .
+    image: client-hub-api:latest
+    container_name: client-hub-api
+    restart: unless-stopped
+
+    # Loopback-only: the public path is the Cloudflare Tunnel, never the LAN.
+    ports:
+      - "127.0.0.1:8097:8097"
+
+    environment:
+      DATA_DIR: /data
+      DELIVERABLES_DIR: /srv/deliverables
+      PORT: "8097"
+      PUBLIC_BASE_URL: https://hub-api.lsccreative.studio
+      CORS_ORIGIN: https://lsccreative.studio
+
+    # Secrets only — never in this file (it's mirrored to the public repo).
+    # Create /volume4/client-hub-api/app/.env on the NAS directly with:
+    #   ADMIN_EMAIL=lachlan@creativelsc.com
+    #   ADMIN_PIN_HASH=<sha256 hex of the 4-digit admin PIN>
+    #   SIGNING_SECRET=<long random string, signs record/file URLs>
+    env_file:
+      - .env
+
+    volumes:
+      - /volume4/client-hub-api/data:/data
+      - "/volume4/LSC Creative_Media/Client Deliverables_Media:/srv/deliverables:ro"
+
+    networks:
+      - default
+      - media_net
+
+networks:
+  default: {}
+  media_net:
+    external: true

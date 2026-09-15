@@ -7,6 +7,7 @@
 # Internal workspace: planning docs, runbooks, Bunny credentials.
 # Never published.
 client-hub-docs/
+.design/
 
 # Credentials — belt and braces, in case a file is ever moved out of the folder above.
 *.rtf
@@ -25,3 +26,10 @@ Thumbs.db
 # Local dev tooling / scratch — not site content
 .claude/
 _archive/
+
+# NAS service build output and local SQLite data — never site content
+node_modules/
+nas/**/data/
+*.db
+*.db-shm
+*.db-wal

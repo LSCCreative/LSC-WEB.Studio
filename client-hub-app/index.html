@@ -111,7 +111,7 @@ const HUB_CONFIG = {
   pullZone:       'https://client-hub-pullzone.b-cdn.net/',
   pullZoneId:     '6182913',
   streamLibraryId:'683470',
-  edgeBase:       'https://client-hub-pullzone.b-cdn.net', // Bunny middleware Edge Script (routes /hub/*)
+  edgeBase:       'https://hub-api.lsccreative.studio',    // self-hosted NAS API (routes /hub/*), see nas/client-hub-api/
 };
 /* FLIP TO LIVE: set HUB_CONFIG.mode = 'live' AFTER (1) the Edge Script in
    `Client HUB /hub-edge-script.js` is deployed on the pull-zone middleware,
@@ -133,8 +133,6 @@ const HUB_CONFIG = {
   const el = document.createElement('style'); el.textContent = css; document.head.appendChild(el);
 })();
 
-const ADMIN_EMAIL = 'lachlan@creativelsc.com';
-const PIN = '2803';
 const STORAGE_KEY = 'lsc_hub_projects_v1';
 const AUTH_KEY = 'lsc_hub_auth_v1';
 
@@ -158,11 +156,14 @@ async function sha256Hex(str){
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
 
-// Authed fetch to the Edge Script (live only). `admin:true` attaches the bearer.
+// Authed fetch to the NAS API (live only). `credentials:'include'` sends the
+// HttpOnly hub_admin_session cookie cross-origin once /hub/admin-auth has set
+// one (Slice 6); `admin:true`'s bearer header is Slice 3-era and still wired
+// here until Slice 7 removes it.
 async function hubFetch(path, opts={}){
   const headers = Object.assign({ 'Content-Type':'application/json' }, opts.headers||{});
   if(opts.admin) headers['Authorization'] = 'Bearer ' + adminKey();
-  const res = await fetch(HUB_CONFIG.edgeBase + path, { ...opts, headers });
+  const res = await fetch(HUB_CONFIG.edgeBase + path, { ...opts, headers, credentials:'include' });
   if(!res.ok){
     const err = new Error(path + ' → ' + res.status);
     err.status = res.status;              // callers branch on 401 (rejected admin key)
@@ -327,6 +328,8 @@ let state = {
   adminEmailInput: '',
   pinInput: '',
   pinError: false,
+  pinChecking: false,     // admin-auth POST in flight, keypad disabled
+  adminLoginMsg: null,    // NAS-unreachable/network-error line below the PIN dots
   screen: 'tracker',       // tracker | editor | client
   projects: loadProjects(),
   editingId: null,
@@ -411,8 +414,8 @@ function renderLock(){
   const keys = ['1','2','3','4','5','6','7','8','9','','0','del'];
   const keyHtml = keys.map(k => {
     if(k === '') return `<div></div>`;
-    if(k === 'del') return `<button data-key="del" class="pin-key mono flex items-center justify-center text-[var(--lsc-mid)]">⌫</button>`;
-    return `<button data-key="${k}" class="pin-key mono flex items-center justify-center">${k}</button>`;
+    if(k === 'del') return `<button data-key="del" ${state.pinChecking?'disabled':''} class="pin-key mono flex items-center justify-center text-[var(--lsc-mid)] ${state.pinChecking?'opacity-40':''}">⌫</button>`;
+    return `<button data-key="${k}" ${state.pinChecking?'disabled':''} class="pin-key mono flex items-center justify-center ${state.pinChecking?'opacity-40':''}">${k}</button>`;
   }).join('');
 
   return `
@@ -421,34 +424,44 @@ function renderLock(){
     <div class="mono text-xs text-[var(--lsc-mid)] mb-3 tracking-[0.3em]">CLIENT HUB · ADMIN ACCESS</div>
     <div class="display text-2xl mb-8">Enter PIN</div>
     <div class="w-full max-w-xs mb-6">
-      <input id="admin-login-email" class="field text-center" type="email" placeholder="you@company.com" value="${escapeAttr(state.adminEmailInput)}" autocomplete="email">
+      <input id="admin-login-email" class="field text-center" type="email" placeholder="you@company.com" value="${escapeAttr(state.adminEmailInput)}" autocomplete="email" ${state.pinChecking?'disabled':''}>
     </div>
-    <div id="pin-dots" class="flex gap-4 mb-10">${dots}</div>
+    <div id="pin-dots" class="flex gap-4 mb-6">${dots}</div>
+    ${state.adminLoginMsg ? `<div class="mono text-[11px] text-[var(--lsc-mid)] mb-6 text-center max-w-xs leading-relaxed">${escapeHtml(state.adminLoginMsg)}</div>` : ''}
     <div class="grid grid-cols-3 gap-4">${keyHtml}</div>
     <div class="mono text-[10px] text-[var(--lsc-mid)] mt-10 opacity-50">${HUB_CONFIG.mode === 'live' ? 'SECURE ADMIN ACCESS' : 'SIMULATE MODE'}</div>
   </div>`;
 }
 
-function pressKey(k){
-  if(state.pinError) return;
+async function pressKey(k){
+  if(state.pinError || state.pinChecking) return;
   if(k === 'del'){ state.pinInput = state.pinInput.slice(0,-1); render(); return; }
   if(state.pinInput.length >= 4) return;
   state.pinInput += k;
-  if(state.pinInput.length === 4){
-    const emailOk = (state.adminEmailInput||'').trim().toLowerCase() === ADMIN_EMAIL;
-    if(emailOk && state.pinInput === PIN){
-      sessionStorage.setItem(AUTH_KEY, 'true');
-      state.authed = true; state.pinInput=''; state.screen='tracker';
-      render();
-    } else {
-      state.pinError = true;
+  if(state.pinInput.length !== 4){ render(); return; }
+
+  state.pinChecking = true; state.adminLoginMsg = null; render();
+  const email = (state.adminEmailInput||'').trim();
+  const pin = state.pinInput;
+  try {
+    await hubFetch('/hub/admin-auth', { method:'POST', body: JSON.stringify({ email, pin }) });
+    sessionStorage.setItem(AUTH_KEY, 'true');
+    state.authed = true; state.pinChecking = false; state.pinInput=''; state.screen='tracker';
+    render();
+  } catch(e){
+    console.error('admin-auth failed:', e);
+    if(e && e.status === 401){
+      state.pinChecking = false; state.pinError = true;
       render();
       const dotsEl = document.getElementById('pin-dots');
       if(dotsEl) dotsEl.classList.add('shake');
       setTimeout(() => { state.pinError=false; state.pinInput=''; render(); }, 500);
+    } else {
+      // No response at all (network/NAS down) — don't imply "wrong PIN" with a shake.
+      state.pinChecking = false; state.pinInput = '';
+      state.adminLoginMsg = "Can't reach the server — check your connection.";
+      render();
     }
-  } else {
-    render();
   }
 }
 
