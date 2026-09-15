@@ -10,6 +10,25 @@ Slices 1-6 done. Next up is **Slice 7 [WEB]** — remove `renderAdminKeyBar`,
 `hubFetch` (`client-hub-app/index.html:652-658` pre-Slice-6 line numbers,
 shifted since) — the session cookie from Slice 6 now carries all admin auth.
 
+**Plan changed (2026-09-16, user request)**: a new **Slice 10 "PIN/code
+entry — keypad to text input"** was inserted between the old Slice 9 (video
+fallback) and Slice 10 (responsive pass) — old Slices 10/11/12 are now
+11/12/13. User complaint: the tap-only numeric keypad is slow with a mouse
+and can't be pasted into, so a saved PIN/code can't be reused. New Slice 10
+replaces it with a real `<input class="field">` on both the admin PIN
+screen and client login screen — full spec in `buildplan.md` and the
+mirrored `.design/client-hub-nas-backend/TASKS.md` (new "UI/UX Adjustments"
+section). Placed *after* Slices 7-9 (no dependency, keeps build order
+top-to-bottom) but *before* the responsive/accessibility pass (old Slice 10,
+now 11) so that pass audits the final input-based UI, not the keypad it's
+about to replace. **Note**: `DESIGN_BRIEF.md`'s Key Interactions and
+Reusable Components sections still describe the old `.pin-dot`/`.pin-key`
+keypad — those are now stale as of this plan change; brief itself wasn't
+edited (out of scope for this request), just flagging it here so a future
+agent doesn't treat the brief as current for PIN-entry specifics once
+Slice 10 lands — `buildplan.md`/`TASKS.md` are the up-to-date source for
+that screen from here on.
+
 ## NAS Facts (verified 2026-09-15, trust over older notes)
 
 - SSH: `ssh lsc-nas` (192.168.1.45, user `Lachlan`, uid 1000, gid 10/admin,

@@ -93,23 +93,81 @@ format — keep both in sync if either changes).
       is set for that asset — a `.btn-sage` "View on Google Drive" button
       opening it in a new tab. | Model: Claude Code | Effort: Medium
 
-- [ ] Slice 10 **[WEB]**: Responsive pass — confirm the new login link,
-      checking/error states, fallback card, and editor field all work at
-      mobile widths using existing responsive components only; any new
-      rules go in the existing `@media (max-width: 768px)` block per
-      `CLAUDE.md`'s Cross-Device Responsive Architecture rules. Then an
-      accessibility pass: keyboard operability of PIN keypad/login form,
-      visible-text state announcements, visible focus state on the Drive
-      fallback button. | Model: Claude Code | Effort: Low
+## UI/UX Adjustments
 
-- [ ] Slice 11 **[WEB + NAS]**: End-to-end verification — admin logs in
+- [ ] Slice 10 **[WEB]**: PIN/code entry — replace the tap-only numeric
+      keypad with a real text input, on both the admin PIN screen
+      (`renderLock`/`pressKey`, [client-hub-app/index.html:406](client-hub-app/index.html:406))
+      and the client login screen (`renderClientLogin`/`pressClientKey`,
+      [client-hub-app/index.html:469](client-hub-app/index.html:469)).
+      The 12-button circular keypad is slow to use with a mouse and can't
+      be pasted into, so clients with a saved PIN/code have no way to paste
+      it. Reuses the existing `.field`/`.field.invalid` tokens and `.shake`
+      animation — no new CSS beyond deleting the now-dead `.pin-dot`/
+      `.pin-key` rules ([client-hub-app/index.html:30-48](client-hub-app/index.html:30)).
+      Do this **before** Slice 11's responsive/accessibility pass so that
+      pass audits the final input-based UI, not the keypad it replaces.
+      Unchanged: the `hubFetch`/`hubApi` calls and the 401-vs-network-error
+      branching Slice 6 already added — this slice only changes how the
+      4 digits get into `state.pinInput`/`state.clientCodeInput`.
+      - Admin PIN input: `type="password" inputmode="numeric"
+        pattern="[0-9]*" maxlength="4"` — masked so a password manager will
+        offer to fill/paste a saved PIN (the actual point of this slice).
+        Client code input: `type="tel"` (or `text`), unmasked — it's not a
+        secret in the same sense, it's a code the studio sent them.
+      - On `input`: strip non-digits, cap at 4 chars, write into
+        `state.pinInput`/`state.clientCodeInput` **without** calling
+        `render()` — mirror the existing `admin-login-email`/
+        `client-login-email` handlers exactly. `render()` replaces
+        `root.innerHTML` wholesale, so re-rendering on every keystroke
+        would blow away focus/cursor position; this is the one real
+        implementation gotcha in this slice. At length 4, call the
+        existing check/submit logic (same trigger point as today's 4th
+        keypad tap).
+      - Also submit on `Enter` keydown when the field already holds 4
+        digits — covers a password-manager/autofill flow that sets
+        `.value` in a way that may not reliably fire `input` in every
+        browser.
+      - Checking: `disabled` on the input (matches the old keypad's fully-
+        inert `pinChecking` state) plus the same reduced-opacity treatment.
+      - Wrong PIN / 401: add `.invalid` + `.shake` to the input itself
+        (red border + shake, no more `#pin-dots` element to target), clear
+        and refocus after the existing 500ms timeout — behavior unchanged,
+        just a different DOM target. Network error: unchanged muted
+        message line from Slice 6, input re-enabled and cleared, no shake.
+      - Delete: `.pin-dot`/`.pin-key` CSS, the `pin-dots` markup and
+        `data-key`/`data-ckey` buttons, and the `lockKeyHandler`/
+        `clientLoginKeyHandler` document-level keydown listeners (now
+        redundant — a real `<input>` is natively focusable/typable, no
+        custom key routing needed). Grep for `pin-dot`, `pin-key`,
+        `data-key`, `data-ckey` afterward to confirm nothing survives.
+      - Test in-browser per `CLAUDE.md`: typing, pasting a 4-digit string,
+        the wrong-PIN shake, and (reusing Slice 6's CORS-revert trick) the
+        network-error message — for **both** screens. Check mobile width
+        too (existing `@media (max-width: 768px)` block only) since the
+        old fixed 64px circular keys don't apply to a text field.
+      | Model: Claude Code | Effort: Medium
+
+## Responsive & Polish
+
+- [ ] Slice 11 **[WEB]**: Responsive pass — confirm the new login link,
+      PIN/code text input + checking/error states, fallback card, and
+      editor field all work at mobile widths using existing responsive
+      components only; any new rules go in the existing
+      `@media (max-width: 768px)` block per `CLAUDE.md`'s Cross-Device
+      Responsive Architecture rules. Then an accessibility pass: keyboard
+      operability of the PIN/code input and login form, visible-text state
+      announcements, visible focus state on the Drive fallback button.
+      | Model: Claude Code | Effort: Low
+
+- [ ] Slice 12 **[WEB + NAS]**: End-to-end verification — admin logs in
       live against the NAS from a network outside the house (proves the
       tunnel path, mirrors the marketing-site feature's Slice 11); client
       watches/downloads a NAS-hosted video; force a video load failure and
       confirm the Drive fallback appears correctly (and stays hidden when
       no backup link is set). | Model: Claude Code | Effort: Low
 
-- [ ] Slice 12 **[WEB]**: Once the NAS path is verified working end-to-end,
+- [ ] Slice 13 **[WEB]**: Once the NAS path is verified working end-to-end,
       drop the now-unused `HUB_CONFIG` Bunny fields
       (`storageZone`/`s3Endpoint`/`storageHost`/`pullZone`/`pullZoneId`/
       `streamLibraryId`), decide with the user whether
