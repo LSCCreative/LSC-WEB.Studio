@@ -2,7 +2,7 @@
 // and HTTP Range-aware streaming. Token issuing/lookup lives in hubRoutes.js
 // (SQLite), which is the only caller allowed to hand out an absolute path.
 import { createReadStream, statSync } from 'node:fs';
-import { extname, resolve, sep } from 'node:path';
+import { basename, extname, resolve, sep } from 'node:path';
 
 export const DELIVERABLES_DIR = resolve(process.env.DELIVERABLES_DIR || '/srv/deliverables');
 
@@ -40,12 +40,17 @@ function contentTypeFor(absolutePath) {
 }
 
 // HTTP Range support (RFC 7233) — what lets a video element scrub/resume
-// instead of restarting from byte 0 on every seek.
-export function streamFile(req, res, absolutePath, stat) {
+// instead of restarting from byte 0 on every seek. `downloadable` (Slice 14)
+// only changes what the browser does with the response (open a Save dialog
+// vs. play inline) — the token is still the sole access control either way.
+export function streamFile(req, res, absolutePath, stat, downloadable) {
   res.setHeader('Accept-Ranges', 'bytes');
   res.setHeader('Content-Type', contentTypeFor(absolutePath));
   res.setHeader('Cache-Control', 'private, max-age=3600');
   res.setHeader('Last-Modified', stat.mtime.toUTCString());
+  res.setHeader('Content-Disposition', downloadable
+    ? `attachment; filename="${basename(absolutePath).replace(/"/g, '')}"`
+    : 'inline');
 
   const range = req.headers.range;
   if (!range) {

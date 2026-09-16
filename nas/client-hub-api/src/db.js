@@ -52,17 +52,45 @@ db.exec(`
   -- Video URL scheme (Slice 4): a stable, unguessable token per deliverable
   -- file, minted once by POST /hub/deliverable-url and never expiring —
   -- deliberately not the short-lived signed pattern used for records above.
+  -- downloadable (Slice 14) lets the same file be registered twice — once
+  -- for review (inline), once for download (Content-Disposition: attachment)
+  -- — hence uniqueness on (relative_path, downloadable) rather than path alone.
   CREATE TABLE IF NOT EXISTS deliverable_tokens (
     token         TEXT PRIMARY KEY,
-    relative_path TEXT NOT NULL UNIQUE,
-    created_at    TEXT NOT NULL
+    relative_path TEXT NOT NULL,
+    downloadable  INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL,
+    UNIQUE(relative_path, downloadable)
   );
 `);
+
+// Slice 14 migration: a NAS already running Slice 4's schema has
+// deliverable_tokens without `downloadable` (and a plain UNIQUE(relative_path)
+// baked into the column def, which CREATE TABLE IF NOT EXISTS above can't
+// retrofit) — rebuild the table in place rather than dropping it, so any
+// already-registered token (real production data, not just test rows)
+// survives with downloadable=0 (review, its only mode before this slice).
+const deliverableCols = db.prepare(`PRAGMA table_info(deliverable_tokens)`).all();
+if (deliverableCols.length && !deliverableCols.some(c => c.name === 'downloadable')) {
+  db.exec(`
+    ALTER TABLE deliverable_tokens RENAME TO deliverable_tokens_old;
+    CREATE TABLE deliverable_tokens (
+      token         TEXT PRIMARY KEY,
+      relative_path TEXT NOT NULL,
+      downloadable  INTEGER NOT NULL DEFAULT 0,
+      created_at    TEXT NOT NULL,
+      UNIQUE(relative_path, downloadable)
+    );
+    INSERT INTO deliverable_tokens (token, relative_path, downloadable, created_at)
+      SELECT token, relative_path, 0, created_at FROM deliverable_tokens_old;
+    DROP TABLE deliverable_tokens_old;
+  `);
+}
 
 db.prepare(`
   INSERT INTO meta (key, value) VALUES ('schema_version', ?)
   ON CONFLICT(key) DO UPDATE SET value = excluded.value
-`).run('3');
+`).run('4');
 
 export function schemaVersion() {
   return db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get().value;

@@ -246,6 +246,14 @@ const hubApi = {
     }
     const p = loadProjects().find(x => x.inviteToken === token);
     return p ? { projectId:p.id, clientCode:p.clientCode } : null;
+  },
+  // ADMIN: register a file already sitting on the NAS deliverables share, get back
+  // a stable /hub/files/<token> URL. `downloadable` picks Content-Disposition on
+  // the server (attachment vs inline) — same file can be registered under both.
+  // NAS-only feature; no SIMULATE equivalent (there's no NAS to register against).
+  async deliverableUrl(path, downloadable){
+    if(HUB_CONFIG.mode !== 'live') throw new Error('NAS deliverable links require live mode');
+    return hubFetch('/hub/deliverable-url', { method:'POST', body: JSON.stringify({ path, downloadable: !!downloadable }) });
   }
 };
 
@@ -731,8 +739,14 @@ function renderEditor(){
         <button data-remove-asset="${a.id}" class="text-[var(--lsc-mid)] hover:text-[var(--lsc-terra)] text-xs mono">REMOVE</button>
       </div>
       <input data-field="title" data-asset="${a.id}" class="field mb-2" placeholder="Deliverable title (e.g. Promo Film)" value="${escapeAttr(a.title)}">
-      <input data-field="reviewLink" data-asset="${a.id}" class="field mb-2 ${a.reviewLink && !isValidUrl(a.reviewLink)?'invalid':''}" placeholder="Review Asset Link (Bunny Stream) — https://" value="${escapeAttr(a.reviewLink)}">
-      <input data-field="downloadLink" data-asset="${a.id}" class="field mb-2 ${a.downloadLink && !isValidUrl(a.downloadLink)?'invalid':''}" placeholder="Main Download Link (Bunny Storage) — https://" value="${escapeAttr(a.downloadLink)}">
+      <div class="flex gap-2 mb-2">
+        <input data-field="reviewLink" data-asset="${a.id}" class="field flex-1 ${a.reviewLink && !isValidUrl(a.reviewLink)?'invalid':''}" placeholder="Review link — https://" value="${escapeAttr(a.reviewLink)}">
+        <button data-gen-link="review" data-asset="${a.id}" class="btn-ghost rounded-lg px-3 mono text-[10px] whitespace-nowrap">NAS LINK</button>
+      </div>
+      <div class="flex gap-2 mb-2">
+        <input data-field="downloadLink" data-asset="${a.id}" class="field flex-1 ${a.downloadLink && !isValidUrl(a.downloadLink)?'invalid':''}" placeholder="Download link — https://" value="${escapeAttr(a.downloadLink)}">
+        <button data-gen-link="download" data-asset="${a.id}" class="btn-ghost rounded-lg px-3 mono text-[10px] whitespace-nowrap">NAS LINK</button>
+      </div>
       <input data-field="driveLink" data-asset="${a.id}" class="field ${a.driveLink && !isValidUrl(a.driveLink)?'invalid':''}" placeholder="Google Drive Backup Link — https://" value="${escapeAttr(a.driveLink)}">
     </div>`).join('');
 
@@ -955,7 +969,7 @@ function renderVideoCanvas(a){
 
   return `
     <div class="aspect-video bg-[var(--lsc-surface)] rounded-xl overflow-hidden mb-2">
-      <video id="asset-video" class="w-full h-full" controls preload="metadata" src="${escapeAttr(a.reviewLink)}"></video>
+      <video id="asset-video" class="w-full h-full" controls controlsList="nodownload" disablePictureInPicture oncontextmenu="return false" preload="metadata" src="${escapeAttr(a.reviewLink)}"></video>
     </div>
     <div id="pause-pill" class="timestamp-pill mono text-[10px] bg-[var(--lsc-terra)] text-white px-2 py-1 rounded-full inline-block mb-2" ${state.pausedAt ? '' : 'style="display:none"'}>⏱️ ${state.pausedAt || ''}</div>
   `;
@@ -1022,14 +1036,22 @@ function renderClientFinal(){
       ${invoiceReaders}
 
       <div class="space-y-3 mb-6">
-        ${p.assets.map(a => `
+        ${p.assets.map(a => {
+          const canDownload = a.downloadLink && isValidUrl(a.downloadLink);
+          const canDrive = a.driveLink && isValidUrl(a.driveLink);
+          return `
           <div class="card rounded-lg p-4 flex items-center justify-between">
             <div class="mono text-xs">${escapeHtml(a.title || a.type)}</div>
             <div class="flex gap-2">
-              <button class="btn-terra rounded px-3 py-2 mono text-[10px]">DOWNLOAD CONTENT</button>
-              <button class="btn-sage rounded px-3 py-2 mono text-[10px]">GOOGLE DRIVE BACKUP</button>
+              ${canDownload
+                ? `<a href="${escapeAttr(a.downloadLink)}" target="_blank" rel="noopener" class="btn-terra rounded px-3 py-2 mono text-[10px] inline-block">DOWNLOAD CONTENT</a>`
+                : `<button class="btn-terra rounded px-3 py-2 mono text-[10px] opacity-40 cursor-not-allowed" disabled>DOWNLOAD CONTENT</button>`}
+              ${canDrive
+                ? `<a href="${escapeAttr(a.driveLink)}" target="_blank" rel="noopener" class="btn-sage rounded px-3 py-2 mono text-[10px] inline-block">GOOGLE DRIVE BACKUP</a>`
+                : `<button class="btn-sage rounded px-3 py-2 mono text-[10px] opacity-40 cursor-not-allowed" disabled>GOOGLE DRIVE BACKUP</button>`}
             </div>
-          </div>`).join('')}
+          </div>`;
+        }).join('')}
       </div>
 
       <div class="card rounded-xl p-6">
@@ -1259,6 +1281,25 @@ function bindEditor(){
       const type = btn.dataset.invoiceRemove;
       state.draft.invoices = (state.draft.invoices || []).filter(i => i.type !== type);
       render();
+    };
+  });
+
+  document.querySelectorAll('[data-gen-link]').forEach(btn => {
+    btn.onclick = async () => {
+      const asset = state.draft.assets.find(a => a.id === btn.dataset.asset);
+      const downloadable = btn.dataset.genLink === 'download';
+      const path = prompt(`NAS path, relative to Client Deliverables_Media — e.g.\n${state.draft.name || 'Project'}/${asset.title || 'file'}.mp4`, '');
+      if(!path || !path.trim()) return;
+      const original = btn.textContent;
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        const { url } = await hubApi.deliverableUrl(path.trim(), downloadable);
+        asset[downloadable ? 'downloadLink' : 'reviewLink'] = url;
+        render();
+      } catch(e){
+        btn.disabled = false; btn.textContent = original;
+        reportAdminError(e, 'Generate NAS link');
+      }
     };
   });
 

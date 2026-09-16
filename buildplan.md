@@ -175,3 +175,45 @@ format — keep both in sync if either changes).
       deleted, and confirm the Bunny plan covering the client hub can be
       downgraded/cancelled (mirrors the marketing-site feature's Slice 12).
       Commit. | Model: Claude Code | Effort: Low
+
+## NAS Delivery UX — Generate-Link Button & Download Disposition
+
+_Added 2026-09-16, discovered live during Slice 12 testing: registering a
+NAS URL requires manual curl (per `client-hub-docs/NAS-DELIVERABLES.md`),
+and there's no way to make a review copy non-downloadable vs. a delivery
+copy downloadable the way the old per-link Bunny/ug.link "allow download"
+toggle did._
+
+- [x] Slice 14 **[NAS]**: `deliverable_tokens` gets a `downloadable`
+      INTEGER flag (0/1); uniqueness moves from `relative_path` alone to
+      `(relative_path, downloadable)` so the same file can be registered
+      twice — once for review, once for download — each getting its own
+      token. In-place migration for the existing table (don't drop live
+      data — the Test Project's token registered during Slice 12 testing
+      must survive). `POST /hub/deliverable-url` accepts `{ path,
+      downloadable }`. `GET /hub/files/:token` sets `Content-Disposition:
+      inline` when not downloadable, or `attachment; filename="<basename>"`
+      when it is — same trust level as before (the token is still the only
+      access control; this only changes what the browser does with a
+      response it's already allowed to fetch, not who can fetch it). Bump
+      schema to `4`. Redeploy + verify against the live Test Project.
+      | Model: Claude Code | Effort: Medium
+
+- [ ] Slice 15 **[WEB]**: Admin editor — add a small "NAS LINK" button next
+      to the reviewLink and downloadLink fields on each video asset; click
+      prompts for the NAS-relative path, calls `/hub/deliverable-url` with
+      `downloadable:false`/`true` respectively, and fills the field with
+      the returned URL (removes the manual-curl step from
+      `NAS-DELIVERABLES.md` for day-to-day use — the doc stays as a
+      fallback/reference). Update the reviewLink/downloadLink placeholder
+      copy (currently says "Bunny Stream"/"Bunny Storage", stale since the
+      NAS migration). Client review player (`renderVideoCanvas`'s `<video>`)
+      gets `controlsList="nodownload"` + a blocked right-click context menu
+      — discourages casual saving of the review copy (not real DRM, matches
+      the design brief's existing "obscurity is not the gate" stance for
+      video links generally). Wire the currently-dead "DOWNLOAD CONTENT" /
+      "GOOGLE DRIVE BACKUP" buttons on the final-delivery screen
+      (`renderClientFinal`) to `a.downloadLink`/`a.driveLink` — they're
+      SIMULATE-era stubs today with no href or click handler, so a
+      downloadable token has nowhere to surface without this.
+      | Model: Claude Code | Effort: Medium

@@ -41,12 +41,12 @@ const findByEmailHash = db.prepare('SELECT * FROM private_auth WHERE email_hash 
 const findByInviteToken = db.prepare('SELECT * FROM private_auth WHERE invite_token = ?');
 
 const insertDeliverableToken = db.prepare(`
-  INSERT INTO deliverable_tokens (token, relative_path, created_at)
-  VALUES (?, ?, ?)
-  ON CONFLICT(relative_path) DO NOTHING
+  INSERT INTO deliverable_tokens (token, relative_path, downloadable, created_at)
+  VALUES (?, ?, ?, ?)
+  ON CONFLICT(relative_path, downloadable) DO NOTHING
 `);
-const findDeliverableTokenByPath = db.prepare('SELECT token FROM deliverable_tokens WHERE relative_path = ?');
-const findDeliverablePathByToken = db.prepare('SELECT relative_path FROM deliverable_tokens WHERE token = ?');
+const findDeliverableTokenByPath = db.prepare('SELECT token FROM deliverable_tokens WHERE relative_path = ? AND downloadable = ?');
+const findDeliverablePathByToken = db.prepare('SELECT relative_path, downloadable FROM deliverable_tokens WHERE token = ?');
 
 export const hubRouter = Router();
 
@@ -152,16 +152,18 @@ hubRouter.get('/hub/records/:projectId', (req, res) => {
 hubRouter.use('/hub/deliverable-url', credentialedCors);
 hubRouter.post('/hub/deliverable-url', requireAdmin, (req, res) => {
   const path = String(req.body?.path || '').trim();
+  const downloadable = req.body?.downloadable ? 1 : 0;
   if (!resolveDeliverablePath(path)) return res.status(404).json({ error: 'file not found' });
 
-  insertDeliverableToken.run(randomToken(16), path, new Date().toISOString());
-  const { token } = findDeliverableTokenByPath.get(path);
+  insertDeliverableToken.run(randomToken(16), path, downloadable, new Date().toISOString());
+  const { token } = findDeliverableTokenByPath.get(path, downloadable);
   res.json({ url: `${PUBLIC_BASE_URL}/hub/files/${token}` });
 });
 
 // ---------- GET /hub/files/:token — the stable URL itself ----------
 // Public and unauthenticated by design (same trust level as a pasted Bunny
 // Stream link) — the token is the only thing standing in for access control.
+// `downloadable` (Slice 14) only steers Content-Disposition, not who can fetch it.
 hubRouter.use('/hub/files', openCors);
 hubRouter.get('/hub/files/:token', (req, res) => {
   const row = findDeliverablePathByToken.get(req.params.token);
@@ -170,7 +172,7 @@ hubRouter.get('/hub/files/:token', (req, res) => {
   const resolved = resolveDeliverablePath(row.relative_path);
   if (!resolved) return res.status(404).json({ error: 'not found' });
 
-  streamFile(req, res, resolved.absolute, resolved.stat);
+  streamFile(req, res, resolved.absolute, resolved.stat, Boolean(row.downloadable));
 });
 
 // ---------- POST /hub/notify (admin) — invitation / reset / delivery email ----------
