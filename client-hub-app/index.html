@@ -91,8 +91,8 @@
 
 /* ---------------------------------------------------------
    HUB_CONFIG — single source of truth for environment + routing.
-   Non-secret only (see BUILD-PLAN §2). Secrets live ONLY as Bunny
-   Edge Script env vars, never here or anywhere in client-hub-app/.
+   Non-secret only. Secrets live ONLY server-side on the NAS
+   (client-hub-api), never here or anywhere in client-hub-app/.
    Subdomain cutover = change basePath / assetBase / mainSiteUrl only.
    --------------------------------------------------------- */
 const HUB_CONFIG = {
@@ -100,19 +100,10 @@ const HUB_CONFIG = {
   mainSiteUrl:    '../index.html',                         // back-link to host site
   assetBase:      '../assets/',                            // fonts/images root (font @font-face derives from this)
   basePath:       './',                                    // hub's own base (for building client links)
-  storageZone:    'clienthubdata',
-  s3Endpoint:     'https://de-s3.storage.bunnycdn.com',
-  storageHost:    'https://storage.bunnycdn.com/clienthubdata/',
-  pullZone:       'https://client-hub-pullzone.b-cdn.net/',
-  pullZoneId:     '6182913',
-  streamLibraryId:'683470',
   edgeBase:       'https://hub-api.lsccreative.studio',    // self-hosted NAS API (routes /hub/*), see nas/client-hub-api/
 };
-/* FLIP TO LIVE: set HUB_CONFIG.mode = 'live' AFTER (1) the Edge Script in
-   `Client HUB /hub-edge-script.js` is deployed on the pull-zone middleware,
-   (2) Edge Rules are set (token-auth on, /private blocked, CORS), and (3) the
-   admin has pasted ADMIN_API_KEY (prompted after PIN). Until then, 'simulate'
-   uses localStorage and every /hub/* call is bypassed. */
+/* mode:'simulate' uses localStorage and skips every /hub/* call — useful for
+   local UI work without a NAS connection. 'live' talks to edgeBase for real. */
 
 /* Inject brand @font-face rules from HUB_CONFIG.assetBase so a subdomain
    move only touches assetBase (these paths are exactly what break on a subdomain). */

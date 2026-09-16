@@ -5,17 +5,26 @@
 
 ## Current Focus
 
-Slices 1-12 and the new 14/15 are done (Slice 12 pulled in 14/15 as
-unplanned but user-requested follow-on scope — see below). **Slice 13
-[WEB]** is next and last: drop the now-dead `HUB_CONFIG` Bunny fields,
-decide with the user whether `client-hub-docs/hub-edge-script.js` is kept
-for reference or deleted, and confirm the Bunny plan covering the client
-hub can be downgraded/cancelled. This is a decision-requiring slice (ask
-the user, don't just delete) — do that first before touching code. Note:
-buildplan.md was renumbered since Slice 7 was written (a Slice 10 for
-PIN/code text-input replacement was inserted ahead of the old
-responsive/polish slices) — always re-read buildplan.md fresh rather than
-trusting slice numbers cached in this file.
+**All slices (1-15, including the unplanned 14/15) are now complete.**
+Slice 13 [WEB] closed out the feature on 2026-09-16:
+- Deleted the dead `HUB_CONFIG` Bunny fields (`storageZone`/`s3Endpoint`/
+  `storageHost`/`pullZone`/`pullZoneId`/`streamLibraryId`) from
+  [client-hub-app/index.html](client-hub-app/index.html) — confirmed via
+  grep that nothing else referenced them. Also cleaned up two now-stale
+  comments near `HUB_CONFIG` (one still described Bunny Edge Script env
+  vars, the other was a dead "FLIP TO LIVE" checklist from the pre-NAS
+  setup referencing `ADMIN_API_KEY`, which Slice 6/7 already removed).
+- User decisions: keep `client-hub-docs/hub-edge-script.js` as reference
+  (not deleted), and the Bunny plan covering the client hub has already
+  been downgraded/cancelled by the user — no further action needed there.
+- Verified with `node -e "new Function(...)"` against the extracted
+  `<script>` body that the file still parses cleanly after the edit.
+
+This feature (Client Hub v2 — Self-Hosted NAS Backend & Video Delivery) is
+done. Per this file's own header, this scratchpad should be wiped/reset
+when this feature merges to main — the next agent picking up unrelated
+work should start a fresh Current Focus section rather than building on
+this history.
 
 ## Slice 14/15 Result (added 2026-09-16, not in the original 13-slice plan)
 

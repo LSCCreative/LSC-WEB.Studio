@@ -167,7 +167,7 @@ format — keep both in sync if either changes).
       confirm the Drive fallback appears correctly (and stays hidden when
       no backup link is set). | Model: Claude Code | Effort: Low
 
-- [ ] Slice 13 **[WEB]**: Once the NAS path is verified working end-to-end,
+- [x] Slice 13 **[WEB]**: Once the NAS path is verified working end-to-end,
       drop the now-unused `HUB_CONFIG` Bunny fields
       (`storageZone`/`s3Endpoint`/`storageHost`/`pullZone`/`pullZoneId`/
       `streamLibraryId`), decide with the user whether
