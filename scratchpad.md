@@ -5,10 +5,207 @@
 
 ## Current Focus
 
-Slices 1-6 done. Next up is **Slice 7 [WEB]** — remove `renderAdminKeyBar`,
-`ADMIN_KEY_SS`/`adminKey()`, and the `admin:true` bearer-header wiring in
-`hubFetch` (`client-hub-app/index.html:652-658` pre-Slice-6 line numbers,
-shifted since) — the session cookie from Slice 6 now carries all admin auth.
+Slices 1-11 done. Next up is **Slice 12 [WEB + NAS]** — end-to-end
+verification (admin login from off-LAN, real NAS video watch/download, forced
+video-load-failure → Drive fallback check). Note: buildplan.md was
+renumbered since Slice 7 was written (a Slice 10 for PIN/code text-input
+replacement was inserted ahead of the old responsive/polish slices) — always
+re-read buildplan.md fresh rather than trusting slice numbers cached in this
+file.
+
+## Slice 11 Result
+
+- Pure verification slice, **no code changes** — audited the Slice 10 UI
+  (both login screens), the Slice 9 Drive-fallback card, and the Slice 9
+  `driveLink` editor field, all still uncommitted from Slice 10 in the
+  working tree.
+- **Mobile (375×812, resize_window mobile preset)**: both login screens,
+  the video-fallback card, and the editor's "Google Drive Backup Link" field
+  all render full-width with no overflow — confirmed via screenshot. No new
+  CSS was needed; the only `@media` block in the file is still the
+  `(min-width: 993px)` desktop-only `.back-link` pin added earlier — nothing
+  in this file uses `(max-width: 768px)` and nothing needed adding, since
+  every element audited here is already `width:100%`/flex-stacked by
+  default (mobile-first).
+- **Keyboard operability**: tabbed through both login screens via real
+  `key:"Tab"` events + `document.activeElement` checks (not just visual) —
+  order is back-link → email → PIN/code input → (client: forgot-code →
+  Admin link). All reachable, all natively focusable (no custom
+  keydown-routing left over from the old keypad).
+- **Focus visibility**: links/buttons keep the browser's default focus
+  ring (confirmed visible amber outline via screenshot on both
+  "← BACK TO SITE" and the Drive-fallback "VIEW ON GOOGLE DRIVE" link — the
+  latter was this slice's specific ask). The `.field:focus` rule
+  (`outline:none` + `border-color:var(--lsc-sage)`) is a color-only
+  indicator — high contrast against the black `.field` background (~10:1)
+  but only a 1px border, so it's easy to miss at a glance. Not changed
+  (in-scope work was auditing, not redesigning existing tokens) but flag to
+  the user if they want a stronger focus ring (e.g. add a `box-shadow`) on
+  `.field:focus` — would apply everywhere `.field` is used, not just these
+  screens.
+- **State-change verification**: confirmed via injected-mock `hubFetch`
+  (same technique as Slices 6/9/10 — no live NAS needed) that wrong-PIN
+  submission actually applies `.invalid`+`.shake` classes to `#pin-input`
+  (`el.className` checked directly, since the 500ms-then-clear cycle is too
+  fast to reliably catch in a screenshot given tool round-trip latency).
+  Checking/error/network-error messages are all plain visible text (no
+  `aria-live` regions anywhere in the file, for any state message in the
+  app — not just these screens). Screen-reader users get no automatic
+  announcement of a state change unless they're already focused on the
+  element; a sighted user gets the message immediately. This is a
+  pre-existing app-wide pattern (not introduced by Slice 9/10), and adding
+  `aria-live` was not requested — flagging as a possible follow-up, not
+  something fixed in this slice.
+- **No regressions**: reloaded the file fresh at default desktop width
+  after all the mobile/console testing — `.back-link` still pinned
+  top-left, both login screens render identically to before this slice.
+- **buildplan.md**: Slice 11 checked off `[x]`.
+
+## Slice 10 Result
+
+- `client-hub-app/index.html`: both the admin PIN screen (`renderLock`) and
+  client login screen (`renderClientLogin`) now use a real `<input>`
+  instead of the 12-button circular keypad + dot indicators.
+  - Admin: `<input id="pin-input" type="password" inputmode="numeric"
+    pattern="[0-9]*" maxlength="4" autocomplete="current-password">` —
+    masked so a password manager offers to fill/paste a saved PIN.
+  - Client: `<input id="client-code-input" type="tel" inputmode="numeric"
+    pattern="[0-9]*" maxlength="4">` — unmasked, it's a code not a secret.
+  - Both: on `input`, strip non-digits + cap at 4 chars, write into
+    `state.pinInput`/`state.clientCodeInput` **without** calling `render()`
+    (mirrors the existing email-field pattern — avoids the
+    `render()`-wipes-focus bug). At length 4, auto-submit
+    (`submitPin()`/`submitClientLogin()`). Also submit on `Enter` keydown
+    when already at 4 digits, for autofill flows that set `.value` without
+    reliably firing `input`.
+  - Checking: `disabled` on the input (was: disabled keypad). Wrong-PIN/401:
+    `.invalid`+`.shake` added directly to the input (was: `#pin-dots`/
+    `#client-code-dots` element), cleared+refocused after the existing
+    500ms timeout. Network error: unchanged muted message line, input
+    re-enabled and cleared, no shake.
+  - `pressKey`/`pressClientKey` (keypad button handlers) renamed/replaced by
+    `submitPin`/existing `submitClientLogin` called directly from the input
+    listener — no more per-digit dispatch functions needed.
+  - Deleted: `.pin-dot`/`.pin-key` CSS (kept `.shake`, still used),
+    `#pin-dots`/`#client-code-dots` markup, all `data-key`/`data-ckey`
+    buttons, and the `lockKeyHandler`/`clientLoginKeyHandler` document-level
+    keydown listeners (now redundant — real `<input>`s are natively
+    focusable/typable). Grepped afterward for `pin-dot`, `pin-key`,
+    `data-key`, `data-ckey`, `pressKey`, `pressClientKey`,
+    `lockKeyHandler`, `clientLoginKeyHandler` — all clean.
+  - No `@media` block existed in this file before or after this slice — the
+    old fixed 64px circular keys were the only thing needing mobile-specific
+    rules, and a `.field`-styled text input is already responsive via the
+    existing `width:100%` rule, so nothing was added (confirmed by
+    screenshotting both screens at 375px).
+- **Verified in-browser** (local `python3 -m http.server`, real DOM
+  interaction + `javascript_tool` for scripted event dispatch since the NAS
+  isn't reachable from this dev origin — same CORS situation as prior
+  slices):
+  - Typing strips non-digits and caps at 4 (`"12ab34"` → `"12"` once
+    `maxlength` truncates the raw keystroke count; a scripted paste of
+    `"1a2b3c4d"` correctly yields `"1234"`).
+  - A 4-digit paste-style `input` event auto-triggers submission
+    (`pinChecking`/`clientCodeInput` confirmed transitioning correctly).
+  - Network-error path (cross-origin fetch blocked from localhost, same as
+    Slices 5/6/7's testing pattern): both screens show the correct muted
+    message, input re-enables and clears.
+  - Wrong-PIN/401 path (admin only — mocked `hubFetch` to throw a
+    `{status:401}` error since the real PIN isn't available here): `.invalid`
+    + `.shake` applied to `#pin-input`, then cleared + refocused after
+    500ms — confirmed via `document.activeElement`.
+  - Admin↔client `data-admin-link`/`?admin=1` navigation still works
+    (Slice 8, untouched by this slice) — spot-checked via click.
+  - Both screens screenshotted at 375×812 (mobile preset) — full-width
+    inputs, no overflow, layout clean. Did **not** test an actual OS
+    password-manager autofill popup (Chrome DevTools/automated browser
+    doesn't have one wired up) — the `autocomplete="current-password"`
+    attribute is the standard hook for that and was verified present, but
+    the literal "does Chrome/1Password's fill UI appear" behavior is
+    unverified. Flag to the user if they want that spot-checked by hand in
+    a real browser profile with a saved credential.
+  - Did not re-test the *success* path (same limitation as Slice 6 — needs
+    the real admin PIN, which isn't available in this session) or the
+    client-side wrong-code path specifically (client login has no
+    dedicated 401 status the same way — `submitClientLogin`'s
+    `failClientLogin` branch is exercised by the network-error test above,
+    same code path as a "no match" response).
+
+## Slice 9 Result
+
+- **Scope gap found and resolved with the user**: the buildplan assumed a
+  real `<video>` element already existed with an `onerror` handler to hook
+  into. It didn't — `renderVideoCanvas` (`client-hub-app/index.html`) was a
+  fully static SIMULATE-era mockup (fake ▶/⏸ buttons, a decorative `#scrub`
+  bar, no `<video>` tag anywhere in the file, `a.reviewLink` never read).
+  Flagged this via AskUserQuestion; user chose "wire up a real `<video>`
+  element first" and supplied a real NAS test file
+  (`Sample Media/Test Media.mp4`) + its Google Drive mirror for testing.
+  This made Slice 9 bigger than its "Medium" label — it now includes a real
+  player, not just a fallback card.
+- `a.driveLink` was **already** a field on every asset (editor input at
+  `:774`, persisted through `buildPublishedRecord` at `:193`) from earlier
+  work — nothing to add there. Only the "swap to fallback on video error"
+  half was actually new.
+- `renderVideoCanvas` (`client-hub-app/index.html:985`) now renders a real
+  `<video id="asset-video" controls preload="metadata" src="${a.reviewLink}">`
+  in the success case, or (when `state.videoFailed`) a `.card` with "This
+  video couldn't be loaded." + a `.btn-sage` "VIEW ON GOOGLE DRIVE" link —
+  **only** rendered when `a.driveLink && isValidUrl(a.driveLink)`, confirmed
+  hidden otherwise.
+- Deleted the fake `#video-play`/`#video-pause`/`#scrub` markup and bindings
+  entirely (grepped afterward, clean).
+- **Real bug caught before it shipped**: my first pass wired `video.onpause`
+  to call `setState(...)` to update the pause-timestamp pill. `setState`
+  does a full `root.innerHTML` replace, which would have destroyed and
+  recreated the `<video>` element on every pause — resetting playback to 0
+  every time (same class of bug flagged for Slice 10's text-input gotcha,
+  just discovered here instead via manual testing rather than reading it in
+  the buildplan first). Fixed by mutating `state.pausedAt` directly and
+  updating a stable `#pause-pill` element's `textContent`/`display` in
+  place, no `render()` call — mirrors the existing `input`-without-`render()`
+  pattern already used for the email fields. The revision-comment
+  timestamp feature (attaches `state.pausedAt` to a submitted revision) is
+  unchanged and still reads the same state field.
+- **Verified in-browser** (console-injected a synthetic project/asset into
+  `state`, bypassing login — no live admin PIN needed for this UI-only
+  check): real playback of a public test MP4 with working native controls;
+  paused mid-playback → confirmed `state.pausedAt` set correctly (`"00:04"`)
+  AND the `<video>` element/its `currentTime` survived (not remounted) —
+  proves the setState fix actually works; swapped in a broken URL →
+  fallback card + working "VIEW ON GOOGLE DRIVE" link (href matched exactly,
+  opens the real Drive URL the user gave); cleared `driveLink` → confirmed
+  the button disappears, just the "couldn't be loaded" text remains. No
+  unexpected console errors (the one error logged was the intentional bad
+  test URL).
+- **Not yet done**: an end-to-end test against the actual NAS-hosted file
+  (`Sample Media/Test Media.mp4` → registered via `/hub/deliverable-url` →
+  real `hub-api.lsccreative.studio/hub/files/<token>` URL). Needs the real
+  admin PIN to register the deliverable, which wasn't available this
+  session — asked the user to run the two curl commands from
+  `client-hub-docs/NAS-DELIVERABLES.md` themselves and hadn't gotten a
+  response by session end. The public-test-MP4 verification above proves
+  the player/fallback mechanism works; only the specific NAS URL + Range
+  streaming behavior is unconfirmed for this slice (Slice 12 covers NAS
+  video delivery end-to-end anyway, so this isn't blocking).
+
+## Slice 8 Result
+
+- `client-hub-app/index.html`: added `<button id="client-admin-link">Admin</button>`
+  to `renderClientLogin`'s footer (right after the existing SIMULATE MODE
+  caption, `:501`), styled the same mono/opacity-50 way but smaller
+  (`text-[10px]`) and with a hover-to-full-opacity transition so it reads as
+  secondary. Click handler in `bindClientLogin` just does
+  `state.entry = 'admin'; render();` — the exact same state transition the
+  `?admin=1` guard already sets on load, no URL navigation or history entry
+  added.
+- `?admin=1` deep link path is untouched (guard() logic wasn't touched at
+  all) — verified separately, still lands on the PIN screen.
+- **Verified in-browser**: served the app on a scratch port (8734 was held
+  by another session), loaded the client login screen, found and clicked
+  the new "Admin" link → confirmed it landed on the real PIN screen
+  ("CLIENT HUB · ADMIN ACCESS" / "Enter PIN"). Separately loaded
+  `?admin=1` directly → same PIN screen. No console errors either way.
 
 **Plan changed (2026-09-16, user request)**: a new **Slice 10 "PIN/code
 entry — keypad to text input"** was inserted between the old Slice 9 (video
@@ -249,6 +446,34 @@ that screen from here on.
     after the revert (`diff` clean) — no drift left behind.
 - `nas/client-hub-api/` untouched this slice (WEB-only, per buildplan).
 
+## Slice 7 Result
+
+- `client-hub-app/index.html`: removed `ADMIN_KEY_SS`/`adminKey()`,
+  `renderAdminKeyBar()`, its `HUB_CONFIG.mode === 'live' && !adminKey()`
+  render gate, its `#admin-key-save`/`#admin-key-input` click handler, and
+  `hubFetch`'s `opts.admin` bearer-header branch. Dropped the `admin:true`
+  option from `hubApi.publish`'s `/hub/publish` call (its only call site) —
+  grepped afterward for `renderAdminKeyBar`/`ADMIN_KEY_SS`/`adminKey(`/
+  `admin-key-input`/`admin-key-save`/`admin:true`, all clean.
+- Updated `reportAdminError`'s 401 branch (previously: clear the bearer key,
+  tell the admin to re-enter it "in the bar above"): now clears the
+  session-derived `AUTH_KEY` sessionStorage flag and sends the admin back to
+  the login screen (`setState({ authed:false, pinInput:'', screen:'tracker' })`,
+  matching the existing logout button's exact reset shape) with the message
+  "Admin session expired — please sign in again." This only fires for
+  `/hub/publish`/`/hub/notify`/invite/reset 401s — `pressKey`'s own
+  admin-auth 401 handling (wrong PIN → shake) is separate code, untouched.
+- **Verified in-browser**: served the app locally (plain `python3 -m http.server`
+  on a scratch port — port 8734 from `.claude/launch.json` was held by another
+  session), loaded both the client login screen and `?admin=1` PIN screen with
+  zero console errors, clicked a PIN digit to confirm the keypad still
+  responds. Did **not** re-verify a full live Publish round-trip against the
+  NAS with the real PIN (would need the Slice 5/6 SSH-CORS-origin dance) —
+  the change is a pure removal of now-dead code paths (`opts.admin` was never
+  read by the server after Slice 6; the session cookie was already sole
+  gatekeeper), so this is lower-risk than Slices 5/6's live-auth changes.
+  Flag to the user if they want the live Publish path re-confirmed by hand.
+
 ## State & Blockers
 
 - **Fixed in Slice 6**: admin PIN/email are no longer hardcoded client-side —
@@ -275,36 +500,28 @@ that screen from here on.
 
 ## Next Agent Handoff
 
-1. Slice 7 is `client-hub-app/index.html` only — no NAS access needed. Remove
-   `renderAdminKeyBar`, the `ADMIN_KEY_SS` sessionStorage key + `adminKey()`
-   helper, and `hubFetch`'s `opts.admin` bearer-header branch (`if(opts.admin)
-   headers['Authorization'] = ...`). Also drop the `admin:true` option from
-   every `hubFetch`/`hubApi` call site that still passes it (at least
-   `hubApi.publish`'s `/hub/publish` call — grep for `admin:true` and
-   `renderAdminKeyBar` to find all of them). The `hub_admin_session` HttpOnly
-   cookie from Slice 6 is what actually gates `/hub/publish`/`/hub/notify`
-   server-side now (`requireAdmin` in `nas/client-hub-api/src/adminAuth.js`)
-   — the bearer header has done nothing real since Slice 6 landed.
-2. Watch for the amber admin-key re-entry bar's other callers — line ~638
-   conditionally renders `renderAdminKeyBar()` when `HUB_CONFIG.mode ===
-   'live' && !adminKey()`; that gate goes too. And `reportAdminError`
-   (`client-hub-app/index.html:180`) special-cases `e.status === 401` by
-   clearing `ADMIN_KEY_SS` and telling the admin to "re-enter it in the bar
-   above" — that message is now wrong (there's no bar), decide what a 401 on
-   `/hub/publish`/`/hub/notify` should say once there's no bearer key to blame
-   (likely: the session expired, send them back to the PIN screen).
-3. Test in the browser before calling it done (per this repo's CLAUDE.md
-   rule) — specifically exercise Publish after Slice 7's changes, logged in
-   via the real Slice 6 PIN flow, to confirm `/hub/publish` still succeeds
-   with only the session cookie and no bearer header. Same local-CORS-origin
-   dance as Slice 6 (SSH-edit NAS `docker-compose.yml`, redeploy, test,
-   revert to the production value) if testing off a local static server.
-4. Before relying on the tunnel in later slices, verify
+1. Slice 8 is `client-hub-app/index.html` only — no NAS access needed. Add a
+   small low-emphasis "Admin" text link at the bottom of the client login
+   screen (`renderClientLogin` — grep for the existing "SIMULATE MODE" footer
+   caption near `client-hub-app/index.html:428` for the styling to match),
+   navigating to the admin PIN screen (same transition `?admin=1` already
+   triggers — check how that query param is read on load and reuse/trigger
+   the same state change on click rather than a real navigation). `?admin=1`
+   itself must keep working unchanged as a direct deep link.
+2. Recommend a live Publish re-verification is still owed from Slice 7 (not
+   blocking, just not yet done): logged in via the real PIN, confirm
+   `/hub/publish` succeeds with only the session cookie now that the
+   `admin:true` bearer option is gone. Same local-CORS-origin dance as
+   Slices 5/6 (SSH-edit NAS `docker-compose.yml` to allow the local dev
+   origin, redeploy, test, revert to the production value) if testing off a
+   local static server.
+3. Before relying on the tunnel in later slices, verify
    `https://hub-api.lsccreative.studio/health` from **off** the home LAN on
    an actual cellular connection (only verified from a network path that may
-   still be LAN-adjacent so far) — this is formally Slice 11's job but is
-   cheap to spot-check earlier if convenient.
-6. Redeploy after editing `nas/client-hub-api/`:
+   still be LAN-adjacent so far) — this is formally the end-to-end
+   verification slice's job (currently Slice 12, per the latest buildplan.md
+   renumbering) but is cheap to spot-check earlier if convenient.
+4. Redeploy after editing `nas/client-hub-api/`:
    `COPYFILE_DISABLE=1 tar czf - --exclude node_modules --exclude data . | ssh lsc-nas 'tar xzf - -C /volume4/client-hub-api/app'`
    then `ssh lsc-nas 'cd /volume4/client-hub-api/app && docker compose up -d --build'`.
    **`scp`/`sftp` don't work on this NAS — always pipe through `ssh … 'cat > …'`

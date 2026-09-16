@@ -69,21 +69,21 @@ format — keep both in sync if either changes).
       constants ([client-hub-app/index.html:136-137](client-hub-app/index.html:136))
       from the shipped file entirely. | Model: Claude Code | Effort: Medium
 
-- [ ] Slice 7 **[WEB]**: Remove `renderAdminKeyBar`,
+- [x] Slice 7 **[WEB]**: Remove `renderAdminKeyBar`,
       `ADMIN_KEY_SS`/`adminKey()`, and the `admin:true` bearer-header
       wiring in `hubFetch`
       ([client-hub-app/index.html:652-658](client-hub-app/index.html:652))
       — the session cookie from Slice 6 now carries all admin auth. | Model:
       Claude Code | Effort: Low
 
-- [ ] Slice 8 **[WEB]**: Add a small low-emphasis "Admin" text link at the
+- [x] Slice 8 **[WEB]**: Add a small low-emphasis "Admin" text link at the
       bottom of the client login screen, styled like the existing
       "SIMULATE MODE" footer caption
       ([client-hub-app/index.html:428](client-hub-app/index.html:428)),
       navigating to the admin PIN screen. `?admin=1` keeps working as a
       direct deep link. | Model: Claude Code | Effort: Low
 
-- [ ] Slice 9 **[WEB]**: Add an optional "Backup link (Google Drive)"
+- [x] Slice 9 **[WEB]**: Add an optional "Backup link (Google Drive)"
       `.field` to each asset row in the admin editor, alongside the
       existing reviewLink/downloadLink/driveLink inputs, and persist it
       through `buildPublishedRecord`
@@ -95,7 +95,7 @@ format — keep both in sync if either changes).
 
 ## UI/UX Adjustments
 
-- [ ] Slice 10 **[WEB]**: PIN/code entry — replace the tap-only numeric
+- [x] Slice 10 **[WEB]**: PIN/code entry — replace the tap-only numeric
       keypad with a real text input, on both the admin PIN screen
       (`renderLock`/`pressKey`, [client-hub-app/index.html:406](client-hub-app/index.html:406))
       and the client login screen (`renderClientLogin`/`pressClientKey`,
@@ -150,7 +150,7 @@ format — keep both in sync if either changes).
 
 ## Responsive & Polish
 
-- [ ] Slice 11 **[WEB]**: Responsive pass — confirm the new login link,
+- [x] Slice 11 **[WEB]**: Responsive pass — confirm the new login link,
       PIN/code text input + checking/error states, fallback card, and
       editor field all work at mobile widths using existing responsive
       components only; any new rules go in the existing

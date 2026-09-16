@@ -27,12 +27,6 @@
   ::selection{ background:var(--lsc-terra); color:#fff; }
 
   /* ---- PIN LOCK ---- */
-  .pin-dot{
-    width:16px;height:16px;border-radius:50%;
-    border:1.5px solid var(--lsc-mid); transition:all .15s ease;
-  }
-  .pin-dot.filled{ background:var(--lsc-sage); border-color:var(--lsc-sage); }
-  .pin-dot.error{ background:var(--lsc-red); border-color:var(--lsc-red); }
   .shake{ animation:shakeAnim .4s ease; }
   @keyframes shakeAnim{
     10%,90%{transform:translateX(-2px)}
@@ -40,12 +34,6 @@
     30%,50%,70%{transform:translateX(-8px)}
     40%,60%{transform:translateX(8px)}
   }
-  .pin-key{
-    width:64px;height:64px;border-radius:50%;
-    background:var(--lsc-surface); border:1px solid var(--lsc-rule);
-    transition:all .15s ease; font-size:1.25rem;
-  }
-  .pin-key:active{ background:var(--lsc-terra); border-color:var(--lsc-terra); transform:scale(.95); }
 
   /* ---- badges ---- */
   .badge-reviewing{ background:rgba(217,164,65,.15); color:var(--lsc-amber); border:1px solid rgba(217,164,65,.35);}
@@ -80,6 +68,13 @@
 
   ::-webkit-scrollbar{ width:8px; height:8px; }
   ::-webkit-scrollbar-thumb{ background:var(--lsc-surface-lt); border-radius:4px; }
+
+  /* Desktop-only: pin the "back to site" link to the top-left corner of
+     login screens instead of stacking it inline above the form. Mobile
+     (<=992px) keeps the original inline/centered placement untouched. */
+  @media (min-width: 993px){
+    .back-link{ position:fixed; top:32px; left:32px; margin-bottom:0; }
+  }
 </style>
 </head>
 <body>
@@ -141,14 +136,12 @@ const nowStr = () => new Date().toLocaleString('en-AU', { day:'2-digit', month:'
 const isValidUrl = (v) => /^https:\/\/.+/i.test((v||'').trim());
 
 /* ---------------- Sprint C: accounts / persistence layer ---------------- */
-const ADMIN_KEY_SS    = 'lsc_hub_admin_key';    // admin bearer (live only), set once after PIN
 const CLIENT_TOKEN_SS = 'lsc_hub_client_token'; // client session token from /hub/auth
 const REC_PREFIX      = 'lsc_hub_record_';       // SIMULATE published safe record store
 const PRIV_PREFIX     = 'lsc_hub_private_';      // SIMULATE private auth record store
 
 const gen4     = () => String(Math.floor(1000 + Math.random()*9000));      // 4-digit client code
 const genToken = () => (uid()+uid()+uid()+uid()).slice(0,24);              // invite / session token
-const adminKey = () => sessionStorage.getItem(ADMIN_KEY_SS) || '';
 
 async function sha256Hex(str){
   const data = new TextEncoder().encode(String(str));
@@ -158,29 +151,26 @@ async function sha256Hex(str){
 
 // Authed fetch to the NAS API (live only). `credentials:'include'` sends the
 // HttpOnly hub_admin_session cookie cross-origin once /hub/admin-auth has set
-// one (Slice 6); `admin:true`'s bearer header is Slice 3-era and still wired
-// here until Slice 7 removes it.
+// one (Slice 6) — that cookie is the only admin auth mechanism now.
 async function hubFetch(path, opts={}){
   const headers = Object.assign({ 'Content-Type':'application/json' }, opts.headers||{});
-  if(opts.admin) headers['Authorization'] = 'Bearer ' + adminKey();
   const res = await fetch(HUB_CONFIG.edgeBase + path, { ...opts, headers, credentials:'include' });
   if(!res.ok){
     const err = new Error(path + ' → ' + res.status);
-    err.status = res.status;              // callers branch on 401 (rejected admin key)
+    err.status = res.status;              // callers branch on 401 (expired/missing session)
     throw err;
   }
   return res.status === 204 ? null : res.json();
 }
 
-/* A rejected admin key is the most common live-mode failure and the least obvious
-   from a generic error. Name it, and clear the bad key so the amber re-entry bar
-   comes straight back instead of leaving the admin stuck retrying. */
+/* A 401 here means the admin session cookie is missing or expired — send the
+   admin back to the PIN screen rather than leaving them stuck retrying. */
 function reportAdminError(e, what){
   console.error(what + ' failed:', e);
   if(e && e.status === 401){
-    sessionStorage.removeItem(ADMIN_KEY_SS);
-    toast('⚠ Admin key rejected — re-enter it in the bar above.');
-    render();   // callers may have re-rendered before this cleared — bring the bar back now
+    sessionStorage.removeItem(AUTH_KEY);
+    toast('⚠ Admin session expired — please sign in again.');
+    setState({ authed:false, pinInput:'', screen:'tracker' });
     return;
   }
   toast('⚠ ' + what + ' failed — see console.');
@@ -212,7 +202,7 @@ const hubApi = {
     // Edge Script build a token→project index for ?invite= onboarding.
     const priv     = { projectId:p.id, clientEmail:(p.clientEmail||''), codeHash, delivered:!!p.delivered, inviteToken:(p.inviteToken||'') };
     if(HUB_CONFIG.mode === 'live'){
-      await hubFetch('/hub/publish', { method:'POST', admin:true, body: JSON.stringify({ record, priv }) });
+      await hubFetch('/hub/publish', { method:'POST', body: JSON.stringify({ record, priv }) });
     } else {
       localStorage.setItem(REC_PREFIX + p.id, JSON.stringify(record));
       localStorage.setItem(PRIV_PREFIX + p.id, JSON.stringify(priv));
@@ -340,6 +330,7 @@ let state = {
   revisionOpen: false,
   revisionDraft: '',
   pausedAt: null,
+  videoFailed: false,     // true after the asset <video> fires an error — shows the Drive fallback card
   selectedPhotoIdx: null,
   toast: null,
   menuOpenId: null,
@@ -404,41 +395,25 @@ function setState(patch){ Object.assign(state, patch); render(); }
 
 /* ================= LOCK SCREEN ================= */
 function renderLock(){
-  const dots = [0,1,2,3].map(i => {
-    let cls = 'pin-dot';
-    if(state.pinError) cls += ' filled error';
-    else if(i < state.pinInput.length) cls += ' filled';
-    return `<div class="${cls}"></div>`;
-  }).join('');
-
-  const keys = ['1','2','3','4','5','6','7','8','9','','0','del'];
-  const keyHtml = keys.map(k => {
-    if(k === '') return `<div></div>`;
-    if(k === 'del') return `<button data-key="del" ${state.pinChecking?'disabled':''} class="pin-key mono flex items-center justify-center text-[var(--lsc-mid)] ${state.pinChecking?'opacity-40':''}">⌫</button>`;
-    return `<button data-key="${k}" ${state.pinChecking?'disabled':''} class="pin-key mono flex items-center justify-center ${state.pinChecking?'opacity-40':''}">${k}</button>`;
-  }).join('');
-
   return `
   <div class="min-h-screen flex flex-col items-center justify-center px-6">
-    <a href="${HUB_CONFIG.mainSiteUrl}" class="mono text-xs text-[var(--lsc-mid)] mb-10 hover:text-[var(--lsc-white)] transition">← BACK TO SITE</a>
+    <a href="${HUB_CONFIG.mainSiteUrl}" class="back-link mono text-xs text-[var(--lsc-mid)] mb-10 hover:text-[var(--lsc-white)] transition">← BACK TO SITE</a>
     <div class="mono text-xs text-[var(--lsc-mid)] mb-3 tracking-[0.3em]">CLIENT HUB · ADMIN ACCESS</div>
     <div class="display text-2xl mb-8">Enter PIN</div>
     <div class="w-full max-w-xs mb-6">
       <input id="admin-login-email" class="field text-center" type="email" placeholder="you@company.com" value="${escapeAttr(state.adminEmailInput)}" autocomplete="email" ${state.pinChecking?'disabled':''}>
     </div>
-    <div id="pin-dots" class="flex gap-4 mb-6">${dots}</div>
+    <div class="w-full max-w-xs mb-6">
+      <input id="pin-input" class="field text-center mono text-lg tracking-[0.4em] ${state.pinError?'invalid':''}" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="current-password" placeholder="••••" value="${escapeAttr(state.pinInput)}" ${state.pinChecking?'disabled':''}>
+    </div>
     ${state.adminLoginMsg ? `<div class="mono text-[11px] text-[var(--lsc-mid)] mb-6 text-center max-w-xs leading-relaxed">${escapeHtml(state.adminLoginMsg)}</div>` : ''}
-    <div class="grid grid-cols-3 gap-4">${keyHtml}</div>
-    <div class="mono text-[10px] text-[var(--lsc-mid)] mt-10 opacity-50">${HUB_CONFIG.mode === 'live' ? 'SECURE ADMIN ACCESS' : 'SIMULATE MODE'}</div>
+    <div class="mono text-[10px] text-[var(--lsc-mid)] mt-4 opacity-50">${HUB_CONFIG.mode === 'live' ? 'SECURE ADMIN ACCESS' : 'SIMULATE MODE'}</div>
   </div>`;
 }
 
-async function pressKey(k){
+async function submitPin(){
   if(state.pinError || state.pinChecking) return;
-  if(k === 'del'){ state.pinInput = state.pinInput.slice(0,-1); render(); return; }
-  if(state.pinInput.length >= 4) return;
-  state.pinInput += k;
-  if(state.pinInput.length !== 4){ render(); return; }
+  if(state.pinInput.length !== 4) return;
 
   state.pinChecking = true; state.adminLoginMsg = null; render();
   const email = (state.adminEmailInput||'').trim();
@@ -453,9 +428,11 @@ async function pressKey(k){
     if(e && e.status === 401){
       state.pinChecking = false; state.pinError = true;
       render();
-      const dotsEl = document.getElementById('pin-dots');
-      if(dotsEl) dotsEl.classList.add('shake');
-      setTimeout(() => { state.pinError=false; state.pinInput=''; render(); }, 500);
+      const pinEl = document.getElementById('pin-input');
+      if(pinEl) pinEl.classList.add('shake');
+      setTimeout(() => { state.pinError=false; state.pinInput=''; render();
+        const el = document.getElementById('pin-input'); if(el) el.focus();
+      }, 500);
     } else {
       // No response at all (network/NAS down) — don't imply "wrong PIN" with a shake.
       state.pinChecking = false; state.pinInput = '';
@@ -470,55 +447,37 @@ async function pressKey(k){
    (POST /hub/auth → token → fetch published record) wires in Sprint C. */
 function renderClientLogin(){
   const invite = state.entry === 'invite';
-  const dots = [0,1,2,3].map(i => {
-    let cls = 'pin-dot';
-    if(state.clientLoginError) cls += ' filled error';
-    else if(i < state.clientCodeInput.length) cls += ' filled';
-    return `<div class="${cls}"></div>`;
-  }).join('');
-
-  const keys = ['1','2','3','4','5','6','7','8','9','','0','del'];
-  const keyHtml = keys.map(k => {
-    if(k === '') return `<div></div>`;
-    if(k === 'del') return `<button data-ckey="del" class="pin-key mono flex items-center justify-center text-[var(--lsc-mid)]">⌫</button>`;
-    return `<button data-ckey="${k}" class="pin-key mono flex items-center justify-center">${k}</button>`;
-  }).join('');
 
   return `
   <div class="min-h-screen flex flex-col items-center justify-center px-6 py-16">
-    <a href="${HUB_CONFIG.mainSiteUrl}" class="mono text-xs text-[var(--lsc-mid)] mb-10 hover:text-[var(--lsc-white)] transition">← BACK TO SITE</a>
-    <div class="mono text-xs text-[var(--lsc-mid)] mb-3 tracking-[0.3em]">CLIENT HUB · CLIENT ACCESS</div>
-    <div class="display text-2xl mb-2 text-center">${invite ? 'Welcome — activate your access' : 'Sign in to your delivery'}</div>
-    <div class="mono text-xs text-[var(--lsc-mid)] mb-8 text-center max-w-xs leading-relaxed">${invite ? 'Enter your email and the 4-digit code from your invitation.' : 'Enter your email and the 4-digit code the studio sent you.'}</div>
+    <a href="${HUB_CONFIG.mainSiteUrl}" class="back-link mono text-xs text-[var(--lsc-mid)] mb-10 hover:text-[var(--lsc-white)] transition">← BACK TO SITE</a>
+    <div class="display text-2xl mb-2 text-center">${invite ? 'Welcome — activate your access' : 'Client Portal<br>Sign In'}</div>
+    <div class="mono text-xs text-[var(--lsc-mid)] mb-8 text-center max-w-xs leading-relaxed">${invite ? 'Enter your email and the 4-digit code from your invitation.' : 'Enter your email and the 4-digit code'}</div>
 
     <div class="w-full max-w-xs mb-8">
-      <input id="client-login-email" class="field text-center" type="email" placeholder="you@company.com" value="${escapeAttr(state.clientLoginEmail)}" autocomplete="email">
+      <input id="client-login-email" class="field text-center" type="email" placeholder="EMAIL" value="${escapeAttr(state.clientLoginEmail)}" autocomplete="email">
     </div>
 
-    <div class="mono text-[10px] text-[var(--lsc-mid)] mb-3 tracking-[0.25em]">4-DIGIT CODE</div>
-    <div id="client-code-dots" class="flex gap-4 mb-8">${dots}</div>
-    <div class="grid grid-cols-3 gap-4">${keyHtml}</div>
+    <div class="mono text-[10px] text-[var(--lsc-mid)] mb-3 tracking-[0.25em]">4 DIGIT PIN</div>
+    <div class="w-full max-w-xs mb-8">
+      <input id="client-code-input" class="field text-center mono text-lg tracking-[0.4em] ${state.clientLoginError?'invalid':''}" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••" value="${escapeAttr(state.clientCodeInput)}">
+    </div>
 
-    ${invite && state.inviteHint && state.inviteHint.code ? `<div class="mono text-[11px] text-[var(--lsc-sage)] mt-8 text-center">Your access code is <span class="text-[var(--lsc-white)] tracking-[0.3em]">${escapeHtml(state.inviteHint.code)}</span> — enter it above to continue.</div>` : ''}
-    ${state.clientLoginMsg ? `<div class="mono text-[11px] text-[var(--lsc-sage)] mt-8 text-center max-w-xs leading-relaxed">${escapeHtml(state.clientLoginMsg)}</div>` : ''}
-    <button id="client-forgot" class="mono text-[11px] text-[var(--lsc-mid)] hover:text-[var(--lsc-white)] mt-8 underline underline-offset-4 transition">Forgot your code?</button>
+    ${invite && state.inviteHint && state.inviteHint.code ? `<div class="mono text-[11px] text-[var(--lsc-sage)] mt-2 text-center">Your access code is <span class="text-[var(--lsc-white)] tracking-[0.3em]">${escapeHtml(state.inviteHint.code)}</span> — enter it above to continue.</div>` : ''}
+    ${state.clientLoginMsg ? `<div class="mono text-[11px] text-[var(--lsc-sage)] mt-2 text-center max-w-xs leading-relaxed">${escapeHtml(state.clientLoginMsg)}</div>` : ''}
+    <button id="client-forgot" class="mono text-[11px] text-[var(--lsc-terra)] hover:text-[var(--lsc-terra-dk)] mt-8 underline underline-offset-4 transition">Forgot your code?</button>
     <div class="mono text-[10px] text-[var(--lsc-mid)] mt-6 opacity-50">${HUB_CONFIG.mode === 'live' ? 'SECURE CLIENT ACCESS' : 'SIMULATE MODE · localStorage accounts'}</div>
+    <button id="client-admin-link" class="mono text-[10px] text-[var(--lsc-mid)] mt-3 opacity-50 hover:opacity-100 transition">Admin</button>
   </div>`;
-}
-
-function pressClientKey(k){
-  if(state.clientLoginError) return;
-  if(k === 'del'){ state.clientCodeInput = state.clientCodeInput.slice(0,-1); render(); return; }
-  if(state.clientCodeInput.length >= 4) return;
-  state.clientCodeInput += k;
-  if(state.clientCodeInput.length === 4){ submitClientLogin(); }
-  else { render(); }
 }
 
 function failClientLogin(msg){
   state.clientLoginError = true; render();
-  const d = document.getElementById('client-code-dots'); if(d) d.classList.add('shake');
-  setTimeout(() => setState({ clientLoginError:false, clientCodeInput:'', clientLoginMsg: msg }), 500);
+  const el = document.getElementById('client-code-input'); if(el) el.classList.add('shake');
+  setTimeout(() => {
+    setState({ clientLoginError:false, clientCodeInput:'', clientLoginMsg: msg });
+    const codeEl = document.getElementById('client-code-input'); if(codeEl) codeEl.focus();
+  }, 500);
 }
 
 async function submitClientLogin(){
@@ -567,12 +526,21 @@ async function clientForgotCode(){
 function bindClientLogin(){
   const emailEl = document.getElementById('client-login-email');
   if(emailEl) emailEl.addEventListener('input', () => { state.clientLoginEmail = emailEl.value; });
-  document.querySelectorAll('[data-ckey]').forEach(btn => { btn.onclick = () => pressClientKey(btn.dataset.ckey); });
-  // Re-bind idempotently so re-renders never stack duplicate keydown listeners.
-  document.removeEventListener('keydown', clientLoginKeyHandler);
-  document.addEventListener('keydown', clientLoginKeyHandler);
+  const codeEl = document.getElementById('client-code-input');
+  if(codeEl){
+    codeEl.addEventListener('input', () => {
+      state.clientCodeInput = codeEl.value.replace(/\D/g,'').slice(0,4);
+      codeEl.value = state.clientCodeInput; // reflect stripped/capped value without a render()
+      if(state.clientCodeInput.length === 4) submitClientLogin();
+    });
+    codeEl.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter' && state.clientCodeInput.length === 4) submitClientLogin();
+    });
+  }
   const forgot = document.getElementById('client-forgot');
   if(forgot) forgot.onclick = clientForgotCode;
+  const adminLink = document.getElementById('client-admin-link');
+  if(adminLink) adminLink.onclick = () => { state.entry = 'admin'; render(); };
 
   // Invite onboarding: resolve the ?invite= token once to prefill email + reveal the code.
   if(state.entry === 'invite' && state.inviteToken && !state.inviteHint){
@@ -591,14 +559,6 @@ function bindClientLogin(){
       render();
     }).catch(e => console.error('invite resolve failed:', e));
   }
-}
-
-function clientLoginKeyHandler(e){
-  if(state.entry !== 'client' && state.entry !== 'invite'){ document.removeEventListener('keydown', clientLoginKeyHandler); return; }
-  const tag = (e.target.tagName || '').toUpperCase();
-  if(tag === 'INPUT' || tag === 'TEXTAREA') return; // don't hijack typing in the email field
-  if(/^[0-9]$/.test(e.key)) pressClientKey(e.key);
-  if(e.key === 'Backspace') pressClientKey('del');
 }
 
 /* ================= ADMIN: TRACKER ================= */
@@ -645,7 +605,6 @@ function renderTracker(){
   return `
   <div class="min-h-screen">
     ${renderAdminHeader('tracker')}
-    ${(HUB_CONFIG.mode === 'live' && !adminKey()) ? renderAdminKeyBar() : ''}
     <div class="max-w-6xl mx-auto px-6 py-10">
       <div class="flex items-center justify-between mb-8">
         <div>
@@ -659,16 +618,6 @@ function renderTracker(){
     ${state.confirmDeleteId ? renderDeleteConfirm() : ''}
     ${state.confirmResetId ? renderResetConfirm() : ''}
     ${state.inviteResult ? renderInviteResult() : ''}
-  </div>`;
-}
-
-// Live-only: admin pastes ADMIN_API_KEY once after PIN; held in sessionStorage, sent as Bearer.
-function renderAdminKeyBar(){
-  return `
-  <div class="bg-[var(--lsc-amber)] text-[var(--lsc-black)] px-6 py-2 flex items-center gap-3 mono text-xs">
-    <span class="whitespace-nowrap">LIVE MODE — paste ADMIN_API_KEY to enable admin writes:</span>
-    <input id="admin-key-input" type="password" class="flex-1 bg-black/10 rounded px-2 py-1 text-[var(--lsc-black)]" placeholder="ADMIN_API_KEY">
-    <button id="admin-key-save" class="bg-[var(--lsc-black)] text-[var(--lsc-white)] rounded px-3 py-1">SAVE</button>
   </div>`;
 }
 
@@ -995,22 +944,20 @@ function renderClientAsset(){
 }
 
 function renderVideoCanvas(a){
-  const pill = state.pausedAt ? `<div class="timestamp-pill mono text-[10px] bg-[var(--lsc-terra)] text-white px-2 py-1 rounded-full inline-block mb-2">⏱️ ${state.pausedAt}</div>` : '';
+  if(state.videoFailed){
+    const hasBackup = a.driveLink && isValidUrl(a.driveLink);
+    return `
+    <div class="card rounded-xl p-10 text-center mb-2">
+      <div class="mono text-xs text-[var(--lsc-mid)] mb-4">This video couldn't be loaded.</div>
+      ${hasBackup ? `<a href="${escapeAttr(a.driveLink)}" target="_blank" rel="noopener" class="btn-sage rounded-lg px-5 py-3 mono text-xs inline-block">VIEW ON GOOGLE DRIVE</a>` : ''}
+    </div>`;
+  }
+
   return `
-    <div class="aspect-video bg-[var(--lsc-surface)] rounded-xl flex items-center justify-center mb-2 relative overflow-hidden">
-      <div class="text-center">
-        <div class="text-5xl mb-3">▶</div>
-        <div class="mono text-xs text-[var(--lsc-mid)]">BUNNY STREAM — TOKEN-AUTHENTICATED PREVIEW</div>
-      </div>
-      <div class="absolute bottom-0 left-0 right-0 h-1 bg-[var(--lsc-black)]">
-        <div id="scrub" class="h-full bg-[var(--lsc-terra)]" style="width:32%"></div>
-      </div>
-      <div class="absolute bottom-3 right-4 flex gap-2">
-        <button id="video-play" class="mono text-[10px] px-2 py-1 rounded btn-ghost">▶ PLAY</button>
-        <button id="video-pause" class="mono text-[10px] px-2 py-1 rounded btn-ghost">⏸ PAUSE (01:24)</button>
-      </div>
+    <div class="aspect-video bg-[var(--lsc-surface)] rounded-xl overflow-hidden mb-2">
+      <video id="asset-video" class="w-full h-full" controls preload="metadata" src="${escapeAttr(a.reviewLink)}"></video>
     </div>
-    ${pill}
+    <div id="pause-pill" class="timestamp-pill mono text-[10px] bg-[var(--lsc-terra)] text-white px-2 py-1 rounded-full inline-block mb-2" ${state.pausedAt ? '' : 'style="display:none"'}>⏱️ ${state.pausedAt || ''}</div>
   `;
 }
 
@@ -1135,19 +1082,17 @@ function render(){
 function bindLock(){
   const emailEl = document.getElementById('admin-login-email');
   if(emailEl) emailEl.addEventListener('input', () => { state.adminEmailInput = emailEl.value; });
-  document.querySelectorAll('[data-key]').forEach(btn => {
-    btn.addEventListener('click', () => pressKey(btn.dataset.key));
-  });
-  // Re-bind idempotently so re-renders never stack duplicate keydown listeners.
-  document.removeEventListener('keydown', lockKeyHandler);
-  document.addEventListener('keydown', lockKeyHandler);
-}
-function lockKeyHandler(e){
-  if(state.authed) { document.removeEventListener('keydown', lockKeyHandler); return; }
-  const tag = (e.target.tagName || '').toUpperCase();
-  if(tag === 'INPUT' || tag === 'TEXTAREA') return; // don't hijack typing in the email field
-  if(/^[0-9]$/.test(e.key)) pressKey(e.key);
-  if(e.key === 'Backspace') pressKey('del');
+  const pinEl = document.getElementById('pin-input');
+  if(pinEl){
+    pinEl.addEventListener('input', () => {
+      state.pinInput = pinEl.value.replace(/\D/g,'').slice(0,4);
+      pinEl.value = state.pinInput; // reflect stripped/capped value without a render()
+      if(state.pinInput.length === 4) submitPin();
+    });
+    pinEl.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter' && state.pinInput.length === 4) submitPin();
+    });
+  }
 }
 
 function bindTracker(){
@@ -1210,11 +1155,6 @@ function bindTracker(){
   const closeInvite = document.getElementById('close-invite');
   if(closeInvite) closeInvite.onclick = () => setState({ inviteResult:null });
 
-  const keySave = document.getElementById('admin-key-save');
-  if(keySave) keySave.onclick = () => {
-    const v = (document.getElementById('admin-key-input')?.value || '').trim();
-    if(v){ sessionStorage.setItem(ADMIN_KEY_SS, v); toast('Admin key saved for this session.'); render(); }
-  };
 }
 
 /* ---- Sprint C admin actions ---- */
@@ -1344,23 +1284,38 @@ function bindEditor(){
 function bindClientLanding(){
   bindClientChrome();
   document.querySelectorAll('[data-open-asset]').forEach(btn => {
-    btn.onclick = () => setState({ clientScreen:'asset', activeAssetId: btn.dataset.openAsset, revisionOpen:false, selectedPhotoIdx:null, pausedAt:null, approveModalAssetId:null });
+    btn.onclick = () => setState({ clientScreen:'asset', activeAssetId: btn.dataset.openAsset, revisionOpen:false, selectedPhotoIdx:null, pausedAt:null, videoFailed:false, approveModalAssetId:null });
   });
 }
 
 function bindClientAsset(){
   bindClientChrome();
   document.querySelectorAll('[data-switch-asset]').forEach(btn => {
-    btn.onclick = () => setState({ activeAssetId: btn.dataset.switchAsset, revisionOpen:false, selectedPhotoIdx:null, pausedAt:null, approveModalAssetId:null });
+    btn.onclick = () => setState({ activeAssetId: btn.dataset.switchAsset, revisionOpen:false, selectedPhotoIdx:null, pausedAt:null, videoFailed:false, approveModalAssetId:null });
   });
 
   const p = getViewProject();
   const a = p.assets.find(x => x.id === state.activeAssetId);
 
-  const playBtn = document.getElementById('video-play');
-  const pauseBtn = document.getElementById('video-pause');
-  if(playBtn) playBtn.onclick = () => setState({ pausedAt:null });
-  if(pauseBtn) pauseBtn.onclick = () => setState({ pausedAt:'01:24' });
+  const video = document.getElementById('asset-video');
+  if(video){
+    // Mutate state.pausedAt directly (no render()) — a full re-render would replace the
+    // <video> element wholesale via root.innerHTML and restart playback from 0.
+    const pausePill = document.getElementById('pause-pill');
+    video.onerror = () => setState({ videoFailed:true });
+    video.onplay = () => {
+      state.pausedAt = null;
+      if(pausePill) pausePill.style.display = 'none';
+    };
+    video.onpause = () => {
+      if(video.ended) return;
+      const t = Math.floor(video.currentTime);
+      const mm = String(Math.floor(t/60)).padStart(2,'0');
+      const ss = String(t%60).padStart(2,'0');
+      state.pausedAt = `${mm}:${ss}`;
+      if(pausePill){ pausePill.textContent = `⏱️ ${state.pausedAt}`; pausePill.style.display = ''; }
+    };
+  }
 
   document.querySelectorAll('[data-photo]').forEach(el => {
     el.onclick = () => { const idx = Number(el.dataset.photo); setState({ selectedPhotoIdx: idx }); const sel = document.getElementById('photo-select'); if(sel) sel.value = idx; };
