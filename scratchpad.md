@@ -5,13 +5,139 @@
 
 ## Current Focus
 
-Slices 1-11 done. Next up is **Slice 12 [WEB + NAS]** — end-to-end
-verification (admin login from off-LAN, real NAS video watch/download, forced
-video-load-failure → Drive fallback check). Note: buildplan.md was
-renumbered since Slice 7 was written (a Slice 10 for PIN/code text-input
-replacement was inserted ahead of the old responsive/polish slices) — always
-re-read buildplan.md fresh rather than trusting slice numbers cached in this
-file.
+Slices 1-12 and the new 14/15 are done (Slice 12 pulled in 14/15 as
+unplanned but user-requested follow-on scope — see below). **Slice 13
+[WEB]** is next and last: drop the now-dead `HUB_CONFIG` Bunny fields,
+decide with the user whether `client-hub-docs/hub-edge-script.js` is kept
+for reference or deleted, and confirm the Bunny plan covering the client
+hub can be downgraded/cancelled. This is a decision-requiring slice (ask
+the user, don't just delete) — do that first before touching code. Note:
+buildplan.md was renumbered since Slice 7 was written (a Slice 10 for
+PIN/code text-input replacement was inserted ahead of the old
+responsive/polish slices) — always re-read buildplan.md fresh rather than
+trusting slice numbers cached in this file.
+
+## Slice 14/15 Result (added 2026-09-16, not in the original 13-slice plan)
+
+- **Why these exist**: discovered live during Slice 12 testing. The user's
+  actual admin workflow uses a NAS SMB share-link tool (`ug.link` —
+  transcribed as "urgreenlink" in conversation) with a per-link "allow
+  download" toggle, mirroring the old Bunny Stream setup. Our NAS API had
+  no equivalent (one token per file, no download-vs-review distinction,
+  and registering a token was curl-only, no UI). User asked for both fixed
+  after seeing the gap firsthand.
+- **NAS** ([nas/client-hub-api/src/db.js](nas/client-hub-api/src/db.js)):
+  `deliverable_tokens` gets a `downloadable` INTEGER column; uniqueness
+  moved from `relative_path` alone to `(relative_path, downloadable)` so
+  the same file can hold two independent tokens (review + download).
+  **In-place migration**, not a fresh table — a NAS already on Slice 4's
+  schema gets `ALTER`+rebuild-in-place (rename old table → recreate with
+  new schema → copy rows with `downloadable=0` → drop old), preserving any
+  already-minted token. Verified this specific migration path against a
+  synthetic copy of the *old* schema with the `sqlite3` CLI before ever
+  running it against the live NAS DB (which held one real row — the Test
+  Project's token from Slice 12 testing). Schema bumped to `4`.
+  [nas/client-hub-api/src/deliverables.js](nas/client-hub-api/src/deliverables.js)'s
+  `streamFile` now takes a `downloadable` bool and sets
+  `Content-Disposition: attachment; filename="…"` vs `inline` accordingly
+  — **not** a new access-control boundary, same token-is-the-gate model as
+  before, this only changes what the browser does with a response it was
+  always allowed to fetch. `hubRoutes.js`'s `/hub/deliverable-url` now
+  takes `{ path, downloadable }`; `/hub/files/:token` looks up the flag per
+  token.
+  - **Deployed with a real backup first**: copied `client-hub.db` +
+    `-wal`/`-shm` to `*.bak-slice14` on the NAS *before* rebuilding/
+    restarting the container (Slice 3/4-era migrations before this had no
+    equivalent step — flagging this as the pattern to repeat for any future
+    schema change that alters an existing table rather than only adding
+    new ones).
+  - **Verified live, post-migration**: `docker exec`'d into the running
+    container to read `deliverable_tokens` directly — the pre-existing
+    Slice-12 token survived with `downloadable=0`, `PRAGMA table_info`
+    confirms the new column. `/health` reports `schemaVersion: "4"`.
+    `curl -I` against both the pre-existing review token and a freshly
+    minted download token confirmed `content-disposition: inline` vs
+    `attachment; filename="Test Media.mp4"` respectively, straight from
+    the live tunnel.
+- **WEB** ([client-hub-app/index.html](client-hub-app/index.html)):
+  - `hubApi.deliverableUrl(path, downloadable)` — thin wrapper over
+    `POST /hub/deliverable-url`; throws in SIMULATE mode (NAS-only
+    feature, no local equivalent, matches the design brief's live/simulate
+    split elsewhere).
+  - Editor: each video asset's reviewLink/downloadLink field now has a
+    "NAS LINK" button beside it (`data-gen-link="review"`/`"download"`).
+    Click → `prompt()` for the NAS-relative path → calls
+    `hubApi.deliverableUrl` → fills the field → `render()`. Also fixed the
+    stale "Bunny Stream"/"Bunny Storage" placeholder copy on those two
+    fields (misleading since the Slice 3-7 NAS migration; a Bunny URL
+    still *works* if pasted, it's just no longer the primary path).
+  - Review player (`renderVideoCanvas`'s `<video>`) gets
+    `controlsList="nodownload"`, `disablePictureInPicture`, and
+    `oncontextmenu="return false"` — discourages casual saving of the
+    review copy. **Not real DRM** — anyone with the URL can still fetch it
+    directly; this only hides the browser's own download affordances, same
+    trust level the design brief already commits to for video links
+    generally.
+  - `renderClientFinal`'s "DOWNLOAD CONTENT"/"GOOGLE DRIVE BACKUP" buttons
+    were **dead SIMULATE-era stubs** (no href, no click handler, plain
+    `<button>`) — found while implementing this slice, wired them to real
+    `<a href>` tags pointing at `a.downloadLink`/`a.driveLink` respectively
+    (gated by `isValidUrl`, same pattern as the Slice 9 fallback card),
+    with a visibly-disabled fallback state when the link isn't set. This
+    wasn't explicitly asked for but was necessary — a "downloadable" token
+    had no consumer anywhere in the client UI without it.
+  - **Verified**: locally with a mocked `hubApi.deliverableUrl` (confirmed
+    both buttons pass the correct `downloadable` bool and fill the right
+    field, at both desktop and 375px mobile widths — button+field pair
+    doesn't overflow), then **live against the real NAS** — clicked the
+    real button, hit the sandbox's `prompt()`-not-supported wall (a
+    testing-harness limitation only; `prompt()` works in a real top-level
+    browser tab, confirmed this is not an app bug), so drove
+    `hubApi.deliverableUrl` directly via console instead for the live
+    check — got back a real second token for the same file, `curl -I`
+    confirmed correct disposition headers as above, saved the project
+    successfully. **Not verified**: the actual native `prompt()` dialog
+    appearing/being usable in a real desktop browser — should be fine
+    (standard top-level-page behavior) but flag to the user to confirm
+    once by hand if they want it double-checked.
+  - Did not build a nicer inline-input replacement for `prompt()` — kept
+    scope tight per what was asked; worth revisiting if the native dialog
+    proves annoying in practice.
+
+## Slice 12 Result
+
+- **Deployed Slice 10/11 first** — they were sitting uncommitted in the
+  working tree, so the live site still had the old tap-keypad UI. Committed
+  (`6707c9f`) and pushed to trigger Bunny CI/CD before any live testing
+  could reflect the real Slice 10/11 code (GitHub Pages deploy took ~15-20s
+  after the push landed — confirmed via `gh run list` rather than guessing
+  a fixed wait).
+- **Admin login, off-LAN**: logged in live at `https://lsccreative.studio`
+  through the real tunnel + session cookie from this session's own sandboxed
+  browser environment (a genuinely separate network from the user's home
+  LAN — confirmed reachable via `/health` before login too). Real PIN typed
+  by the user directly into the browser panel, never passed through chat.
+- **Real NAS video playback**: user set up a "Test Project" (UPID-2762)
+  using their existing NAS share-link tool (`ug.link`, called "urgreenlink"
+  in conversation) for reviewLink/downloadLink and a real Google Drive
+  video for the backup link. First pass: video failed to load — **expected
+  behavior, not a bug** — `ug.link` share links are HTML pages, and
+  `renderVideoCanvas`'s `<video src>` needs a direct file URL. This
+  actually proved the Slice 9 fallback path live (correct card + working
+  Drive button). To test the actual happy path, registered
+  `Test Folder/Test Media.mp4` via `/hub/deliverable-url` (called directly
+  from the browser's already-authenticated session — no PIN needed a
+  second time) and pasted the resulting `/hub/files/<token>` URL into
+  reviewLink: video loaded, played, and scrubbed to 4:09 instantly
+  (confirms Range-request seeking works over the live tunnel, not just in
+  Slice 4's synthetic test). Per user's request, left this real NAS URL in
+  place on Test Project rather than reverting to the broken `ug.link` one.
+- **Drive fallback stays hidden with no backup link**: not re-verified live
+  this slice — already covered at the code level in Slice 9's testing
+  (`hasBackup` gate on `a.driveLink`), not NAS-connectivity-dependent, so
+  re-testing it live would have proven nothing new.
+- All three Slice 12 checklist items satisfied. See Slice 14/15 above for
+  the follow-on work this testing surfaced.
 
 ## Slice 11 Result
 

@@ -160,7 +160,7 @@ format — keep both in sync if either changes).
       announcements, visible focus state on the Drive fallback button.
       | Model: Claude Code | Effort: Low
 
-- [ ] Slice 12 **[WEB + NAS]**: End-to-end verification — admin logs in
+- [x] Slice 12 **[WEB + NAS]**: End-to-end verification — admin logs in
       live against the NAS from a network outside the house (proves the
       tunnel path, mirrors the marketing-site feature's Slice 11); client
       watches/downloads a NAS-hosted video; force a video load failure and
@@ -199,7 +199,7 @@ toggle did._
       schema to `4`. Redeploy + verify against the live Test Project.
       | Model: Claude Code | Effort: Medium
 
-- [ ] Slice 15 **[WEB]**: Admin editor — add a small "NAS LINK" button next
+- [x] Slice 15 **[WEB]**: Admin editor — add a small "NAS LINK" button next
       to the reviewLink and downloadLink fields on each video asset; click
       prompts for the NAS-relative path, calls `/hub/deliverable-url` with
       `downloadable:false`/`true` respectively, and fills the field with
