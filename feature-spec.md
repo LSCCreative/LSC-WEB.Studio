@@ -5,72 +5,75 @@
 
 ## Feature Name & Goal
 
-Client Hub v2: self-hosted NAS backend. Fix the broken admin login, remove
-the manual `ADMIN_API_KEY` paste step, and migrate `client-hub-app`'s data
-layer + video delivery off Bunny (Storage, Edge Script, Stream) onto the
-user's Ugreen NAS — reusing the Docker/Cloudflare Tunnel pattern already
-proven by the (completed) marketing-site video migration in
-`buildplan.md`'s history.
+Client Hub — replace the final "invoice" screen with a deliverables
+sign-off screen. Today, once a client approves every asset, `renderClientFinal()`
+(`client-hub-app/index.html`) shows a fake invoice-PDF viewer, per-asset
+download rows, and a cosmetic signature canvas that's never persisted.
 
-Full context: [.design/client-hub-nas-backend/DESIGN_BRIEF.md](.design/client-hub-nas-backend/DESIGN_BRIEF.md)
-and [.design/client-hub-nas-backend/TASKS.md](.design/client-hub-nas-backend/TASKS.md).
+Instead: the client should see an agreement ("I confirm I'm happy with the
+final version of this media"), sign it, and only then see the download
+link(s) for whatever's been submitted on that project. On acceptance, the
+admin dashboard/editor should show a green check + "Deliverables Accepted"
+badge with the signed date, on that project.
 
 ### Decisions already made (do not re-litigate without user sign-off)
 
-- **Admin auth**: email + PIN is the entire security boundary. PIN check
-  moves server-side (NAS API) — no more hardcoded PIN/email in shipped JS,
-  no `ADMIN_API_KEY` paste. Server issues a session cookie/token on success.
-- **Admin entry point**: dedicated login screen (the existing `renderLock`
-  PIN screen, reused), reached via a visible low-emphasis link at the
-  bottom of the client login screen — not just the hidden `?admin=1` URL
-  param (which keeps working as a direct link).
-- **Backend**: Node + Express + SQLite in Docker on the NAS, on the same
-  `media_net` network as the existing `lsc-media-server` container, exposed
-  via a new Cloudflare Tunnel public hostname (not raw port-forwarding).
-- **Video**: MP4 progressive download/playback only. No HLS/transcoding for
-  client deliverables (unlike the marketing site's video, which does use
-  HLS).
-- **Video URL scheme**: stable, unguessable per-file URL (matches today's
-  "admin pastes a URL into the asset field" workflow) — not a short-lived
-  signed-URL system. Record/auth data gets real server-side access control;
-  individual video links keep the same trust level as the current Bunny
-  Stream links.
-- **Resilience**: NAS is primary and considered reliable. Per-deliverable
-  optional Google Drive backup link; if the NAS video fails to load client-
-  side, show a fallback card with that link instead of a broken player.
-- **Cutover**: full retirement of Bunny for the client hub once verified —
-  no long-term dual-running, mirrors the marketing site's Slice 12.
+- New persisted field on the project record: `agreement { accepted, signedAt,
+  signerName, signatureDataUrl }`.
+- Download buttons (`DOWNLOAD CONTENT` / `GOOGLE DRIVE BACKUP`) are hidden
+  until `agreement.accepted` is true.
+- Admin sees a green checkmark + "Deliverables Accepted" (+ signed date)
+  badge on the project once accepted — visible on the dashboard/editor, not
+  buried.
+- A UI-design checkpoint slice runs before the new screen is wired into the
+  real approval flow, so the user can review/adjust the look before it's
+  live.
+- Signature capture is a **typed-signature generator** (name input + choice
+  of cursive Google Fonts, live preview), not a hand-drawn canvas — changed
+  from the original canvas approach after Slice 2 review.
+- The signed agreement must persist server-side ("to the database"), not
+  just in the client's local project record, so it's retrievable later —
+  and must carry a legal/audit evidence bundle alongside it: intent-to-sign
+  checkbox text + checked state, UTC timestamp, `navigator.userAgent`, the
+  signer's session/verification token, and their IP address. See
+  `buildplan.md` Slices 5-6.
+- The IP address in that bundle must be captured **server-side** (stamped
+  by the Bunny Edge Script from the real request, not reported by the
+  client) to be trustworthy as evidence — this needs a new `/hub/agreement`
+  -style endpoint, live-mode only, no SIMULATE equivalent (same shape as
+  `hubApi.deliverableUrl`).
+- The evidence bundle contains PII (IP, user-agent) and belongs in the
+  **private** server-side record (same gating as `priv` in
+  `hubApi.publish`), never in `buildPublishedRecord`'s safe public record.
 
-### Current state (Bunny-based, being replaced)
+### Resolved decisions
 
-- `client-hub-app/index.html` — single-file app, `HUB_CONFIG.mode='live'`
-  talks to a Bunny Edge Script via `hubFetch`/`hubApi`.
-- `client-hub-docs/hub-edge-script.js` — the Edge Script: `/hub/publish`,
-  `/hub/auth`, `/hub/sign`, `/hub/notify`, backed by Bunny Storage JSON
-  blobs and a Bunny CDN pull-zone token-auth scheme.
-- Admin auth today: hardcoded `ADMIN_EMAIL`/`PIN` client-side
-  ([client-hub-app/index.html:136-137](client-hub-app/index.html:136)),
-  plus a manually-pasted `ADMIN_API_KEY` bearer token stored in
-  `sessionStorage` after PIN entry.
-- Reference precedent: `nas/media-server/docker-compose.yml` + `Caddyfile`
-  — Caddy container on `media_net`, Cloudflare Tunnel to
-  `media.lsccreative.studio`, already live for the marketing site's video
-  (unrelated to this feature but the infra pattern to follow).
+- Invoice display: dropped entirely from the client-hub final screen, no
+  Billing-tab replacement (user decision, 2026-09-18). Only the fake
+  invoice-reader block inside `renderClientFinal()` was removed — the
+  existing, unrelated `renderInvoicesBlock()` on the landing screen (paid
+  deposit badge / gated final invoice) is untouched and out of scope for
+  this feature.
 
 ## Acceptance Criteria
 
-See the per-task checklist in
-[.design/client-hub-nas-backend/TASKS.md](.design/client-hub-nas-backend/TASKS.md)
-— that file is the authoritative task breakdown; `buildplan.md` mirrors it
-in this repo's own slice format for session-to-session execution tracking.
+- Client who approves all assets lands on the new agreement screen, not the
+  old invoice screen.
+- Download links are inaccessible until the client signs.
+- Signature + acceptance timestamp persist on the project record server-side
+  (not just transient `state` or the client's local storage).
+- The client cannot reach the confirm step without checking the legal
+  intent-to-sign checkbox.
+- The legal evidence bundle (timestamp, IP, user-agent, verification token,
+  consent text) is captured and stored alongside the agreement, with the IP
+  address stamped server-side rather than client-reported.
+- Admin can see, at a glance, whether a project's deliverables have been
+  accepted, and can open the full evidence bundle for a signed project.
 
 ## Out of Scope
 
-- Migrating the main marketing site's video (already done, see
-  `buildplan.md` history / git log "Close out Slice 12").
-- Adaptive bitrate/HLS for client deliverables.
-- Multi-admin accounts, roles, or password reset flows.
-- Migrating existing Bunny-hosted client records/videos to the NAS (a
-  one-time data migration pass, follow-up task, not part of this build).
-- NAS-wide hardening/redundancy beyond what this one additional Docker
-  service needs.
+- Any change to the per-asset approval flow itself (`a.status`, the
+  approve-modal at L928-938) beyond copy tweaks if it still references
+  "final invoice."
+- Invoice PDF generation/line-items — invoices remain filename-only uploads;
+  this feature only changes where/whether they're shown to the client.

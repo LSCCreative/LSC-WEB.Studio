@@ -62,6 +62,23 @@ db.exec(`
     created_at    TEXT NOT NULL,
     UNIQUE(relative_path, downloadable)
   );
+
+  -- Legal/audit evidence for a client's deliverables sign-off (Slice 5). One
+  -- row per project — private, never exposed via the public records table.
+  -- ip_address is the only field the client cannot supply itself: it is
+  -- stamped by POST /hub/agreement from the request, never client-reported.
+  CREATE TABLE IF NOT EXISTS agreement_evidence (
+    project_id         TEXT PRIMARY KEY REFERENCES records(project_id) ON DELETE CASCADE,
+    signer_name        TEXT NOT NULL,
+    signed_at          TEXT NOT NULL,
+    signature_data_url TEXT NOT NULL,
+    consent_text       TEXT NOT NULL,
+    consent_checked    INTEGER NOT NULL,
+    user_agent         TEXT NOT NULL DEFAULT '',
+    verification_token TEXT NOT NULL DEFAULT '',
+    ip_address         TEXT NOT NULL DEFAULT '',
+    received_at        TEXT NOT NULL
+  );
 `);
 
 // Slice 14 migration: a NAS already running Slice 4's schema has
@@ -90,7 +107,7 @@ if (deliverableCols.length && !deliverableCols.some(c => c.name === 'downloadabl
 db.prepare(`
   INSERT INTO meta (key, value) VALUES ('schema_version', ?)
   ON CONFLICT(key) DO UPDATE SET value = excluded.value
-`).run('4');
+`).run('5');
 
 export function schemaVersion() {
   return db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get().value;

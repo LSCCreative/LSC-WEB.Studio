@@ -62,3 +62,9 @@ the active project.
   as you go.
 - Before session end or a context wipe: update `scratchpad.md` with handoff
   notes for the next agent, and mark finished items `[x]` in `buildplan.md`.
+- Every slice in `buildplan.md` carries a `Model:` / `Effort:` tag. When you
+  finish a slice and hand off to the next one, always state the next
+  unchecked slice's Model and Effort out loud in your response (not just in
+  `scratchpad.md`) — e.g. "Next: Slice N | Model: X | Effort: Y" — so the
+  user can set it before work starts, and note it again in `scratchpad.md`'s
+  handoff notes.

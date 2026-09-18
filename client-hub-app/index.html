@@ -6,6 +6,10 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Client Hub — LSC Creative</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<!-- Cursive fonts for the typed signature generator on the agreement screen -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Alex+Brush&family=Caveat:wght@600&family=Dancing+Script:wght@600&family=Great+Vibes&family=Sacramento&display=swap" rel="stylesheet">
 <style>
   /* @font-face rules are injected at runtime from HUB_CONFIG.assetBase (see script top),
      so a subdomain cutover only touches assetBase — not this stylesheet. */
@@ -245,6 +249,21 @@ const hubApi = {
   async deliverableUrl(path, downloadable){
     if(HUB_CONFIG.mode !== 'live') throw new Error('NAS deliverable links require live mode');
     return hubFetch('/hub/deliverable-url', { method:'POST', body: JSON.stringify({ path, downloadable: !!downloadable }) });
+  },
+  // CLIENT: persist the legal/audit evidence bundle alongside the signed agreement
+  // (signer name, timestamp, signature image, consent text/checked, user-agent,
+  // verification token). The server stamps the IP address from the request itself,
+  // which is the one field a client-reported value could never be trusted for — so,
+  // like deliverableUrl, this has no SIMULATE equivalent and is a live-only no-op.
+  async submitAgreement(payload){
+    if(HUB_CONFIG.mode !== 'live') return null;
+    return hubFetch('/hub/agreement', { method:'POST', body: JSON.stringify(payload) });
+  },
+  // ADMIN: full legal-evidence bundle for a signed project (Slice 6 viewer).
+  // No SIMULATE equivalent — the evidence itself is live-only (see submitAgreement).
+  async fetchAgreement(projectId){
+    if(HUB_CONFIG.mode !== 'live') return null;
+    return hubFetch('/hub/agreement/' + encodeURIComponent(projectId));
   }
 };
 
@@ -268,7 +287,11 @@ function loadProjects(){
     if(!invoices.length && p.invoiceName){
       invoices = [{ id: uid(), type:'final', name: p.invoiceName, url:'' }];
     }
-    return { ...p, assets, invoices };
+    const agreement = (p.agreement && typeof p.agreement === 'object')
+      ? { accepted: !!p.agreement.accepted, signedAt: p.agreement.signedAt || null,
+          signerName: p.agreement.signerName || null, signatureDataUrl: p.agreement.signatureDataUrl || null }
+      : { accepted: false, signedAt: null, signerName: null, signatureDataUrl: null };
+    return { ...p, assets, invoices, agreement };
   });
 }
 function saveProjects(list){
@@ -312,6 +335,66 @@ function smartBadgesHtml(p, extraCls=''){
     `<span class="mono text-[9px] px-2 py-1 rounded-full ${x.cls}">${x.label.toUpperCase()}</span>`).join('')}</div>`;
 }
 
+// Deliverables sign-off badge (Slice 4) — separate from smartBadges since it needs the
+// signed date alongside it, not just a label pill.
+function agreementBadgeHtml(p, extraCls=''){
+  if(!p.agreement || !p.agreement.accepted) return '';
+  const signed = p.agreement.signedAt ? new Date(p.agreement.signedAt) : null;
+  const dateStr = signed && !isNaN(signed) ? signed.toLocaleDateString('en-AU', { day:'2-digit', month:'short', year:'numeric' }) : '';
+  return `<div class="mono text-[10px] text-[var(--lsc-sage)] flex items-center gap-1.5 ${extraCls}">
+    <span>✅ Deliverables Accepted${dateStr ? ` · ${dateStr}` : ''}</span>
+    <button type="button" data-view-evidence="${p.id}" class="underline text-[var(--lsc-mid)] hover:text-white">View evidence</button>
+  </div>`;
+}
+
+// Slice 6: full legal-evidence bundle modal, opened from agreementBadgeHtml's
+// "View evidence" link. Fetched fresh each open — not cached on state.projects,
+// since the admin's local copy never syncs back from a real client signature.
+function renderEvidenceModal(){
+  const ev = state.evidenceResult || {};
+  const body = state.evidenceLoading
+    ? `<div class="text-sm text-[var(--lsc-mid)] py-6 text-center">Loading…</div>`
+    : ev.error
+    ? `<div class="text-sm text-[var(--lsc-terra)] py-6 text-center">${escapeHtml(ev.error)}</div>`
+    : `
+      <div class="space-y-3 text-sm">
+        <div><span class="mono text-[10px] text-[var(--lsc-mid)] block">SIGNER</span>${escapeHtml(ev.signerName||'')}</div>
+        <div><span class="mono text-[10px] text-[var(--lsc-mid)] block">SIGNED (UTC)</span>${escapeHtml(ev.signedAt||'')}</div>
+        <div><span class="mono text-[10px] text-[var(--lsc-mid)] block">IP ADDRESS</span>${escapeHtml(ev.ipAddress||'')}</div>
+        <div><span class="mono text-[10px] text-[var(--lsc-mid)] block">USER AGENT</span><span class="break-all">${escapeHtml(ev.userAgent||'')}</span></div>
+        <div><span class="mono text-[10px] text-[var(--lsc-mid)] block">VERIFICATION TOKEN</span><span class="break-all">${escapeHtml(ev.verificationToken||'') || '(none — legacy/impersonated session)'}</span></div>
+        <div><span class="mono text-[10px] text-[var(--lsc-mid)] block">CONSENT TEXT</span>${escapeHtml(ev.consentText||'')}</div>
+        ${ev.signatureDataUrl ? `<div><span class="mono text-[10px] text-[var(--lsc-mid)] block mb-1">SIGNATURE</span><img src="${ev.signatureDataUrl}" class="max-h-16 bg-white rounded px-2 py-1"></div>` : ''}
+      </div>`;
+  return `
+  <div class="fixed inset-0 z-40 flex items-center justify-center p-6" style="background:rgba(14,14,14,.7); backdrop-filter:blur(6px);">
+    <div class="card rounded-xl p-6 max-w-md w-full max-h-[85vh] overflow-y-auto">
+      <div class="display text-lg mb-4">Legal Evidence Bundle</div>
+      ${body}
+      <button id="close-evidence" class="btn-ghost rounded-lg px-4 py-2 mono text-xs mt-6">CLOSE</button>
+    </div>
+  </div>`;
+}
+
+// Slice 6: open the evidence modal and fetch the bundle. Opens immediately in
+// a loading state so the click feels responsive, then fills in the result.
+async function openEvidenceModal(projectId){
+  setState({ evidenceProjectId: projectId, evidenceLoading:true, evidenceResult:null });
+  try{
+    const ev = await hubApi.fetchAgreement(projectId);
+    setState({ evidenceLoading:false, evidenceResult: ev || { error:'No evidence on file for this project.' } });
+  }catch(e){
+    // 404 is an expected empty state (never signed against this backend, or a stale
+    // local project pointing at a different DB) — not a real failure, no console noise.
+    if(e && e.status === 404){
+      setState({ evidenceLoading:false, evidenceResult: { error:'No evidence on file for this project.' } });
+      return;
+    }
+    reportAdminError(e, 'Load evidence');
+    setState({ evidenceLoading:false, evidenceResult: { error:'Could not load evidence — see console.' } });
+  }
+}
+
 let state = {
   authed: sessionStorage.getItem(AUTH_KEY) === 'true',
   adminEmailInput: '',
@@ -334,6 +417,9 @@ let state = {
   toast: null,
   menuOpenId: null,
   signature: false,
+  agreementSignerName: '', // typed name on the agreement/sign-off screen
+  agreementFont: "'Great Vibes', cursive", // chosen typed-signature style
+  agreementConsent: false, // legal intent-to-sign checkbox on the agreement screen
   editorError: null,
   approveModalAssetId: null,
   clientMode: false,       // true when opened via a public ?project= client link
@@ -348,6 +434,9 @@ let state = {
   clientRecord: null,      // published record fetched for a real client session (cross-device)
   inviteResult: null,      // {name,to,url,code,reset?} surfaced to admin after invite/reset
   confirmResetId: null,    // project id awaiting master-reset confirmation
+  evidenceProjectId: null, // project id whose evidence modal is open (Slice 6)
+  evidenceLoading: false,
+  evidenceResult: null,    // { signerName, signedAt, ipAddress, userAgent, ... } | { error }
 };
 
 function setState(patch){ Object.assign(state, patch); render(); }
@@ -589,7 +678,8 @@ function renderTracker(){
       </div>
       <div class="text-sm text-[var(--lsc-mid)] mb-1">${escapeHtml(p.clientName || 'No client name')}</div>
       <div class="mono text-[10px] text-[var(--lsc-mid)] mb-3">${p.clientStatus ? '● ' + p.clientStatus.toUpperCase() + (p.publishedAt ? ' · published' : '') : '○ not invited'}</div>
-      ${smartBadgesHtml(p, 'mb-4')}
+      ${smartBadgesHtml(p, 'mb-2')}
+      ${agreementBadgeHtml(p, 'mb-4')}
       <div class="flex items-center justify-between">
         <span class="mono text-[10px] px-2 py-1 rounded-full ${meta.cls}">${meta.dot} ${meta.label}</span>
         <span class="mono text-[10px] text-[var(--lsc-mid)]">${p.assets.length} asset${p.assets.length===1?'':'s'}</span>
@@ -617,6 +707,7 @@ function renderTracker(){
     ${state.confirmDeleteId ? renderDeleteConfirm() : ''}
     ${state.confirmResetId ? renderResetConfirm() : ''}
     ${state.inviteResult ? renderInviteResult() : ''}
+    ${state.evidenceProjectId ? renderEvidenceModal() : ''}
   </div>`;
 }
 
@@ -693,7 +784,8 @@ function renderAdminHeader(active){
 function blankDraft(){
   return { id: uid(), upid: 'UPID-' + Math.floor(1000+Math.random()*9000), name:'', clientName:'', clientEmail:'', message:'',
     invoices:[], assets:[],
-    clientCode:'', inviteToken:'', clientStatus:'', delivered:false, publishedAt:null };
+    clientCode:'', inviteToken:'', clientStatus:'', delivered:false, publishedAt:null,
+    agreement: { accepted:false, signedAt:null, signerName:null, signatureDataUrl:null } };
 }
 /* ---- invoices[] helpers (F2) ---- */
 function invoiceOf(p, type){ return (Array.isArray(p.invoices) ? p.invoices : []).find(i => i.type === type); }
@@ -746,7 +838,8 @@ function renderEditor(){
     ${renderAdminHeader('editor')}
     <div class="max-w-3xl mx-auto px-6 py-10">
       <button id="back-tracker" class="mono text-xs text-[var(--lsc-mid)] hover:text-white mb-6">← BACK TO TRACKER</button>
-      <div class="display text-2xl mb-8">${state.editingId ? 'Edit Project' : 'New Project Setup'}</div>
+      <div class="display text-2xl ${d.agreement && d.agreement.accepted ? 'mb-2' : 'mb-8'}">${state.editingId ? 'Edit Project' : 'New Project Setup'}</div>
+      ${agreementBadgeHtml(d, 'mb-8')}
 
       <div class="card rounded-xl p-6 mb-6">
         <div class="mono text-[10px] text-[var(--lsc-mid)] mb-4">PROJECT PARAMETERS</div>
@@ -783,6 +876,7 @@ function renderEditor(){
         <button id="cancel-project" class="btn-ghost rounded-lg px-6 py-3 mono text-xs">CANCEL</button>
       </div>
     </div>
+    ${state.evidenceProjectId ? renderEvidenceModal() : ''}
   </div>`;
 }
 
@@ -929,7 +1023,7 @@ function renderClientAsset(){
     <div id="approve-modal-backdrop" class="fixed inset-0 z-30 flex items-center justify-center p-6" style="background:rgba(14,14,14,.7); backdrop-filter:blur(6px);">
       <div class="card rounded-xl p-6 max-w-sm w-full">
         <div class="display text-lg mb-3">Final check</div>
-        <p class="text-sm text-[var(--lsc-white)] mb-6">This will finalise this content production and you will be sent to download a copy as final handover.</p>
+        <p class="text-sm text-[var(--lsc-white)] mb-6">This will finalise this content production. Once every asset is approved you'll be asked to sign off before your download links are unlocked.</p>
         <div class="flex gap-3">
           <button id="confirm-approve" class="btn-terra rounded-lg px-4 py-2 mono text-xs">CONFIRM APPROVAL</button>
           <button id="cancel-approve" class="btn-ghost rounded-lg px-4 py-2 mono text-xs">GO BACK</button>
@@ -997,34 +1091,15 @@ function renderRevisionForm(a){
 
 function renderClientFinal(){
   const p = getViewProject();
-  const invs = Array.isArray(p.invoices) ? p.invoices : [];
-  const invoiceReaders = invs.length ? invs.map(inv => `
-      <div class="card rounded-xl p-6 mb-6">
-        <div class="mono text-[10px] text-[var(--lsc-mid)] mb-3">${inv.type==='deposit'?'DEPOSIT INVOICE':'FINAL INVOICE'}</div>
-        <div class="bg-[var(--lsc-surface)] rounded-lg h-64 flex items-center justify-center">
-          <div class="text-center text-[var(--lsc-mid)]">
-            <div class="text-3xl mb-2">📄</div>
-            <div class="mono text-xs">${escapeHtml(inv.name || 'invoice.pdf')} — embedded reader</div>
-          </div>
-        </div>
-      </div>`).join('') : `
-      <div class="card rounded-xl p-6 mb-6">
-        <div class="mono text-[10px] text-[var(--lsc-mid)] mb-3">INVOICE</div>
-        <div class="bg-[var(--lsc-surface)] rounded-lg h-40 flex items-center justify-center">
-          <div class="mono text-xs text-[var(--lsc-mid)]">No invoice attached</div>
-        </div>
-      </div>`;
   return renderClientChrome(`
     <div class="max-w-3xl mx-auto px-6 py-12">
       <div class="card rounded-xl p-4 mb-6 toast flex items-center gap-3">
         <span>✅</span>
-        <span class="text-sm">An email with a copy of the invoice and download links has been sent to your email. <span class="mono text-[10px] text-[var(--lsc-sage)]">Sent 🟢</span></span>
+        <span class="text-sm">An email with a copy of your download links has been sent to your email. <span class="mono text-[10px] text-[var(--lsc-sage)]">Sent 🟢</span></span>
       </div>
 
       <div class="display text-2xl mb-2">Final Delivery</div>
-      <div class="text-sm text-[var(--lsc-mid)] mb-8">All deliverables approved — production is finalised.</div>
-
-      ${invoiceReaders}
+      <div class="text-sm text-[var(--lsc-mid)] mb-8">All deliverables approved and signed off — production is finalised.</div>
 
       <div class="space-y-3 mb-6">
         ${p.assets.map(a => {
@@ -1044,14 +1119,146 @@ function renderClientFinal(){
           </div>`;
         }).join('')}
       </div>
-
-      <div class="card rounded-xl p-6">
-        <div class="mono text-[10px] text-[var(--lsc-mid)] mb-3">SIGN-OFF</div>
-        <canvas id="sig-canvas" width="600" height="120" class="bg-[var(--lsc-surface)] rounded-lg w-full" style="touch-action:none;"></canvas>
-        <div class="mono text-[10px] text-[var(--lsc-mid)] mt-2">${state.signature ? '✓ signature captured' : 'sign above with mouse or touch'}</div>
-      </div>
     </div>
   `);
+}
+
+/* ================= CLIENT: AGREEMENT / SIGN-OFF ================= */
+const AGREEMENT_CONSENT_TEXT = "I agree that this typed signature is the legal equivalent of my handwritten signature and constitutes my intent to sign this document legally.";
+function renderAgreementScreen(){
+  const p = getViewProject();
+  return renderClientChrome(`
+    <div class="max-w-3xl mx-auto px-6 py-12">
+      <div class="display text-2xl mb-2">Final Sign-Off</div>
+      <div class="text-sm text-[var(--lsc-mid)] mb-8">All deliverables approved — sign off below to unlock your download links.</div>
+
+      <div class="card rounded-xl p-6 mb-6">
+        <div class="mono text-[10px] text-[var(--lsc-mid)] mb-3">AGREEMENT</div>
+        <p class="text-sm text-[var(--lsc-white)] leading-relaxed">I confirm I'm happy with the final version of this media${p && p.name ? ` for <strong>${escapeHtml(p.name)}</strong>` : ''}, and I'm ready to receive the deliverables below.</p>
+      </div>
+
+      <div class="card rounded-xl p-6 mb-6">
+        <div class="mono text-[10px] text-[var(--lsc-mid)] mb-3">SIGNATURE</div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+          <div>
+            <label for="agreement-signer-name" class="mono text-[10px] text-[var(--lsc-mid)] block mb-1.5">TYPE YOUR NAME</label>
+            <input id="agreement-signer-name" class="field" placeholder="Full name" maxlength="60" value="${escapeAttr(state.agreementSignerName || '')}">
+          </div>
+          <div>
+            <label for="agreement-font-select" class="mono text-[10px] text-[var(--lsc-mid)] block mb-1.5">CHOOSE A STYLE</label>
+            <select id="agreement-font-select" class="field">
+              ${SIGNATURE_FONTS.map(f => `<option value="${escapeAttr(f.family)}" ${state.agreementFont === f.family ? 'selected' : ''}>${escapeHtml(f.label)}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="bg-[var(--lsc-surface)] rounded-lg w-full flex items-center justify-center px-4" style="min-height:120px;">
+          <div id="signature-preview" style="font-family:${escapeAttr(state.agreementFont)}; font-size:2.75rem; line-height:1; color:var(--lsc-white); word-break:break-word; text-align:center;">${escapeHtml(state.agreementSignerName || '')}</div>
+        </div>
+        <div id="signature-status" class="mono text-[10px] text-[var(--lsc-mid)] mt-2">${state.signature ? '✓ signature captured' : 'type your name above to sign'}</div>
+      </div>
+
+      <label class="flex items-start gap-2 mb-6 cursor-pointer">
+        <input type="checkbox" id="agreement-consent" class="mt-1" ${state.agreementConsent ? 'checked' : ''}>
+        <span class="text-sm text-[var(--lsc-white)] leading-relaxed">${escapeHtml(AGREEMENT_CONSENT_TEXT)}</span>
+      </label>
+
+      <button id="confirm-agreement" class="btn-terra rounded-lg px-5 py-3 mono text-xs" ${(state.signature && state.agreementConsent) ? '' : 'disabled style="opacity:.4;cursor:not-allowed;"'}>CONFIRM & SIGN</button>
+    </div>
+  `);
+}
+
+// Cursive font options for the typed signature generator (loaded via Google Fonts in <head>).
+const SIGNATURE_FONTS = [
+  { label:'Dancing Script', family:"'Dancing Script', cursive" },
+  { label:'Great Vibes',    family:"'Great Vibes', cursive" },
+  { label:'Alex Brush',     family:"'Alex Brush', cursive" },
+  { label:'Sacramento',     family:"'Sacramento', cursive" },
+  { label:'Caveat',         family:"'Caveat', cursive" },
+];
+
+// Draws the typed name onto a hidden canvas in the chosen cursive font and returns a PNG
+// data URL — white background + dark ink, independent of the on-screen dark theme, since
+// this is the persisted signature image rather than a UI element.
+async function rasterizeSignature(name, fontFamily){
+  const canvas = document.createElement('canvas');
+  canvas.width = 700; canvas.height = 180;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#111111';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  let size = 72;
+  const maxWidth = canvas.width - 60;
+  try { await document.fonts.load(`${size}px ${fontFamily}`, name); } catch(e){ /* font may already be loaded/cached */ }
+  ctx.font = `${size}px ${fontFamily}`;
+  while(size > 24 && ctx.measureText(name).width > maxWidth){
+    size -= 4;
+    ctx.font = `${size}px ${fontFamily}`;
+  }
+  ctx.fillText(name, canvas.width / 2, canvas.height / 2);
+  return canvas.toDataURL('image/png');
+}
+
+function bindAgreementScreen(){
+  bindClientChrome();
+  const nameEl = document.getElementById('agreement-signer-name');
+  const preview = document.getElementById('signature-preview');
+  const statusEl = document.getElementById('signature-status');
+  const consentEl = document.getElementById('agreement-consent');
+  const confirmBtn = document.getElementById('confirm-agreement');
+  const updateSignature = () => {
+    const name = (state.agreementSignerName || '').trim();
+    state.signature = !!name;
+    if(preview) preview.textContent = state.agreementSignerName || '';
+    if(statusEl) statusEl.textContent = state.signature ? '✓ signature captured' : 'type your name above to sign';
+    updateConfirmEnabled();
+  };
+  const updateConfirmEnabled = () => {
+    if(!confirmBtn) return;
+    const ready = state.signature && state.agreementConsent;
+    confirmBtn.disabled = !ready;
+    confirmBtn.style.opacity = ready ? '' : '.4';
+    confirmBtn.style.cursor = ready ? '' : 'not-allowed';
+  };
+  if(nameEl) nameEl.addEventListener('input', () => { state.agreementSignerName = nameEl.value; updateSignature(); });
+
+  const fontSelect = document.getElementById('agreement-font-select');
+  if(fontSelect) fontSelect.addEventListener('change', () => {
+    state.agreementFont = fontSelect.value;
+    if(preview) preview.style.fontFamily = fontSelect.value;
+  });
+
+  if(consentEl) consentEl.addEventListener('change', () => { state.agreementConsent = consentEl.checked; updateConfirmEnabled(); });
+
+  if(confirmBtn) confirmBtn.onclick = async () => {
+    const name = (state.agreementSignerName || '').trim();
+    if(!name || !state.agreementConsent) return;
+    confirmBtn.disabled = true;
+    const signatureDataUrl = await rasterizeSignature(name, state.agreementFont);
+    const p = getViewProject();
+    const signedAt = new Date().toISOString();
+    p.agreement = { accepted:true, signedAt, signerName: name, signatureDataUrl };
+    persistViewProject();
+    try {
+      await hubApi.submitAgreement({
+        projectId: p.id,
+        signerName: name,
+        signedAt,
+        signatureDataUrl,
+        consentText: AGREEMENT_CONSENT_TEXT,
+        consentChecked: state.agreementConsent,
+        userAgent: navigator.userAgent,
+        verificationToken: sessionStorage.getItem(CLIENT_TOKEN_SS) || '',
+      });
+    } catch(e){
+      // Best-effort from the client's side: they've already signed and their own
+      // record shows it — don't block access to the deliverables over a network
+      // hiccup on the legal-evidence write. Admin-side follow-up if this happens.
+      console.error('submitAgreement failed:', e);
+    }
+    setState({ clientScreen:'final' });
+  };
 }
 
 /* ================= helpers ================= */
@@ -1074,6 +1281,7 @@ function render(){
     if(!getViewProject()){ root.innerHTML = renderClientNotFound(); return; }
     if(state.clientScreen === 'asset'){ root.innerHTML = renderClientAsset(); bindClientAsset(); return; }
     if(state.clientScreen === 'final'){ root.innerHTML = renderClientFinal(); bindClientFinal(); return; }
+    if(state.clientScreen === 'agreement'){ root.innerHTML = renderAgreementScreen(); bindAgreementScreen(); return; }
     root.innerHTML = renderClientLanding(); bindClientLanding(); return;
   }
   // Client door (default) + invite onboarding → client login shell. The admin PIN
@@ -1088,6 +1296,7 @@ function render(){
     if(state.clientScreen === 'landing'){ root.innerHTML = renderClientLanding(); bindClientLanding(); return; }
     if(state.clientScreen === 'asset'){ root.innerHTML = renderClientAsset(); bindClientAsset(); return; }
     if(state.clientScreen === 'final'){ root.innerHTML = renderClientFinal(); bindClientFinal(); return; }
+    if(state.clientScreen === 'agreement'){ root.innerHTML = renderAgreementScreen(); bindAgreementScreen(); return; }
   }
 }
 
@@ -1167,6 +1376,12 @@ function bindTracker(){
   if(copyInvite) copyInvite.onclick = () => { if(state.inviteResult?.url){ navigator.clipboard?.writeText(state.inviteResult.url); toast('Link copied.'); } };
   const closeInvite = document.getElementById('close-invite');
   if(closeInvite) closeInvite.onclick = () => setState({ inviteResult:null });
+
+  document.querySelectorAll('[data-view-evidence]').forEach(btn => {
+    btn.onclick = () => openEvidenceModal(btn.dataset.viewEvidence);
+  });
+  const closeEvidence = document.getElementById('close-evidence');
+  if(closeEvidence) closeEvidence.onclick = () => setState({ evidenceProjectId:null, evidenceResult:null });
 
 }
 
@@ -1311,6 +1526,12 @@ function bindEditor(){
     if(!saveProjects(list)){ setState({ editorError: 'Save failed — storage may be full. Copy your work before retrying.' }); return; }
     setState({ projects:list, screen:'tracker', draft:null, editingId:null, editorError:null });
   };
+
+  document.querySelectorAll('[data-view-evidence]').forEach(btn => {
+    btn.onclick = () => openEvidenceModal(btn.dataset.viewEvidence);
+  });
+  const closeEvidence = document.getElementById('close-evidence');
+  if(closeEvidence) closeEvidence.onclick = () => setState({ evidenceProjectId:null, evidenceResult:null });
 }
 
 function bindClientLanding(){
@@ -1366,7 +1587,8 @@ function bindClientAsset(){
     a.status = 'approved';
     persistViewProject();
     const allApproved = p.assets.every(x => x.status === 'approved');
-    setState({ clientScreen: allApproved ? 'final' : 'asset', revisionOpen:false, approveModalAssetId:null });
+    const nextScreen = allApproved ? (p.agreement && p.agreement.accepted ? 'final' : 'agreement') : 'asset';
+    setState({ clientScreen: nextScreen, revisionOpen:false, approveModalAssetId:null });
   };
   const cancelApprove = document.getElementById('cancel-approve');
   if(cancelApprove) cancelApprove.onclick = () => setState({ approveModalAssetId:null });
@@ -1395,22 +1617,6 @@ function bindClientAsset(){
 
 function bindClientFinal(){
   bindClientChrome();
-  const canvas = document.getElementById('sig-canvas');
-  if(!canvas) return;
-  const ctx = canvas.getContext('2d');
-  ctx.strokeStyle = '#F0EDE8'; ctx.lineWidth = 2; ctx.lineCap = 'round';
-  let drawing = false;
-  const pos = (e) => {
-    const r = canvas.getBoundingClientRect();
-    const cx = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
-    const cy = (e.touches ? e.touches[0].clientY : e.clientY) - r.top;
-    return [cx * (canvas.width / r.width), cy * (canvas.height / r.height)];
-  };
-  const start = (e) => { drawing = true; const [x,y] = pos(e); ctx.beginPath(); ctx.moveTo(x,y); };
-  const move = (e) => { if(!drawing) return; const [x,y] = pos(e); ctx.lineTo(x,y); ctx.stroke(); };
-  const end = () => { if(!drawing) return; drawing = false; state.signature = true; const el = canvas.nextElementSibling; if(el) el.textContent = '✓ signature captured'; };
-  canvas.addEventListener('mousedown', start); canvas.addEventListener('mousemove', move); canvas.addEventListener('mouseup', end); canvas.addEventListener('mouseleave', end);
-  canvas.addEventListener('touchstart', start); canvas.addEventListener('touchmove', move); canvas.addEventListener('touchend', end);
 }
 
 function persistViewProject(){

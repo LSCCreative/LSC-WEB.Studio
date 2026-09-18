@@ -37,6 +37,7 @@ const upsertPrivateAuth = db.prepare(`
     updated_at   = excluded.updated_at
 `);
 const getRecord = db.prepare('SELECT data FROM records WHERE project_id = ?');
+const getAgreementEvidence = db.prepare('SELECT * FROM agreement_evidence WHERE project_id = ?');
 const findByEmailHash = db.prepare('SELECT * FROM private_auth WHERE email_hash = ?');
 const findByInviteToken = db.prepare('SELECT * FROM private_auth WHERE invite_token = ?');
 
@@ -47,6 +48,26 @@ const insertDeliverableToken = db.prepare(`
 `);
 const findDeliverableTokenByPath = db.prepare('SELECT token FROM deliverable_tokens WHERE relative_path = ? AND downloadable = ?');
 const findDeliverablePathByToken = db.prepare('SELECT relative_path, downloadable FROM deliverable_tokens WHERE token = ?');
+
+const upsertAgreementEvidence = db.prepare(`
+  INSERT INTO agreement_evidence (
+    project_id, signer_name, signed_at, signature_data_url, consent_text,
+    consent_checked, user_agent, verification_token, ip_address, received_at
+  ) VALUES (
+    @project_id, @signer_name, @signed_at, @signature_data_url, @consent_text,
+    @consent_checked, @user_agent, @verification_token, @ip_address, @received_at
+  )
+  ON CONFLICT(project_id) DO UPDATE SET
+    signer_name        = excluded.signer_name,
+    signed_at           = excluded.signed_at,
+    signature_data_url = excluded.signature_data_url,
+    consent_text        = excluded.consent_text,
+    consent_checked     = excluded.consent_checked,
+    user_agent          = excluded.user_agent,
+    verification_token  = excluded.verification_token,
+    ip_address          = excluded.ip_address,
+    received_at         = excluded.received_at
+`);
 
 export const hubRouter = Router();
 
@@ -122,6 +143,72 @@ hubRouter.post('/hub/auth', (req, res) => {
   if (!projectIds.length) return res.json({ token: null, projectIds: [] });
   const token = sha256Hex(codeHash + emailHash + Date.now());
   res.json({ token, projectIds, records });
+});
+
+// ---------- POST /hub/agreement (client, new) — legal/audit evidence bundle ----------
+// Called once, right after the client signs the deliverables agreement
+// (client-hub-app/index.html bindAgreementScreen). Stores the full signed
+// agreement (signer name, timestamp, signature image) alongside the legal
+// evidence (consent text/checked, user-agent, verification token) in the
+// PRIVATE agreement_evidence table — never in the public `records` row.
+// credentialedCors, not openCors: hubFetch sends credentials:'include' on
+// every call (see the /hub/auth comment above for why that still requires a
+// non-wildcard CORS response even though this route reads no cookie).
+// The ip_address is the one field the client cannot supply itself — it is
+// read from the request here, server-side, so it holds up as evidence.
+hubRouter.use('/hub/agreement', credentialedCors);
+hubRouter.post('/hub/agreement', (req, res) => {
+  const body = req.body || {};
+  const projectId = String(body.projectId || '').trim();
+  const signerName = String(body.signerName || '').trim();
+  const signedAt = String(body.signedAt || '').trim();
+  const signatureDataUrl = String(body.signatureDataUrl || '').trim();
+  const consentText = String(body.consentText || '').trim();
+  const consentChecked = body.consentChecked === true;
+
+  if (!projectId || !signerName || !signedAt || !signatureDataUrl || !consentText) {
+    return res.status(400).json({ error: 'bad payload' });
+  }
+  if (!consentChecked) return res.status(400).json({ error: 'consent required' });
+  if (!getRecord.get(projectId)) return res.status(404).json({ error: 'not found' });
+
+  upsertAgreementEvidence.run({
+    project_id: projectId,
+    signer_name: signerName,
+    signed_at: signedAt,
+    signature_data_url: signatureDataUrl,
+    consent_text: consentText,
+    consent_checked: 1,
+    user_agent: String(body.userAgent || ''),
+    verification_token: String(body.verificationToken || ''),
+    ip_address: req.ip || '',
+    received_at: new Date().toISOString(),
+  });
+
+  res.json({ ok: true });
+});
+
+// ---------- GET /hub/agreement/:projectId (admin, new, Slice 6) ----------
+// Lets the admin dashboard/editor open the full legal-evidence bundle for a
+// signed project (signer name, timestamp, IP, user-agent, consent text) —
+// the badge from Slice 4 only shows accepted/signedAt. Reads straight from
+// the private agreement_evidence table Slice 5 wrote; 404 if never signed.
+// (credentialedCors for /hub/agreement is already registered above.)
+hubRouter.get('/hub/agreement/:projectId', requireAdmin, (req, res) => {
+  const row = getAgreementEvidence.get(req.params.projectId);
+  if (!row) return res.status(404).json({ error: 'not found' });
+
+  res.json({
+    signerName: row.signer_name,
+    signedAt: row.signed_at,
+    signatureDataUrl: row.signature_data_url,
+    consentText: row.consent_text,
+    consentChecked: Boolean(row.consent_checked),
+    userAgent: row.user_agent,
+    verificationToken: row.verification_token,
+    ipAddress: row.ip_address,
+    receivedAt: row.received_at,
+  });
 });
 
 // ---------- GET /hub/records/:projectId?token=&expires= ----------
