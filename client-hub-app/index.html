@@ -437,6 +437,7 @@ let state = {
   evidenceProjectId: null, // project id whose evidence modal is open (Slice 6)
   evidenceLoading: false,
   evidenceResult: null,    // { signerName, signedAt, ipAddress, userAgent, ... } | { error }
+  nasLinkHelpOpen: false,  // NAS LINK SOP modal, opened from the "?" in the editor
 };
 
 function setState(patch){ Object.assign(state, patch); render(); }
@@ -810,7 +811,18 @@ function renderInvoiceZone(d, type, label){
     </div>`;
 }
 function newAsset(type){
-  return { id: uid(), type, title:'', reviewLink:'', downloadLink:'', driveLink:'', status:'reviewing', comments:[] };
+  return { id: uid(), type, title:'', reviewLink:'', downloadLink:'', driveLink:'', deliverablePath:'', status:'reviewing', comments:[] };
+}
+
+// Absolute NAS host path the admin copies out of the UGREEN file manager — matches
+// docker-compose.yml's deliverables volume source exactly. Anything under it converts
+// to the backend's expected relative path; a `/`-prefixed path that doesn't match is a
+// different volume/share/app and must fail loudly rather than register the wrong file.
+const NAS_PATH_PREFIX = '/volume4/LSC Creative_Media/Client Deliverables_Media';
+function toRelativeDeliverablePath(raw){
+  if(raw.startsWith(NAS_PATH_PREFIX)) return raw.slice(NAS_PATH_PREFIX.length).replace(/^\/+/, '');
+  if(raw.startsWith('/')) return null;
+  return raw;
 }
 
 function renderEditor(){
@@ -818,19 +830,17 @@ function renderEditor(){
   const assetTabs = d.assets.map((a,idx) => `
     <div class="card rounded-lg p-4 mb-3" data-asset-block="${a.id}">
       <div class="flex items-center justify-between mb-3">
-        <div class="mono text-xs text-[var(--lsc-mid)]">${a.type === 'video' ? '🎬 VIDEO ASSET' : '🖼 PHOTO LIBRARY'} #${idx+1}</div>
+        <div class="mono text-sm font-bold text-[var(--lsc-white)]">${a.type === 'video' ? '🎬 VIDEO ASSET' : '🖼 PHOTO LIBRARY'} #${idx+1}</div>
         <button data-remove-asset="${a.id}" class="text-[var(--lsc-mid)] hover:text-[var(--lsc-terra)] text-xs mono">REMOVE</button>
       </div>
       <input data-field="title" data-asset="${a.id}" class="field mb-2" placeholder="Deliverable title (e.g. Promo Film)" value="${escapeAttr(a.title)}">
+      <div class="mono text-[10px] text-[var(--lsc-mid)] mb-1">NAS SERVER VIDEO LINK</div>
       <div class="flex gap-2 mb-2">
-        <input data-field="reviewLink" data-asset="${a.id}" class="field flex-1 ${a.reviewLink && !isValidUrl(a.reviewLink)?'invalid':''}" placeholder="Review link — https://" value="${escapeAttr(a.reviewLink)}">
-        <button data-gen-link="review" data-asset="${a.id}" class="btn-ghost rounded-lg px-3 mono text-[10px] whitespace-nowrap">NAS LINK</button>
+        <input data-field="deliverablePath" data-asset="${a.id}" class="field flex-1" value="${escapeAttr(a.deliverablePath||'')}">
+        <button data-gen-link data-asset="${a.id}" class="btn-ghost rounded-lg px-3 mono text-[10px] whitespace-nowrap">NAS LINK</button>
       </div>
-      <div class="flex gap-2 mb-2">
-        <input data-field="downloadLink" data-asset="${a.id}" class="field flex-1 ${a.downloadLink && !isValidUrl(a.downloadLink)?'invalid':''}" placeholder="Download link — https://" value="${escapeAttr(a.downloadLink)}">
-        <button data-gen-link="download" data-asset="${a.id}" class="btn-ghost rounded-lg px-3 mono text-[10px] whitespace-nowrap">NAS LINK</button>
-      </div>
-      <input data-field="driveLink" data-asset="${a.id}" class="field ${a.driveLink && !isValidUrl(a.driveLink)?'invalid':''}" placeholder="Google Drive Backup Link — https://" value="${escapeAttr(a.driveLink)}">
+      <div class="mono text-[10px] text-[var(--lsc-mid)] mb-1">GOOGLE DRIVE BACKUP LINK</div>
+      <input data-field="driveLink" data-asset="${a.id}" class="field ${a.driveLink && !isValidUrl(a.driveLink)?'invalid':''}" value="${escapeAttr(a.driveLink)}">
     </div>`).join('');
 
   return `
@@ -861,7 +871,10 @@ function renderEditor(){
 
       <div class="card rounded-xl p-6 mb-6">
         <div class="flex items-center justify-between mb-4">
-          <div class="mono text-[10px] text-[var(--lsc-mid)]">DELIVERABLE ASSETS</div>
+          <div class="flex items-center gap-1.5">
+            <div class="mono text-[10px] text-[var(--lsc-mid)]">DELIVERABLE ASSETS</div>
+            <button type="button" id="nas-link-help" title="How do I link a deliverable?" class="mono text-[10px] leading-none w-4 h-4 rounded-full border border-[var(--lsc-rule)] text-[var(--lsc-mid)] opacity-60 hover:opacity-100 hover:text-white flex items-center justify-center">?</button>
+          </div>
           <div class="flex gap-2">
             <button id="add-video" class="btn-sage rounded-lg px-3 py-2 mono text-[10px]">+ ADD VIDEO</button>
             <button id="add-photo" class="btn-sage rounded-lg px-3 py-2 mono text-[10px]">+ ADD PHOTO LIBRARY</button>
@@ -877,6 +890,40 @@ function renderEditor(){
       </div>
     </div>
     ${state.evidenceProjectId ? renderEvidenceModal() : ''}
+    ${state.nasLinkHelpOpen ? renderNasLinkHelpModal() : ''}
+  </div>`;
+}
+
+// SOP for the one non-obvious admin task in the editor: getting a file that lives on
+// the NAS into the NAS Server Video Link field via the NAS LINK button. Opened from the
+// "?" next to DELIVERABLE ASSETS — the button converts the pasted path and mints both
+// stable URLs server-side, but the admin still has to paste the right thing first.
+function renderNasLinkHelpModal(){
+  return `
+  <div class="fixed inset-0 z-40 flex items-center justify-center p-6" style="background:rgba(14,14,14,.7); backdrop-filter:blur(6px);">
+    <div class="card rounded-xl p-6 max-w-md w-full max-h-[85vh] overflow-y-auto">
+      <div class="display text-lg mb-1">Linking a deliverable from the NAS</div>
+      <div class="mono text-[10px] text-[var(--lsc-mid)] mb-4">SOP · NAS LINK button</div>
+      <ol class="text-sm text-[var(--lsc-white)] leading-relaxed space-y-3 list-decimal pl-5">
+        <li>In the UGREEN NAS app's file manager, find the file and copy its
+          <strong>full absolute path</strong> — e.g.
+          <span class="mono text-[10px] block mt-1 px-2 py-1 rounded bg-[var(--lsc-black)]">${escapeHtml('/volume4/LSC Creative_Media/Client Deliverables_Media/Acme Co Promo/final-cut.mp4')}</span>
+        </li>
+        <li>Paste it directly into the <strong>NAS Server Video Link</strong> field for the
+          right asset here — no popup, just paste it into the box.</li>
+        <li>Click the <strong>NAS LINK</strong> button next to that same field.</li>
+        <li>The site strips the shared folder prefix, checks the file exists on the NAS,
+          mints both a review link and a download link, and shows the resulting relative
+          path back in the field so you can see what's linked.</li>
+        <li>A typo'd or wrong path fails with "file not found" rather than silently saving
+          a broken link — re-check the path against the NAS and try again. A path that
+          isn't inside <strong>Client Deliverables_Media</strong> at all fails loudly too,
+          instead of quietly linking the wrong file.</li>
+        <li>If you edit the field afterward, it stops matching what's linked — click
+          <strong>NAS LINK</strong> again to re-convert before it takes effect.</li>
+      </ol>
+      <button id="close-nas-link-help" class="btn-ghost rounded-lg px-4 py-2 mono text-xs mt-6">CLOSE</button>
+    </div>
   </div>`;
 }
 
@@ -1459,7 +1506,7 @@ async function masterReset(projectId){
 
 function bindEditor(){
   document.getElementById('back-tracker').onclick = document.getElementById('cancel-project').onclick =
-    () => setState({ screen:'tracker', draft:null, editingId:null, editorError:null });
+    () => setState({ screen:'tracker', draft:null, editingId:null, editorError:null, nasLinkHelpOpen:false });
 
   document.querySelectorAll('[data-field]:not([data-asset])').forEach(el => {
     el.addEventListener('input', () => { state.draft[el.dataset.field] = el.value; });
@@ -1493,14 +1540,23 @@ function bindEditor(){
   document.querySelectorAll('[data-gen-link]').forEach(btn => {
     btn.onclick = async () => {
       const asset = state.draft.assets.find(a => a.id === btn.dataset.asset);
-      const downloadable = btn.dataset.genLink === 'download';
-      const path = prompt(`NAS path, relative to Client Deliverables_Media — e.g.\n${state.draft.name || 'Project'}/${asset.title || 'file'}.mp4`, '');
-      if(!path || !path.trim()) return;
+      const raw = (asset.deliverablePath || '').trim();
+      if(!raw) return;
+      const relativePath = toRelativeDeliverablePath(raw);
+      if(relativePath === null){
+        toast(`⚠ Path must be inside ${NAS_PATH_PREFIX} — check you copied the right folder.`);
+        return;
+      }
       const original = btn.textContent;
       btn.disabled = true; btn.textContent = '…';
       try {
-        const { url } = await hubApi.deliverableUrl(path.trim(), downloadable);
-        asset[downloadable ? 'downloadLink' : 'reviewLink'] = url;
+        const [review, download] = await Promise.all([
+          hubApi.deliverableUrl(relativePath, false),
+          hubApi.deliverableUrl(relativePath, true)
+        ]);
+        asset.reviewLink = review.url;
+        asset.downloadLink = download.url;
+        asset.deliverablePath = relativePath;
         render();
       } catch(e){
         btn.disabled = false; btn.textContent = original;
@@ -1532,6 +1588,11 @@ function bindEditor(){
   });
   const closeEvidence = document.getElementById('close-evidence');
   if(closeEvidence) closeEvidence.onclick = () => setState({ evidenceProjectId:null, evidenceResult:null });
+
+  const nasLinkHelp = document.getElementById('nas-link-help');
+  if(nasLinkHelp) nasLinkHelp.onclick = () => setState({ nasLinkHelpOpen:true });
+  const closeNasLinkHelp = document.getElementById('close-nas-link-help');
+  if(closeNasLinkHelp) closeNasLinkHelp.onclick = () => setState({ nasLinkHelpOpen:false });
 }
 
 function bindClientLanding(){
