@@ -1,7 +1,7 @@
 // Filesystem side of the video URL scheme: path safety under DELIVERABLES_DIR
 // and HTTP Range-aware streaming. Token issuing/lookup lives in hubRoutes.js
 // (SQLite), which is the only caller allowed to hand out an absolute path.
-import { createReadStream, statSync } from 'node:fs';
+import { createReadStream, readdirSync, statSync } from 'node:fs';
 import { basename, extname, resolve, sep } from 'node:path';
 
 export const DELIVERABLES_DIR = resolve(process.env.DELIVERABLES_DIR || '/srv/deliverables');
@@ -33,6 +33,41 @@ export function resolveDeliverablePath(relativePath) {
   } catch {
     return null;
   }
+}
+
+// Extensions a photo library is allowed to contain. Deliberately a subset of
+// MIME_TYPES: a photo folder may also hold .mp4 proxies, RAWs, XMP sidecars or
+// .DS_Store, and none of those belong in the client's thumbnail grid.
+const PHOTO_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+
+// A mis-pasted path (e.g. the share root instead of one project folder) would
+// otherwise mint two tokens for every image on the NAS in a single click.
+export const MAX_PHOTOS_PER_FOLDER = 200;
+
+// Directory sibling of resolveDeliverablePath, with the identical traversal
+// guards (no leading `/`, no null bytes, must stay inside DELIVERABLES_DIR) --
+// the ONLY difference is isDirectory() instead of isFile(). Returns the sorted
+// list of image filenames directly; callers never get the absolute path, so
+// this can't be used to enumerate anything outside the deliverables tree.
+export function listDeliverableFolderImages(relativePath) {
+  if (!relativePath || typeof relativePath !== 'string') return null;
+  if (relativePath.startsWith('/') || relativePath.includes('\0')) return null;
+  const absolute = resolve(DELIVERABLES_DIR, relativePath);
+  if (absolute !== DELIVERABLES_DIR && !absolute.startsWith(DELIVERABLES_DIR + sep)) return null;
+  let stat;
+  try {
+    stat = statSync(absolute);
+  } catch {
+    return null;
+  }
+  if (!stat.isDirectory()) return null;
+
+  // Non-recursive by design: a photo library is one flat folder. withFileTypes
+  // keeps subdirectories (and their contents) out without a stat per entry.
+  return readdirSync(absolute, { withFileTypes: true })
+    .filter(entry => entry.isFile() && PHOTO_EXTENSIONS.has(extname(entry.name).toLowerCase()))
+    .map(entry => entry.name)
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 }
 
 function contentTypeFor(absolutePath) {

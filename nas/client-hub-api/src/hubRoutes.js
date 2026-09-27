@@ -7,7 +7,12 @@ import { Router } from 'express';
 import { db } from './db.js';
 import { sha256Hex, randomToken } from './crypto.js';
 import { signedUrl, verifyPath } from './signing.js';
-import { resolveDeliverablePath, streamFile } from './deliverables.js';
+import {
+  resolveDeliverablePath,
+  listDeliverableFolderImages,
+  MAX_PHOTOS_PER_FOLDER,
+  streamFile,
+} from './deliverables.js';
 import { credentialedCors, openCors } from './cors.js';
 import {
   requireAdmin,
@@ -245,6 +250,40 @@ hubRouter.post('/hub/deliverable-url', requireAdmin, (req, res) => {
   insertDeliverableToken.run(randomToken(16), path, downloadable, new Date().toISOString());
   const { token } = findDeliverableTokenByPath.get(path, downloadable);
   res.json({ url: `${PUBLIC_BASE_URL}/hub/files/${token}` });
+});
+
+// ---------- POST /hub/deliverable-folder (admin) — photo libraries ----------
+// Folder counterpart of /hub/deliverable-url. A photo library is a NAS folder,
+// not a file, so the admin registers the whole folder in one click and gets a
+// URL pair back per image. Each image is an ORDINARY deliverable underneath --
+// same deliverable_tokens table, same two-tokens-per-file rule (inline for the
+// thumbnail, attachment for the download) — so no schema change is involved
+// and /hub/files/:token serves these exactly like any video.
+hubRouter.use('/hub/deliverable-folder', credentialedCors);
+hubRouter.post('/hub/deliverable-folder', requireAdmin, (req, res) => {
+  const path = String(req.body?.path || '').trim();
+  const names = listDeliverableFolderImages(path);
+  if (!names) return res.status(404).json({ error: 'folder not found' });
+  if (!names.length) return res.status(422).json({ error: 'no images in folder' });
+  if (names.length > MAX_PHOTOS_PER_FOLDER) {
+    return res.status(422).json({
+      error: `folder has ${names.length} images (limit ${MAX_PHOTOS_PER_FOLDER}) — point at a single delivery folder`,
+    });
+  }
+
+  const now = new Date().toISOString();
+  const photos = names.map(name => {
+    // `path` is already validated as inside the tree and `name` comes from
+    // readdir (never from the request), so this join can't escape it.
+    const relative = `${path.replace(/\/+$/, '')}/${name}`;
+    const urls = [0, 1].map(downloadable => {
+      insertDeliverableToken.run(randomToken(16), relative, downloadable, now);
+      return `${PUBLIC_BASE_URL}/hub/files/${findDeliverableTokenByPath.get(relative, downloadable).token}`;
+    });
+    return { name, reviewUrl: urls[0], downloadUrl: urls[1] };
+  });
+
+  res.json({ photos });
 });
 
 // ---------- GET /hub/files/:token — the stable URL itself ----------

@@ -39,6 +39,35 @@
     40%,60%{transform:translateX(8px)}
   }
 
+  /* ---- asset card thumbnails ---- */
+  /* 16:9 media preview at the top of each deliverable card on the client landing.
+     The placeholder sits under the media, so a still-loading or failed thumbnail
+     degrades to the icon rather than a blank rectangle. */
+  .asset-thumb{
+    position:relative; aspect-ratio:16/9; width:100%; overflow:hidden;
+    border-radius:.55rem; background:var(--lsc-surface);
+    border:1px solid var(--lsc-rule); margin-bottom:1rem;
+  }
+  .asset-thumb > img, .asset-thumb > video{
+    position:relative; z-index:1;
+    width:100%; height:100%; object-fit:cover; display:block;
+  }
+  .asset-thumb .thumb-fallback{
+    position:absolute; inset:0; z-index:0;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--lsc-mid);
+  }
+  /* Photo libraries preview up to three images as a filmstrip. */
+  .asset-thumb.is-strip{ display:flex; gap:2px; }
+  .asset-thumb.is-strip > img{ flex:1 1 0; min-width:0; }
+  .card:hover .asset-thumb{ border-color:var(--lsc-sage); }
+
+  /* Replaces the emoji status dot — inherits the badge's own colour. */
+  .status-dot{
+    display:inline-block; width:.5em; height:.5em; border-radius:50%;
+    background:currentColor; margin-right:.5em; vertical-align:.08em;
+  }
+
   /* ---- badges ---- */
   .badge-reviewing{ background:rgba(217,164,65,.15); color:var(--lsc-amber); border:1px solid rgba(217,164,65,.35);}
   .badge-changes{ background:rgba(192,80,60,.15); color:var(--lsc-terra); border:1px solid rgba(192,80,60,.35);}
@@ -180,7 +209,10 @@ function buildPublishedRecord(p){
     // Portal-compatible asset field names retained (reviewLink/downloadLink/driveLink).
     assets: (p.assets||[]).map(a => ({
       id:a.id, type:a.type, title:a.title, status:a.status, comments:a.comments||[],
-      reviewLink:a.reviewLink||'', downloadLink:a.downloadLink||'', driveLink:a.driveLink||''
+      reviewLink:a.reviewLink||'', downloadLink:a.downloadLink||'', driveLink:a.driveLink||'',
+      // This map whitelists fields — without photos here the client record would
+      // carry no photo library at all and the grid would render empty.
+      photos: (a.photos||[]).map(ph => ({ name:ph.name||'', reviewLink:ph.reviewLink||'', downloadLink:ph.downloadLink||'' }))
     }))
   };
 }
@@ -250,6 +282,13 @@ const hubApi = {
     if(HUB_CONFIG.mode !== 'live') throw new Error('NAS deliverable links require live mode');
     return hubFetch('/hub/deliverable-url', { method:'POST', body: JSON.stringify({ path, downloadable: !!downloadable }) });
   },
+  // ADMIN: register a whole NAS folder of images as a photo library, getting back one
+  // {name, reviewUrl, downloadUrl} per image. Folder counterpart of deliverableUrl —
+  // same live-only constraint (there is no NAS to enumerate in simulate mode).
+  async deliverableFolder(path){
+    if(HUB_CONFIG.mode !== 'live') throw new Error('NAS deliverable links require live mode');
+    return hubFetch('/hub/deliverable-folder', { method:'POST', body: JSON.stringify({ path }) });
+  },
   // CLIENT: persist the legal/audit evidence bundle alongside the signed agreement
   // (signer name, timestamp, signature image, consent text/checked, user-agent,
   // verification token). The server stamps the IP address from the request itself,
@@ -281,7 +320,9 @@ function loadProjects(){
   if(!Array.isArray(parsed)) return [];
   // Normalise legacy/partial records so missing fields can't crash the tracker.
   return parsed.map(p => {
-    const assets = Array.isArray(p.assets) ? p.assets : [];
+    // photos[] post-dates the first photo-library assets, so default it for stored projects.
+    const assets = (Array.isArray(p.assets) ? p.assets : [])
+      .map(a => ({ ...a, photos: Array.isArray(a.photos) ? a.photos : [] }));
     let invoices = Array.isArray(p.invoices) ? p.invoices : [];
     // Migrate legacy single invoiceName → invoices[] final entry. Never wipe unknown fields.
     if(!invoices.length && p.invoiceName){
@@ -312,10 +353,30 @@ function projectStatusOf(project){
   return 'reviewing';
 }
 const statusMeta = {
-  reviewing:{ label:'Reviewing', dot:'🟡', cls:'badge-reviewing' },
-  changes:{ label:'Changes Requested', dot:'🟠', cls:'badge-changes' },
-  approved:{ label:'Approved & Closed', dot:'🟢', cls:'badge-approved' },
+  // dot is a CSS circle, not an emoji — it picks up each badge's own colour.
+  reviewing:{ label:'Reviewing', dot:'<span class="status-dot"></span>', cls:'badge-reviewing' },
+  changes:{ label:'Changes Requested', dot:'<span class="status-dot"></span>', cls:'badge-changes' },
+  approved:{ label:'Approved & Closed', dot:'<span class="status-dot"></span>', cls:'badge-approved' },
 };
+
+// Hairline line-art icon set — replaces the emoji that used to stand in for media
+// types. currentColor + stroke-based so they inherit text colour and stay crisp at
+// any size, and they render identically across platforms (emoji don't).
+const ICONS = {
+  video: '<path d="M2 5.5h20v13H2z"/><path d="M7 5.5v13M17 5.5v13M2 12h20"/><path d="M2 8.75h5M2 15.25h5M17 8.75h5M17 15.25h5"/>',
+  photo: '<path d="M3 5h18v14H3z"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M3 16.5l4.5-4.5 4 4 3-3L21 16"/>',
+  doc:   '<path d="M6 2.5h8l4 4v15H6z"/><path d="M14 2.5v4h4"/><path d="M9 12h6M9 15.5h6M9 8.5h2"/>',
+  play:  '<path d="M8 5.5l10 6.5-10 6.5z"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5.2l3.2 2"/>',
+  check: '<circle cx="12" cy="12" r="9"/><path d="M8 12.3l2.7 2.7L16 9.6"/>',
+  download: '<path d="M12 3.5v12M7.5 11l4.5 4.5 4.5-4.5"/><path d="M4 19.5h16"/>',
+};
+// size = px. Stroke-only by default; `play` is the one solid glyph.
+function icon(name, size = 20, cls = ''){
+  const body = ICONS[name] || '';
+  const fill = name === 'play' ? 'currentColor' : 'none';
+  return `<svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="${fill}" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${body}</svg>`;
+}
 
 // Smart admin-driven badges (F4). `[Project Complete]` is terminal and overrides the rest.
 function smartBadges(p){
@@ -325,7 +386,13 @@ function smartBadges(p){
   if(complete) return [{ label:'Project Complete', cls:'badge-complete' }];
   const out = [];
   if(invoices.some(i => i.type === 'deposit'))     out.push({ label:'Deposit Paid',    cls:'badge-deposit' });
-  if(assets.some(a => isValidUrl(a.reviewLink)))   out.push({ label:'Ready to Review', cls:'badge-ready'   });
+  // A photo library is reviewable once its photos[] is populated — it has no single
+  // reviewLink of its own, so checking reviewLink alone would never flag a photo-only
+  // project as ready.
+  const reviewable = a => a.type === 'photo'
+    ? (a.photos || []).some(ph => isValidUrl(ph.reviewLink))
+    : isValidUrl(a.reviewLink);
+  if(assets.some(reviewable))                      out.push({ label:'Ready to Review', cls:'badge-ready'   });
   return out;
 }
 function smartBadgesHtml(p, extraCls=''){
@@ -342,7 +409,7 @@ function agreementBadgeHtml(p, extraCls=''){
   const signed = p.agreement.signedAt ? new Date(p.agreement.signedAt) : null;
   const dateStr = signed && !isNaN(signed) ? signed.toLocaleDateString('en-AU', { day:'2-digit', month:'short', year:'numeric' }) : '';
   return `<div class="mono text-[10px] text-[var(--lsc-sage)] flex items-center gap-1.5 ${extraCls}">
-    <span>✅ Deliverables Accepted${dateStr ? ` · ${dateStr}` : ''}</span>
+    <span class="inline-flex items-center gap-1.5">${icon('check', 13)}Deliverables Accepted${dateStr ? ` · ${dateStr}` : ''}</span>
     <button type="button" data-view-evidence="${p.id}" class="underline text-[var(--lsc-mid)] hover:text-white">View evidence</button>
   </div>`;
 }
@@ -805,13 +872,16 @@ function renderInvoiceZone(d, type, label){
       <label class="block border border-dashed border-[var(--lsc-rule)] rounded-lg p-5 text-center cursor-pointer hover:border-[var(--lsc-sage)] transition">
         <input type="file" data-invoice-input="${type}" accept="application/pdf" class="hidden">
         <div class="mono text-[10px] text-[var(--lsc-mid)] mb-1 tracking-[0.15em]">${label}</div>
-        <div class="mono text-xs ${inv ? 'text-[var(--lsc-sage)]' : 'text-[var(--lsc-mid)]'} truncate">${inv ? '📄 ' + escapeHtml(inv.name) : 'Drag & drop PDF, or click to select'}</div>
+        <div class="mono text-xs ${inv ? 'text-[var(--lsc-sage)]' : 'text-[var(--lsc-mid)]'} truncate">${inv ? `<span class="inline-flex items-center gap-1.5">${icon('doc', 13)}${escapeHtml(inv.name)}</span>` : 'Drag &amp; drop PDF, or click to select'}</div>
       </label>
       ${inv ? `<button type="button" data-invoice-remove="${type}" class="mono text-[10px] text-[var(--lsc-terra)] mt-2 hover:underline">✕ remove</button>` : `<div class="h-4 mt-2"></div>`}
     </div>`;
 }
 function newAsset(type){
-  return { id: uid(), type, title:'', reviewLink:'', downloadLink:'', driveLink:'', deliverablePath:'', status:'reviewing', comments:[] };
+  // photos[] is the photo-library payload ({name, reviewLink, downloadLink} per image,
+  // filled by NAS LINK from a folder). Video assets leave it empty and use
+  // reviewLink/downloadLink instead; photo assets are the mirror image.
+  return { id: uid(), type, title:'', reviewLink:'', downloadLink:'', driveLink:'', deliverablePath:'', photos:[], status:'reviewing', comments:[] };
 }
 
 // Absolute NAS host path the admin copies out of the UGREEN file manager — matches
@@ -830,15 +900,16 @@ function renderEditor(){
   const assetTabs = d.assets.map((a,idx) => `
     <div class="card rounded-lg p-4 mb-3" data-asset-block="${a.id}">
       <div class="flex items-center justify-between mb-3">
-        <div class="mono text-sm font-bold text-[var(--lsc-white)]">${a.type === 'video' ? '🎬 VIDEO ASSET' : '🖼 PHOTO LIBRARY'} #${idx+1}</div>
+        <div class="mono text-sm font-bold text-[var(--lsc-white)] flex items-center gap-2">${icon(a.type === 'video' ? 'video' : 'photo', 16)}${a.type === 'video' ? 'VIDEO ASSET' : 'PHOTO LIBRARY'} #${idx+1}</div>
         <button data-remove-asset="${a.id}" class="text-[var(--lsc-mid)] hover:text-[var(--lsc-terra)] text-xs mono">REMOVE</button>
       </div>
       <input data-field="title" data-asset="${a.id}" class="field mb-2" placeholder="Deliverable title (e.g. Promo Film)" value="${escapeAttr(a.title)}">
-      <div class="mono text-[10px] text-[var(--lsc-mid)] mb-1">NAS SERVER VIDEO LINK</div>
+      <div class="mono text-[10px] text-[var(--lsc-mid)] mb-1">${a.type === 'photo' ? 'NAS SERVER PHOTO FOLDER' : 'NAS SERVER VIDEO LINK'}</div>
       <div class="flex gap-2 mb-2">
         <input data-field="deliverablePath" data-asset="${a.id}" class="field flex-1" value="${escapeAttr(a.deliverablePath||'')}">
         <button data-gen-link data-asset="${a.id}" class="btn-ghost rounded-lg px-3 mono text-[10px] whitespace-nowrap">NAS LINK</button>
       </div>
+      ${a.type === 'photo' ? `<div class="mono text-[10px] ${(a.photos||[]).length ? 'text-[var(--lsc-sage)]' : 'text-[var(--lsc-mid)]'} mb-2">${(a.photos||[]).length ? `✓ ${(a.photos||[]).length} photo${(a.photos||[]).length===1?'':'s'} linked` : 'No photos linked yet — paste the folder path and click NAS LINK.'}</div>` : ''}
       <div class="mono text-[10px] text-[var(--lsc-mid)] mb-1">GOOGLE DRIVE BACKUP LINK</div>
       <input data-field="driveLink" data-asset="${a.id}" class="field ${a.driveLink && !isValidUrl(a.driveLink)?'invalid':''}" value="${escapeAttr(a.driveLink)}">
     </div>`).join('');
@@ -905,16 +976,25 @@ function renderNasLinkHelpModal(){
       <div class="display text-lg mb-1">Linking a deliverable from the NAS</div>
       <div class="mono text-[10px] text-[var(--lsc-mid)] mb-4">SOP · NAS LINK button</div>
       <ol class="text-sm text-[var(--lsc-white)] leading-relaxed space-y-3 list-decimal pl-5">
-        <li>In the UGREEN NAS app's file manager, find the file and copy its
-          <strong>full absolute path</strong> — e.g.
+        <li>In the UGREEN NAS app's file manager, copy the
+          <strong>full absolute path</strong>. A video asset takes the path to the
+          <strong>file</strong>; a photo library takes the path to the
+          <strong>folder</strong> holding the images:
           <span class="mono text-[10px] block mt-1 px-2 py-1 rounded bg-[var(--lsc-black)]">${escapeHtml('/volume4/LSC Creative_Media/Client Deliverables_Media/Acme Co Promo/final-cut.mp4')}</span>
+          <span class="mono text-[10px] block mt-1 px-2 py-1 rounded bg-[var(--lsc-black)]">${escapeHtml('/volume4/LSC Creative_Media/Client Deliverables_Media/Acme Co Promo/Stills')}</span>
         </li>
-        <li>Paste it directly into the <strong>NAS Server Video Link</strong> field for the
-          right asset here — no popup, just paste it into the box.</li>
+        <li>Paste it directly into that asset's <strong>NAS Server Video Link</strong>
+          (video) or <strong>NAS Server Photo Folder</strong> (photo library) field —
+          no popup, just paste it into the box.</li>
         <li>Click the <strong>NAS LINK</strong> button next to that same field.</li>
-        <li>The site strips the shared folder prefix, checks the file exists on the NAS,
-          mints both a review link and a download link, and shows the resulting relative
-          path back in the field so you can see what's linked.</li>
+        <li>The site strips the shared folder prefix, checks it exists on the NAS, and
+          mints a review link plus a download link — for a photo folder, one pair per
+          image, and it tells you how many photos it linked. The resulting relative path
+          stays in the field so you can see what's linked.</li>
+        <li>A photo folder is read one level deep and only picks up
+          <strong>.jpg / .png / .webp</strong> files, so proxies, RAWs and sidecars in the
+          same folder are ignored. An empty folder, or one with more than 200 images,
+          is rejected — point it at a single delivery folder.</li>
         <li>A typo'd or wrong path fails with "file not found" rather than silently saving
           a broken link — re-check the path against the NAS and try again. A path that
           isn't inside <strong>Client Deliverables_Media</strong> at all fails loudly too,
@@ -938,7 +1018,7 @@ function getViewProject(){
 function renderClientNotFound(){
   return `
   <div class="min-h-screen flex flex-col items-center justify-center px-6 text-center">
-    <div class="text-4xl mb-4">🎬</div>
+    <div class="flex justify-center mb-4 text-[var(--lsc-mid)]">${icon('video', 40)}</div>
     <div class="display text-xl mb-2">Link not available</div>
     <div class="mono text-xs text-[var(--lsc-mid)] max-w-sm leading-relaxed">This delivery link is invalid, or hasn't been published to this device yet. Please contact the studio for an updated link.</div>
   </div>`;
@@ -988,9 +1068,9 @@ function renderClientLanding(){
   const p = getViewProject();
   const cards = p.assets.map(a => `
     <button data-open-asset="${a.id}" class="card rounded-xl p-6 text-left hover:border-[var(--lsc-sage)] transition">
-      <div class="text-3xl mb-3">${a.type==='video'?'🎬':'🖼'}</div>
+      ${renderAssetThumb(a)}
       <div class="display text-lg mb-1">View ${escapeHtml(a.title || (a.type==='video'?'Video':'Photo Library'))}</div>
-      <span class="mono text-[10px] px-2 py-1 rounded-full ${statusMeta[a.status].cls}">${statusMeta[a.status].dot} ${statusMeta[a.status].label}</span>
+      <span class="mono text-[10px] px-2 py-1 rounded-full ${statusMeta[a.status].cls}">${statusMeta[a.status].dot}${statusMeta[a.status].label}</span>
     </button>`).join('') || `<div class="col-span-full text-center py-16 text-[var(--lsc-mid)] mono text-sm">No deliverables added yet.</div>`;
 
   return renderClientChrome(`
@@ -1003,6 +1083,37 @@ function renderClientLanding(){
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">${cards}</div>
     </div>
   `);
+}
+
+// Media preview for a deliverable card on the client landing.
+//   video — the real file with #t=1, which makes the browser fetch just enough via
+//           Range to decode and paint the frame at 1s as a still poster. muted +
+//           preload="metadata" keeps it cheap; it never plays here.
+//   photo — up to the first three images as a filmstrip.
+// The icon fallback sits underneath the media, so a broken or slow thumbnail shows
+// the icon rather than an empty box. Purely decorative: the card's own label carries
+// the meaning, so the media is aria-hidden.
+function renderAssetThumb(a){
+  const fallback = `<span class="thumb-fallback">${icon(a.type === 'video' ? 'video' : 'photo', 34)}</span>`;
+
+  if(a.type === 'photo'){
+    const shots = (a.photos || []).filter(ph => ph.reviewLink).slice(0, 3);
+    if(!shots.length) return `<div class="asset-thumb">${fallback}</div>`;
+    return `
+      <div class="asset-thumb is-strip" aria-hidden="true">
+        ${fallback}
+        ${shots.map(ph => `<img src="${escapeAttr(ph.reviewLink)}" alt="" loading="lazy">`).join('')}
+      </div>`;
+  }
+
+  if(!a.reviewLink || !isValidUrl(a.reviewLink)) return `<div class="asset-thumb">${fallback}</div>`;
+  return `
+    <div class="asset-thumb" aria-hidden="true">
+      ${fallback}
+      <video src="${escapeAttr(a.reviewLink)}#t=1" preload="metadata" muted playsinline
+             disablePictureInPicture oncontextmenu="return false"
+             onerror="this.remove()"></video>
+    </div>`;
 }
 
 // Client landing Invoices block (F2). Deposit shows immediately (paid upfront);
@@ -1026,7 +1137,7 @@ function invoiceRow(inv, label, paid){
     <div class="card rounded-lg p-4 flex items-center justify-between gap-3">
       <div class="min-w-0">
         <div class="mono text-[10px] text-[var(--lsc-mid)] mb-0.5">${escapeHtml(label).toUpperCase()}</div>
-        <div class="text-sm truncate">📄 ${escapeHtml(inv.name || 'invoice.pdf')}</div>
+        <div class="text-sm truncate flex items-center gap-2">${icon('doc', 15, 'shrink-0 opacity-70')}<span class="truncate">${escapeHtml(inv.name || 'invoice.pdf')}</span></div>
       </div>
       ${paid ? '<span class="mono text-[10px] px-2 py-1 rounded-full badge-approved whitespace-nowrap">PAID</span>' : ''}
     </div>`;
@@ -1040,31 +1151,6 @@ function renderClientAsset(){
   `).join('');
 
   const canvas = a.type === 'video' ? renderVideoCanvas(a) : renderPhotoCanvas(a);
-
-  const commentLog = a.comments.length ? `
-    <div class="mt-6">
-      <div class="mono text-[10px] text-[var(--lsc-mid)] mb-2">ACTIVITY LOG</div>
-      <div class="space-y-2">
-        ${a.comments.map(c => `
-          <div class="card rounded-lg p-3 text-sm">
-            ${c.timestamp ? `<span class="mono text-[10px] text-[var(--lsc-terra)] mr-2">⏱️ ${c.timestamp}</span>` : ''}
-            ${c.photoIdx != null ? `<span class="mono text-[10px] text-[var(--lsc-sage)] mr-2">PHOTO #${c.photoIdx+1}</span>` : ''}
-            <span>${escapeHtml(c.text)}</span>
-            <div class="mono text-[9px] text-[var(--lsc-mid)] mt-1">${c.at}</div>
-          </div>`).join('')}
-      </div>
-    </div>` : '';
-
-  const gateway = a.status === 'approved' ? `
-    <div class="mt-6 card rounded-lg p-4 text-center">
-      <span class="mono text-xs ${statusMeta.approved.cls} px-3 py-1 rounded-full">🟢 APPROVED</span>
-    </div>` : `
-    <div class="mt-6 flex flex-wrap gap-3">
-      <button id="want-revisions" class="btn-sage rounded-lg px-5 py-3 mono text-xs">${state.revisionOpen ? 'REVISION FORM OPEN' : 'I WANT REVISIONS FOR THIS'}</button>
-      <button id="approve-asset" class="btn-terra rounded-lg px-5 py-3 mono text-xs">APPROVE CONTENT — I'M READY TO RECEIVE THIS</button>
-    </div>
-    ${state.revisionOpen ? renderRevisionForm(a) : ''}
-  `;
 
   const approveModal = state.approveModalAssetId === a.id ? `
     <div id="approve-modal-backdrop" class="fixed inset-0 z-30 flex items-center justify-center p-6" style="background:rgba(14,14,14,.7); backdrop-filter:blur(6px);">
@@ -1082,11 +1168,60 @@ function renderClientAsset(){
     <div class="border-b border-[var(--lsc-rule)] max-w-5xl mx-auto px-6 flex gap-2">${tabs}</div>
     <div class="max-w-5xl mx-auto px-6 py-10">
       ${canvas}
-      ${gateway}
-      ${commentLog}
+      <div id="asset-interaction">${renderAssetInteraction(a)}</div>
     </div>
     ${approveModal}
   `);
+}
+
+// The gateway buttons + revision form + activity log, split out of renderClientAsset so
+// revision interactions can repaint JUST this container (refreshAssetInteraction) instead
+// of the whole screen. render() rebuilds root.innerHTML, which replaces the <video>
+// element and restarts playback from 0 — so the player and #pause-pill deliberately live
+// OUTSIDE this container and are never touched by a revision click.
+function renderAssetInteraction(a){
+  if(a.status === 'approved'){
+    return `
+    <div class="mt-6 card rounded-lg p-4 text-center">
+      <span class="mono text-xs ${statusMeta.approved.cls} px-3 py-1 rounded-full inline-flex items-center gap-1.5">${icon('check', 13)}APPROVED</span>
+    </div>`;
+  }
+
+  const commentLog = a.comments.length ? `
+    <div class="mt-6">
+      <div class="mono text-[10px] text-[var(--lsc-mid)] mb-2">ACTIVITY LOG</div>
+      <div class="space-y-2">
+        ${a.comments.map(c => `
+          <div class="card rounded-lg p-3 text-sm">
+            ${c.timestamp ? `<span class="mono text-[10px] text-[var(--lsc-terra)] mr-2 inline-flex items-center gap-1 align-middle">${icon('clock', 12)}${c.timestamp}</span>` : ''}
+            ${c.photoIdx != null ? `<span class="mono text-[10px] text-[var(--lsc-sage)] mr-2">${c.photoName ? escapeHtml(c.photoName) : 'PHOTO #' + (c.photoIdx+1)}</span>` : ''}
+            <span>${escapeHtml(c.text)}</span>
+            <div class="mono text-[9px] text-[var(--lsc-mid)] mt-1">${c.at}</div>
+          </div>`).join('')}
+      </div>
+    </div>` : '';
+
+  // While the revision panel is open the approve button is absent from the DOM entirely,
+  // not just disabled — a client asking for changes is not approving this content.
+  return `
+    <div class="mt-6 flex flex-wrap gap-3">
+      <button id="want-revisions" class="btn-sage rounded-lg px-5 py-3 mono text-xs">${state.revisionOpen ? 'REVISION FORM OPEN' : 'I WANT REVISIONS FOR THIS'}</button>
+      ${state.revisionOpen ? '' : `<button id="approve-asset" class="btn-terra rounded-lg px-5 py-3 mono text-xs">APPROVE CONTENT — I'M READY TO RECEIVE THIS</button>`}
+    </div>
+    ${state.revisionOpen ? renderRevisionForm(a) : ''}
+    ${commentLog}
+  `;
+}
+
+// Repaint only #asset-interaction and rebind its buttons. Leaves the <video> alone.
+function refreshAssetInteraction(){
+  const host = document.getElementById('asset-interaction');
+  if(!host) return;
+  const p = getViewProject();
+  const a = p.assets.find(x => x.id === state.activeAssetId);
+  if(!a) return;
+  host.innerHTML = renderAssetInteraction(a);
+  bindAssetInteraction(a, p);
 }
 
 function renderVideoCanvas(a){
@@ -1103,20 +1238,34 @@ function renderVideoCanvas(a){
     <div class="aspect-video bg-[var(--lsc-surface)] rounded-xl overflow-hidden mb-2">
       <video id="asset-video" class="w-full h-full" controls controlsList="nodownload" disablePictureInPicture oncontextmenu="return false" preload="metadata" src="${escapeAttr(a.reviewLink)}"></video>
     </div>
-    <div id="pause-pill" class="timestamp-pill mono text-[10px] bg-[var(--lsc-terra)] text-white px-2 py-1 rounded-full inline-block mb-2" ${state.pausedAt ? '' : 'style="display:none"'}>⏱️ ${state.pausedAt || ''}</div>
+    <div id="pause-pill" class="timestamp-pill mono text-[10px] bg-[var(--lsc-terra)] text-white px-2 py-1 rounded-full inline-flex items-center gap-1.5 mb-2" ${state.pausedAt ? '' : 'style="display:none"'}>${icon('clock', 12)}<span id="pause-pill-time">${state.pausedAt || ''}</span></div>
   `;
 }
 
+// Renders the asset's real photos[] (registered from a NAS folder by the editor's
+// NAS LINK button). Two columns on phones per the responsive rules — four 375px-wide
+// thumbnails in a row would be unusable for judging an image.
 function renderPhotoCanvas(a){
-  const opts = Array.from({length:8}).map((_,i) => `<option value="${i}" ${state.selectedPhotoIdx===i?'selected':''}>Photo ${i+1}</option>`).join('');
-  const grid = Array.from({length:8}).map((_,i) => `
-    <div data-photo="${i}" class="aspect-square rounded-lg bg-[var(--lsc-surface)] flex items-center justify-center cursor-pointer border-2 ${state.selectedPhotoIdx===i?'border-[var(--lsc-sage)]':'border-transparent'}">
-      <span class="mono text-xs text-[var(--lsc-mid)]">#${i+1}</span>
+  const photos = a.photos || [];
+  if(!photos.length){
+    return `
+    <div class="card rounded-xl p-10 text-center mb-4">
+      <div class="flex justify-center mb-3 text-[var(--lsc-mid)]">${icon('photo', 34)}</div>
+      <div class="mono text-xs text-[var(--lsc-mid)]">This photo library hasn't been linked yet. Please contact the studio.</div>
+    </div>`;
+  }
+
+  const grid = photos.map((ph, i) => `
+    <div data-photo="${i}" title="${escapeAttr(ph.name || ('Photo ' + (i+1)))}" class="aspect-square rounded-lg overflow-hidden bg-[var(--lsc-surface)] cursor-pointer border-2 ${state.selectedPhotoIdx===i?'border-[var(--lsc-sage)]':'border-transparent'}">
+      <img src="${escapeAttr(ph.reviewLink)}" alt="${escapeAttr(ph.name || ('Photo ' + (i+1)))}" loading="lazy" class="w-full h-full object-cover pointer-events-none" oncontextmenu="return false">
     </div>`).join('');
+
+  const opts = photos.map((ph, i) => `<option value="${i}" ${state.selectedPhotoIdx===i?'selected':''}>${escapeHtml(ph.name || ('Photo ' + (i+1)))}</option>`).join('');
+
   return `
-    <div class="grid grid-cols-4 gap-2 mb-4">${grid}</div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">${grid}</div>
     <div class="mono text-[10px] text-[var(--lsc-mid)] mb-1">SELECT PHOTO FOR FEEDBACK</div>
-    <select id="photo-select" class="field w-56">
+    <select id="photo-select" class="field w-full md:w-72">
       <option value="">— choose a photo —</option>
       ${opts}
     </select>
@@ -1141,8 +1290,8 @@ function renderClientFinal(){
   return renderClientChrome(`
     <div class="max-w-3xl mx-auto px-6 py-12">
       <div class="card rounded-xl p-4 mb-6 toast flex items-center gap-3">
-        <span>✅</span>
-        <span class="text-sm">An email with a copy of your download links has been sent to your email. <span class="mono text-[10px] text-[var(--lsc-sage)]">Sent 🟢</span></span>
+        <span class="text-[var(--lsc-sage)] shrink-0">${icon('check', 18)}</span>
+        <span class="text-sm">An email with a copy of your download links has been sent to your email. <span class="mono text-[10px] text-[var(--lsc-sage)]">Sent</span></span>
       </div>
 
       <div class="display text-2xl mb-2">Final Delivery</div>
@@ -1150,8 +1299,28 @@ function renderClientFinal(){
 
       <div class="space-y-3 mb-6">
         ${p.assets.map(a => {
-          const canDownload = a.downloadLink && isValidUrl(a.downloadLink);
           const canDrive = a.driveLink && isValidUrl(a.driveLink);
+          const driveBtn = canDrive
+            ? `<a href="${escapeAttr(a.driveLink)}" target="_blank" rel="noopener" class="btn-sage rounded px-3 py-2 mono text-[10px] inline-block">GOOGLE DRIVE BACKUP</a>`
+            : `<button class="btn-sage rounded px-3 py-2 mono text-[10px] opacity-40 cursor-not-allowed" disabled>GOOGLE DRIVE BACKUP</button>`;
+
+          // A photo library has no single file to download — it's a folder, so it gets
+          // one link per image (zipping server-side is a separate feature).
+          const photos = a.type === 'photo' ? (a.photos || []).filter(ph => ph.downloadLink && isValidUrl(ph.downloadLink)) : [];
+          if(a.type === 'photo'){
+            return `
+          <div class="card rounded-lg p-4">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <div class="mono text-xs">${escapeHtml(a.title || 'Photo Library')} ${photos.length ? `<span class="text-[var(--lsc-mid)]">· ${photos.length} photo${photos.length===1?'':'s'}</span>` : ''}</div>
+              ${driveBtn}
+            </div>
+            ${photos.length
+              ? `<div class="flex flex-wrap gap-2">${photos.map(ph => `<a href="${escapeAttr(ph.downloadLink)}" target="_blank" rel="noopener" download class="btn-terra rounded px-3 py-2 mono text-[10px] inline-flex items-center gap-1.5">${icon('download', 13)}${escapeHtml(ph.name)}</a>`).join('')}</div>`
+              : `<div class="mono text-[10px] text-[var(--lsc-mid)]">No photos linked — contact the studio.</div>`}
+          </div>`;
+          }
+
+          const canDownload = a.downloadLink && isValidUrl(a.downloadLink);
           return `
           <div class="card rounded-lg p-4 flex items-center justify-between">
             <div class="mono text-xs">${escapeHtml(a.title || a.type)}</div>
@@ -1159,9 +1328,7 @@ function renderClientFinal(){
               ${canDownload
                 ? `<a href="${escapeAttr(a.downloadLink)}" target="_blank" rel="noopener" class="btn-terra rounded px-3 py-2 mono text-[10px] inline-block">DOWNLOAD CONTENT</a>`
                 : `<button class="btn-terra rounded px-3 py-2 mono text-[10px] opacity-40 cursor-not-allowed" disabled>DOWNLOAD CONTENT</button>`}
-              ${canDrive
-                ? `<a href="${escapeAttr(a.driveLink)}" target="_blank" rel="noopener" class="btn-sage rounded px-3 py-2 mono text-[10px] inline-block">GOOGLE DRIVE BACKUP</a>`
-                : `<button class="btn-sage rounded px-3 py-2 mono text-[10px] opacity-40 cursor-not-allowed" disabled>GOOGLE DRIVE BACKUP</button>`}
+              ${driveBtn}
             </div>
           </div>`;
         }).join('')}
@@ -1550,13 +1717,23 @@ function bindEditor(){
       const original = btn.textContent;
       btn.disabled = true; btn.textContent = '…';
       try {
-        const [review, download] = await Promise.all([
-          hubApi.deliverableUrl(relativePath, false),
-          hubApi.deliverableUrl(relativePath, true)
-        ]);
-        asset.reviewLink = review.url;
-        asset.downloadLink = download.url;
-        asset.deliverablePath = relativePath;
+        if(asset.type === 'photo'){
+          // A photo library is a FOLDER: one call enumerates it and returns a URL pair
+          // per image. asset.reviewLink/downloadLink stay empty for photo assets —
+          // photos[] is what the client grid and the final screen read.
+          const { photos } = await hubApi.deliverableFolder(relativePath);
+          asset.photos = (photos || []).map(ph => ({ name: ph.name, reviewLink: ph.reviewUrl, downloadLink: ph.downloadUrl }));
+          asset.deliverablePath = relativePath;
+          toast(`✓ Linked ${asset.photos.length} photo${asset.photos.length===1?'':'s'}.`);
+        } else {
+          const [review, download] = await Promise.all([
+            hubApi.deliverableUrl(relativePath, false),
+            hubApi.deliverableUrl(relativePath, true)
+          ]);
+          asset.reviewLink = review.url;
+          asset.downloadLink = download.url;
+          asset.deliverablePath = relativePath;
+        }
         render();
       } catch(e){
         btn.disabled = false; btn.textContent = original;
@@ -1613,21 +1790,16 @@ function bindClientAsset(){
 
   const video = document.getElementById('asset-video');
   if(video){
-    // Mutate state.pausedAt directly (no render()) — a full re-render would replace the
-    // <video> element wholesale via root.innerHTML and restart playback from 0.
-    const pausePill = document.getElementById('pause-pill');
+    // Drive the pill through setPausePill (no render()) — a full re-render would replace
+    // the <video> element wholesale via root.innerHTML and restart playback from 0.
     video.onerror = () => setState({ videoFailed:true });
-    video.onplay = () => {
-      state.pausedAt = null;
-      if(pausePill) pausePill.style.display = 'none';
-    };
+    video.onplay = () => setPausePill(null);
     video.onpause = () => {
       if(video.ended) return;
-      const t = Math.floor(video.currentTime);
-      const mm = String(Math.floor(t/60)).padStart(2,'0');
-      const ss = String(t%60).padStart(2,'0');
-      state.pausedAt = `${mm}:${ss}`;
-      if(pausePill){ pausePill.textContent = `⏱️ ${state.pausedAt}`; pausePill.style.display = ''; }
+      // Timestamps only exist once the client has actually asked for revisions — an
+      // incidental pause while just watching must not stamp anything.
+      if(!state.revisionOpen) return;
+      setPausePill(fmtVideoTime(video.currentTime));
     };
   }
 
@@ -1636,12 +1808,6 @@ function bindClientAsset(){
   });
   const photoSelect = document.getElementById('photo-select');
   if(photoSelect) photoSelect.onchange = () => setState({ selectedPhotoIdx: photoSelect.value === '' ? null : Number(photoSelect.value) });
-
-  const wantRev = document.getElementById('want-revisions');
-  if(wantRev) wantRev.onclick = () => setState({ revisionOpen: !state.revisionOpen });
-
-  const approveBtn = document.getElementById('approve-asset');
-  if(approveBtn) approveBtn.onclick = () => setState({ approveModalAssetId: a.id });
 
   const confirmApprove = document.getElementById('confirm-approve');
   if(confirmApprove) confirmApprove.onclick = () => {
@@ -1654,6 +1820,54 @@ function bindClientAsset(){
   const cancelApprove = document.getElementById('cancel-approve');
   if(cancelApprove) cancelApprove.onclick = () => setState({ approveModalAssetId:null });
 
+  bindAssetInteraction(a, p);
+}
+
+// mm:ss for the review-timestamp pill.
+function fmtVideoTime(seconds){
+  const t = Math.max(0, Math.floor(seconds || 0));
+  return `${String(Math.floor(t/60)).padStart(2,'0')}:${String(t%60).padStart(2,'0')}`;
+}
+
+// #pause-pill sits outside #asset-interaction (next to the player), so it's updated in
+// place rather than re-rendered. Passing null clears the stamp and hides the pill.
+function setPausePill(value){
+  state.pausedAt = value || null;
+  const pill = document.getElementById('pause-pill');
+  if(!pill) return;
+  // Only the time text is rewritten — the clock icon is static markup beside it.
+  if(state.pausedAt){
+    const label = document.getElementById('pause-pill-time');
+    if(label) label.textContent = state.pausedAt;
+    pill.style.display = '';
+  }
+  else { pill.style.display = 'none'; }
+}
+
+// Bindings for everything inside #asset-interaction. Called by bindClientAsset on a full
+// render and again by refreshAssetInteraction after a partial repaint. These handlers use
+// refreshAssetInteraction() — NOT setState() — so the <video> survives with its playhead
+// intact. approve-asset is the exception: it opens a modal outside this container.
+function bindAssetInteraction(a, p){
+  const approveBtn = document.getElementById('approve-asset');
+  if(approveBtn) approveBtn.onclick = () => setState({ approveModalAssetId: a.id });
+
+  const wantRev = document.getElementById('want-revisions');
+  if(wantRev) wantRev.onclick = () => {
+    state.revisionOpen = !state.revisionOpen;
+    const video = document.getElementById('asset-video');
+    if(state.revisionOpen){
+      // Opening the panel is what arms the timestamp. Stamp the live playhead only if the
+      // client is actually parked on a frame — pause-on-the-problem-then-ask-for-revisions
+      // is the normal flow, and a stamp taken mid-playback would be stale by the time they
+      // finish typing.
+      setPausePill(video && video.paused && video.currentTime > 0 ? fmtVideoTime(video.currentTime) : null);
+    } else {
+      setPausePill(null);
+    }
+    refreshAssetInteraction();
+  };
+
   const revText = document.getElementById('revision-text');
   if(revText) revText.addEventListener('input', () => { state.revisionDraft = revText.value; });
 
@@ -1665,15 +1879,32 @@ function bindClientAsset(){
       text: state.revisionDraft.trim(),
       timestamp: a.type === 'video' && state.pausedAt ? state.pausedAt : null,
       photoIdx: a.type === 'photo' ? state.selectedPhotoIdx : null,
+      // Index alone is fragile — adding a file to the NAS folder reshuffles it. The
+      // filename is what the studio actually needs to find the right image.
+      photoName: a.type === 'photo' && state.selectedPhotoIdx != null
+        ? ((a.photos || [])[state.selectedPhotoIdx] || {}).name || null
+        : null,
       at: nowStr(),
     });
     a.status = 'changes';
     persistViewProject();
-    setState({ revisionDraft:'', revisionOpen:false });
+    // Panel stays OPEN with an empty box: a client usually has more than one note, and
+    // the old setState({revisionOpen:false}) both collapsed the panel and restarted the
+    // video. Only #asset-interaction repaints, so the playhead is untouched.
+    state.revisionDraft = '';
+    refreshAssetInteraction();
+    const nextBox = document.getElementById('revision-text');
+    if(nextBox) nextBox.focus();
   };
 
   const cancelRev = document.getElementById('cancel-revision');
-  if(cancelRev) cancelRev.onclick = () => { if(a.comments.length) return; setState({ revisionOpen:false, revisionDraft:'' }); };
+  if(cancelRev) cancelRev.onclick = () => {
+    if(a.comments.length) return;
+    state.revisionOpen = false;
+    state.revisionDraft = '';
+    setPausePill(null);
+    refreshAssetInteraction();
+  };
 }
 
 function bindClientFinal(){

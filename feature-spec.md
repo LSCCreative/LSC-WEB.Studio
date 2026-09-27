@@ -5,112 +5,181 @@
 
 ## Feature Name & Goal
 
-Client Hub editor — collapse the redundant Review/Download link boxes into
-one NAS link field per asset, and replace the popup-prompt path entry with
-a paste-then-convert-in-place flow.
+Client review-flow fixes — make the revision panel behave like a workspace
+instead of a one-shot form, and give photo libraries real thumbnails instead
+of blank placeholder frames.
 
-### Current behavior (confirmed by reading the code, not assumed)
+Four reported defects, all client-facing (`client-hub-app/index.html` for
+1–3; 4 also needs a new NAS backend route).
 
-- `client-hub-app/index.html`'s editor renders **two** link inputs per asset
-  — "Review link" (`a.reviewLink`) and "Download link" (`a.downloadLink`) —
-  each with its own `NAS LINK` button (`renderEditor`, ~L825-832).
-- Both buttons run the same handler (`data-gen-link` click binding,
-  ~L1532-1549): it opens a JS `prompt()` asking for a path *relative to*
-  `Client Deliverables_Media`, then calls `hubApi.deliverableUrl(path,
-  downloadable)` — a live-only NAS API call — and drops the returned URL
-  into `reviewLink` or `downloadLink` depending on which button was clicked.
-- **The two fields are NOT interchangeable under the hood**, even though
-  they point at the same source file: `POST /hub/deliverable-url`
-  (`nas/client-hub-api/src/hubRoutes.js`) mints a **separate token** per
-  `(relative_path, downloadable)` pair (see `deliverable_tokens`'s
-  `UNIQUE(relative_path, downloadable)` in `db.js`), because the server
-  streams the *same* file with a different `Content-Disposition` depending
-  on which token is hit (`streamFile`, `deliverables.js`) — `inline` for
-  review (so `<video src>` at L1096 can play/scrub it in the asset canvas)
-  vs. `attachment` for download (so the client's browser saves a copy,
-  `renderClientFinal` L1152). One raw source path always needs **two**
-  generated URLs, one per mode.
-- `resolveDeliverablePath` (`nas/client-hub-api/src/deliverables.js`)
-  rejects any path starting with `/` — the backend only ever accepts a path
-  *relative to* `DELIVERABLES_DIR`. On the NAS host that directory is
-  `/volume4/LSC Creative_Media/Client Deliverables_Media` (see
-  `docker-compose.yml`'s volume mount), read-only-mounted into the
-  container at `/srv/deliverables`.
-- The admin confirmed (2026-09-18) that what they actually copy out of the
-  UGREEN NAS app's file manager is the **absolute NAS host path**, e.g.
-  `/volume4/LSC Creative_Media/Client Deliverables_Media/Acme Co
-  Promo/final-cut.mp4` — not a share URL, not an SMB path. Today's `prompt()`
-  makes them retype/trim that down to the relative tail by hand
-  (`Acme Co Promo/final-cut.mp4`), which is the friction being removed.
+---
 
-### What the admin wants instead
+## Defect 1 — Timestamp captures before the client asks for revisions
 
-1. **One box per asset**, not two — "NAS Server Video Link" (or similar),
-   since both existing boxes are fed from the same source file and having
-   two side-by-side is redundant from the admin's point of view.
-2. **Paste the raw absolute NAS path directly into that box**, then press a
-   `NAS LINK` button *to the right of that same field* (no popup, no
-   separate prompt) to convert it in place.
-3. The site must still work exactly as before for the client-facing pages —
-   the review/asset canvas still needs an inline-playable URL, the final
-   delivery screen still needs a forced-download URL. This is a UI/workflow
-   consolidation for the admin, **not** a change to what gets served to
-   clients.
+**Current behavior (read from the code, not assumed):** `bindClientAsset`
+attaches `video.onpause` unconditionally (`client-hub-app/index.html`
+~L1622-1638). Any pause — including an incidental one while just watching —
+writes `state.pausedAt` and reveals `#pause-pill`. The client sees a
+timestamp badge appear even though they never said they wanted a revision.
 
-### Decisions made this planning pass
+**Wanted:** the timestamp only exists once the client has clicked
+`I WANT REVISIONS FOR THIS`. Before that, pausing is just pausing.
 
-- Internal data model is unchanged: `asset.reviewLink` and
-  `asset.downloadLink` keep existing separately, populated from the same
-  source path by two `hubApi.deliverableUrl()` calls (`downloadable:false`
-  and `downloadable:true`) fired together from one click. Nothing
-  downstream (`renderVideoCanvas`, `renderClientFinal`, `smartBadges`,
-  the editor's `badLink` validation) needs to change.
-- The merged field's value is the **admin-facing string** (raw pasted path,
-  then the derived relative path once converted) — not either generated hub
-  URL, which are opaque tokens with no debugging value to look at. A new
-  `asset.deliverablePath` field stores the last-converted relative path so
-  the admin can see what's linked without re-pasting, and so re-opening the
-  editor doesn't show a blank/confusing box for an asset that already has
-  working links.
-- Conversion strips a known, hardcoded absolute prefix
-  (`/volume4/LSC Creative_Media/Client Deliverables_Media`, matching
-  `docker-compose.yml`'s volume source exactly) from the pasted text. If the
-  pasted text doesn't start with that prefix, treat it as already-relative
-  and pass it through unchanged (covers copy/paste of a previously-converted
-  value, or an admin who already knows the relative path) — but if it starts
-  with `/` and doesn't match the known prefix, that's a real, loud error (a
-  different volume/share, a typo, a path copied from the wrong app) rather
-  than a silent wrong-file registration.
-- Editing the field after a successful conversion re-arms it (must click
-  `NAS LINK` again before the new text takes effect) — the field always
-  reflects either "not yet converted for this text" or "linked as of this
-  exact text", never a stale mix.
-- The existing "?" SOP modal (client-hub-app/index.html, added for the
-  previous feature) documents the *old* two-box/prompt flow and will be
-  wrong the moment this ships — updating it is in scope as part of this
-  feature, not a follow-up.
+**Decision:** gate the `onpause` capture on `state.revisionOpen`, AND capture
+`video.currentTime` at the moment the revision panel opens — otherwise the
+natural flow (watch → pause on the problem → *then* click revisions) would
+lose the timestamp the client actually cares about. Closing/cancelling the
+panel clears `state.pausedAt` and hides the pill.
+
+---
+
+## Defect 2 — Submitting a revision closes the panel and restarts the video
+
+**Current behavior:** `#submit-revision`'s handler ends with
+`setState({ revisionDraft:'', revisionOpen:false })` (~L1672). Two
+consequences, both reported:
+
+1. `revisionOpen:false` collapses the panel, so a client with a second note
+   has to click `I WANT REVISIONS FOR THIS` again.
+2. `setState` → `render()` → `root.innerHTML = renderClientAsset()`, which
+   replaces the `<video>` element wholesale. The new element starts at 0, so
+   the playhead is lost. (The existing code already knows this — see the
+   comment above the `video.onplay`/`onpause` handlers explaining why they
+   mutate `state.pausedAt` directly instead of calling `render()`.)
+
+**Wanted:** submitting leaves the panel open with an empty textarea and the
+playhead exactly where it was, so the client can keep noting things.
+
+**Decision — the structural fix, not a workaround:** stop re-rendering the
+whole asset screen for revision interactions. Wrap the gateway buttons +
+revision form + activity log in a single `<div id="asset-interaction">`,
+extract its markup into `renderAssetInteraction(a)`, and add
+`refreshAssetInteraction()` that rewrites only that container's `innerHTML`
+and rebinds its buttons. The `<video>` element lives outside that container,
+so it is never touched — no playhead save/restore hack, no reload flicker,
+and it fixes every other revision interaction (open, cancel, photo select)
+for free. `submit-revision`, `want-revisions` and `cancel-revision` call
+`refreshAssetInteraction()` instead of `setState()`.
+
+Rejected alternative: keep the full re-render and stash
+`state.videoTime`/`state.videoPlaying` to restore afterwards. Works, but it
+re-requests the video, flashes, and leaves the underlying "any state change
+nukes the player" trap in place for the next feature to trip over.
+
+---
+
+## Defect 3 — `APPROVE CONTENT` still shown while writing a revision
+
+**Current behavior:** `renderClientAsset`'s `gateway` renders
+`#want-revisions` and `#approve-asset` side by side, then appends the
+revision form below (~L1059-1066). The approve button stays visible and live
+while the client is typing a revision.
+
+**Wanted:** while the revision panel is open, `APPROVE CONTENT — I'M READY
+TO RECEIVE THIS` is not on the page. A client asking for changes is not
+approving.
+
+**Decision:** `renderAssetInteraction` omits `#approve-asset` entirely (not
+just disables it) when `state.revisionOpen`. `CANCEL REVISIONS` is the way
+back to the approve button, and it's already blocked once comments exist —
+which is correct: an asset with revisions on it shouldn't be approvable from
+this screen anyway.
+
+---
+
+## Defect 4 — Photo libraries show blank frames on the client page
+
+**Current behavior:** `renderPhotoCanvas` (~L1112-1125) is a hardcoded
+placeholder — `Array.from({length:8})` of empty `div`s showing `#1`…`#8`.
+There is no photo data anywhere in the app to render: `newAsset('photo')`
+produces exactly the same shape as a video asset (`reviewLink`,
+`downloadLink`, `driveLink`, `deliverablePath` — all single-file fields), and
+the backend can't help either: `resolveDeliverablePath`
+(`nas/client-hub-api/src/deliverables.js`) returns `null` for anything that
+isn't `isFile()`, so pasting a *folder* path into the editor's NAS field and
+clicking `NAS LINK` 404s. Photo libraries have never been wired to real
+media — the previous feature's spec listed this as a known prototype gap.
+
+So this is not a rendering bug with a CSS fix; it's a missing vertical
+feature. Scoped deliberately below.
+
+**Decisions:**
+
+- **A photo library is a NAS *folder*, not a file.** The admin pastes the
+  absolute folder path (same UGREEN copy/paste habit, same
+  `NAS_PATH_PREFIX` stripping via the existing `toRelativeDeliverablePath`)
+  and `NAS LINK` enumerates it.
+- **New backend route `POST /hub/deliverable-folder`** (admin-only,
+  `credentialedCors` + `requireAdmin`, mirroring `/hub/deliverable-url`):
+  resolves the relative path as a *directory* under `DELIVERABLES_DIR`,
+  lists image files only (by extension, from the existing `MIME_TYPES`
+  image entries — `.jpg/.jpeg/.png/.webp`), sorts by filename, and mints
+  the usual **two** tokens per image (`downloadable:0` inline for the
+  thumbnail/lightbox, `downloadable:1` attachment for the download).
+  Returns `{ photos: [{ name, reviewUrl, downloadUrl }] }`.
+  - Reuses `insertDeliverableToken` / `findDeliverableTokenByPath` and the
+    existing `deliverable_tokens` table unchanged — no schema migration.
+    Each image is just an ordinary deliverable file; the folder is only an
+    admin-side convenience for registering many of them at once.
+  - Needs a new `resolveDeliverableDir()` next to `resolveDeliverablePath`
+    (same traversal guards — reject leading `/`, `\0`, anything resolving
+    outside the tree — but `isDirectory()` instead of `isFile()`). Not a
+    relaxation of the existing guard; a sibling with identical rules.
+  - Non-recursive (top level of the folder only), and capped at a sane
+    number of images per folder so a mis-pasted path can't mint thousands
+    of tokens in one click.
+- **Client data model:** `asset.photos = [{ name, reviewLink, downloadLink }]`,
+  populated by the editor, carried through `buildPublishedRecord` (currently
+  drops any field it doesn't name explicitly, so this is required — without
+  it the client record has no photos at all) and defaulted to `[]` in
+  `loadProjects`'s normaliser for existing stored projects.
+- **`renderPhotoCanvas` renders the real list** — `<img>` thumbnails from
+  each `reviewLink`, click-to-select and the `#photo-select` dropdown keyed
+  to the real indices with the real filenames as labels. A photo asset with
+  no `photos` yet gets an explicit empty state ("no photos linked yet"), not
+  eight blank squares.
+- **Per-photo feedback:** comments already store `photoIdx`; also store
+  `photoName` so the activity log (and the admin) can name the file instead
+  of relying on an index that shifts if the folder changes.
+- **Final delivery screen:** a photo library has no single `downloadLink`, so
+  `renderClientFinal` lists per-photo download links for photo assets
+  instead of one `DOWNLOAD CONTENT` button.
+- The editor's field label and the `?` SOP modal both say "VIDEO LINK" /
+  describe a file — both must read correctly for the folder case too.
+
+---
 
 ## Acceptance Criteria
 
-- Each asset in the editor shows exactly one NAS link input + one `NAS
-  LINK` button (no separate Review/Download boxes).
-- Pasting an absolute NAS path and clicking `NAS LINK` populates both
-  `reviewLink` and `downloadLink` correctly (verified against a real NAS
-  path) with no popup/prompt involved.
-- The asset review canvas (video playback) and the final delivery screen
-  (forced download) both continue to work off the two internally-generated
-  URLs — regression-checked, since this touches the one code path both
-  screens depend on.
-- Pasting a path that doesn't resolve to a real file on the NAS fails
-  loudly (existing `file not found` 404 behavior, surfaced clearly in the
-  UI) rather than silently linking nothing.
-- The SOP help modal reflects the new one-box paste-and-convert flow.
+1. Pausing the review video before clicking `I WANT REVISIONS FOR THIS`
+   shows no timestamp pill. After clicking it, the pill shows the playhead
+   position; pausing again while the panel is open updates it; cancelling
+   the panel clears it.
+2. Clicking `SUBMIT REVISION` leaves the panel open with an empty textarea,
+   appends the note to the activity log, and the video keeps playing/stays
+   paused at the same position — it does not jump to 0.
+3. While the revision panel is open, no `APPROVE CONTENT` button is present
+   in the DOM.
+4. A photo library asset with a linked NAS folder shows real image
+   thumbnails on the client page; selecting one and submitting a revision
+   records the photo's filename; the final delivery screen offers a download
+   per photo. A photo asset with no folder linked shows a clear empty state.
+5. Pasting a folder path that doesn't exist, contains no images, or sits
+   outside `NAS_PATH_PREFIX` fails loudly (toast), consistent with the
+   existing single-file behavior.
+6. No regression to video assets: review playback, approve flow, agreement
+   screen, and the final-screen download button all behave as before.
 
 ## Out of Scope
 
-- Any change to `driveLink` (Google Drive backup) — untouched, unrelated.
-- Any change to the photo-library review canvas (`renderPhotoCanvas`) — it's
-  a static placeholder gallery not wired to `reviewLink` at all; a
-  pre-existing prototype gap, not something this feature touches.
-- Re-architecting the backend token scheme (still two tokens per file, one
-  per `downloadable` mode) — out of scope; this feature is admin-UI-only.
+- Zipping a photo library into one download — per-photo links only.
+- Server-side thumbnail generation / resizing. Thumbnails are the full
+  images scaled by CSS (`object-fit: cover`); fine for the current library
+  sizes, and a real thumbnailer is its own feature if it becomes a problem.
+- A lightbox / full-size photo viewer. Grid + selection only, matching what
+  the placeholder implied.
+- Recursive folder walking, or non-image files in a photo folder (ignored).
+- `driveLink` (Google Drive backup) — untouched.
+- The `/hub/feedback` write endpoint (client revisions still don't reach the
+  studio cross-device in live mode — pre-existing, logged seam in
+  `persistViewProject`, unchanged by this feature).
