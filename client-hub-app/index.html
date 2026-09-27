@@ -39,6 +39,59 @@
     40%,60%{transform:translateX(8px)}
   }
 
+  /* ---- photo lightbox ---- */
+  /* Full-bleed review surface: one photo large enough to actually judge, with its own
+     comment rail. Stacks under the image on phones, sits beside it from md up. */
+  .lb-scrim{
+    position:fixed; inset:0; z-index:50;
+    background:rgba(14,14,14,.93);
+    backdrop-filter:blur(10px);
+    display:flex; flex-direction:column;
+  }
+  .lb-stage{
+    position:relative; flex:1 1 auto; min-height:0;
+    display:flex; align-items:center; justify-content:center;
+    padding:.75rem;
+  }
+  .lb-stage img{
+    max-width:100%; max-height:100%;
+    object-fit:contain; display:block;
+    border-radius:.4rem;
+  }
+  /* Hairline ghost arrows, vertically centred over the image edges. 44px min touch
+     target on phones per the mobile rules. */
+  .lb-arrow{
+    position:absolute; top:50%; transform:translateY(-50%);
+    width:44px; height:44px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(14,14,14,.6); border:1px solid var(--lsc-rule);
+    color:var(--lsc-white); cursor:pointer;
+    transition:border-color .15s ease, background .15s ease;
+  }
+  .lb-arrow:hover{ border-color:var(--lsc-sage); background:rgba(14,14,14,.85); }
+  .lb-arrow[disabled]{ opacity:.25; cursor:not-allowed; }
+  .lb-arrow-l{ left:.5rem; }
+  .lb-arrow-r{ right:.5rem; }
+  /* Deeper than .card so the note cards read as raised against the rail rather than
+     disappearing into it — both would otherwise be --lsc-surface. */
+  .lb-rail{
+    flex:0 0 auto; max-height:45vh; overflow-y:auto;
+    border-top:1px solid var(--lsc-rule); background:var(--lsc-black);
+  }
+  @media (min-width:768px){
+    .lb-scrim{ flex-direction:row; }
+    .lb-stage{ padding:2rem; }
+    .lb-arrow-l{ left:1.25rem; }
+    .lb-arrow-r{ right:1.25rem; }
+    .lb-rail{
+      flex:0 0 340px; max-height:none; height:100%;
+      border-top:none; border-left:1px solid var(--lsc-rule);
+    }
+  }
+  @media (prefers-reduced-motion:reduce){
+    .lb-arrow{ transition:none; }
+  }
+
   /* ---- asset card thumbnails ---- */
   /* 16:9 media preview at the top of each deliverable card on the client landing.
      The placeholder sits under the media, so a still-loading or failed thumbnail
@@ -108,6 +161,13 @@
   @media (min-width: 993px){
     .back-link{ position:fixed; top:32px; left:32px; margin-bottom:0; }
   }
+
+  /* iOS zooms the page when a focused input is under 16px. Desktop sizing is
+     untouched — this only lifts fields at phone width. */
+  @media (max-width:767px){
+    .field{ font-size:16px; }
+  }
+
 </style>
 </head>
 <body>
@@ -370,6 +430,10 @@ const ICONS = {
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5.2l3.2 2"/>',
   check: '<circle cx="12" cy="12" r="9"/><path d="M8 12.3l2.7 2.7L16 9.6"/>',
   download: '<path d="M12 3.5v12M7.5 11l4.5 4.5 4.5-4.5"/><path d="M4 19.5h16"/>',
+  chevronLeft: '<path d="M15 4.5L7.5 12l7.5 7.5"/>',
+  chevronRight: '<path d="M9 4.5l7.5 7.5L9 19.5"/>',
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  comment: '<path d="M4 4.5h16v11H9.5L5.5 19v-3.5H4z"/>',
 };
 // size = px. Stroke-only by default; `play` is the one solid glyph.
 function icon(name, size = 20, cls = ''){
@@ -481,6 +545,11 @@ let state = {
   pausedAt: null,
   videoFailed: false,     // true after the asset <video> fires an error — shows the Drive fallback card
   selectedPhotoIdx: null,
+  lightboxIdx: null,      // index into asset.photos of the open lightbox photo; null = closed
+  // Per-photo comment drafts, keyed by filename (see photoDraftKey). One shared
+  // revisionDraft would leak a half-typed note from one photo onto the next as the
+  // client arrows through the library, which is exactly what must not happen.
+  photoDrafts: {},
   toast: null,
   menuOpenId: null,
   signature: false,
@@ -1150,7 +1219,9 @@ function renderClientAsset(){
     <button data-switch-asset="${x.id}" class="mono text-xs px-4 py-2 border-b-2 ${x.id===a.id?'border-[var(--lsc-sage)] text-white':'border-transparent text-[var(--lsc-mid)]'}">${escapeHtml(x.title || x.type)}</button>
   `).join('');
 
-  const canvas = a.type === 'video' ? renderVideoCanvas(a) : renderPhotoCanvas(a);
+  const canvas = a.type === 'video'
+    ? renderVideoCanvas(a)
+    : `<div id="photo-canvas">${renderPhotoCanvas(a)}</div>`;
 
   const approveModal = state.approveModalAssetId === a.id ? `
     <div id="approve-modal-backdrop" class="fixed inset-0 z-30 flex items-center justify-center p-6" style="background:rgba(14,14,14,.7); backdrop-filter:blur(6px);">
@@ -1170,6 +1241,7 @@ function renderClientAsset(){
       ${canvas}
       <div id="asset-interaction">${renderAssetInteraction(a)}</div>
     </div>
+    <div id="lightbox-host">${a.type === 'photo' ? renderPhotoLightbox(a) : ''}</div>
     ${approveModal}
   `);
 }
@@ -1201,12 +1273,37 @@ function renderAssetInteraction(a){
       </div>
     </div>` : '';
 
+  // Quiet utility link under the primary action — deliberately low-contrast and small so
+  // it never competes with APPROVE CONTENT.
+  const canDownload = a.downloadLink && isValidUrl(a.downloadLink);
+  const downloadLink = `
+    <div class="mt-3">
+      ${canDownload
+        ? `<a href="${escapeAttr(a.downloadLink)}" target="_blank" rel="noopener" download class="mono text-[10px] text-[var(--lsc-mid)] hover:text-[var(--lsc-white)] underline underline-offset-4 inline-flex items-center gap-1.5">${icon('download', 12)}Download</a>`
+        : `<span class="mono text-[10px] text-[var(--lsc-mid)] opacity-40 inline-flex items-center gap-1.5">${icon('download', 12)}Download</span>`}
+    </div>`;
+
+  // Photo libraries have NO asset-level revision panel — feedback is per photo, inside
+  // the lightbox, so the only decision left at this level is approval.
+  if(a.type === 'photo'){
+    return `
+      <div class="mt-6">
+        <button id="approve-asset" class="btn-terra rounded-lg px-7 py-3.5 mono text-base tracking-wide">APPROVE CONTENT</button>
+        ${downloadLink}
+      </div>
+      ${commentLog}
+    `;
+  }
+
   // While the revision panel is open the approve button is absent from the DOM entirely,
   // not just disabled — a client asking for changes is not approving this content.
   return `
-    <div class="mt-6 flex flex-wrap gap-3">
-      <button id="want-revisions" class="btn-sage rounded-lg px-5 py-3 mono text-xs">${state.revisionOpen ? 'REVISION FORM OPEN' : 'I WANT REVISIONS FOR THIS'}</button>
-      ${state.revisionOpen ? '' : `<button id="approve-asset" class="btn-terra rounded-lg px-5 py-3 mono text-xs">APPROVE CONTENT — I'M READY TO RECEIVE THIS</button>`}
+    <div class="mt-6">
+      <div class="flex flex-wrap items-center gap-3">
+        <button id="want-revisions" class="btn-sage rounded-lg px-5 py-3 mono text-xs">${state.revisionOpen ? 'REVISION FORM OPEN' : 'COMMENT REVISIONS'}</button>
+        ${state.revisionOpen ? '' : `<button id="approve-asset" class="btn-terra rounded-lg px-7 py-3.5 mono text-base tracking-wide">APPROVE CONTENT</button>`}
+      </div>
+      ${downloadLink}
     </div>
     ${state.revisionOpen ? renderRevisionForm(a) : ''}
     ${commentLog}
@@ -1242,9 +1339,20 @@ function renderVideoCanvas(a){
   `;
 }
 
-// Renders the asset's real photos[] (registered from a NAS folder by the editor's
-// NAS LINK button). Two columns on phones per the responsive rules — four 375px-wide
-// thumbnails in a row would be unusable for judging an image.
+// Stable key for a photo's draft + comments. Filename over index: adding a file to the
+// NAS folder reshuffles indices, and a draft silently reattaching to a different image
+// is the failure this whole per-photo model exists to prevent.
+function photoDraftKey(a, i){
+  const ph = (a.photos || [])[i];
+  return (ph && ph.name) ? `${a.id}::${ph.name}` : `${a.id}::idx${i}`;
+}
+// Only the notes left on THIS photo.
+function commentsForPhoto(a, i){
+  return (a.comments || []).filter(c => c.photoIdx === i);
+}
+
+// Contact sheet. Clicking a frame opens the lightbox, which is where photo feedback
+// happens — photo libraries have no asset-level revision panel at all.
 function renderPhotoCanvas(a){
   const photos = a.photos || [];
   if(!photos.length){
@@ -1255,32 +1363,83 @@ function renderPhotoCanvas(a){
     </div>`;
   }
 
-  const grid = photos.map((ph, i) => `
-    <div data-photo="${i}" title="${escapeAttr(ph.name || ('Photo ' + (i+1)))}" class="aspect-square rounded-lg overflow-hidden bg-[var(--lsc-surface)] cursor-pointer border-2 ${state.selectedPhotoIdx===i?'border-[var(--lsc-sage)]':'border-transparent'}">
-      <img src="${escapeAttr(ph.reviewLink)}" alt="${escapeAttr(ph.name || ('Photo ' + (i+1)))}" loading="lazy" class="w-full h-full object-cover pointer-events-none" oncontextmenu="return false">
-    </div>`).join('');
-
-  const opts = photos.map((ph, i) => `<option value="${i}" ${state.selectedPhotoIdx===i?'selected':''}>${escapeHtml(ph.name || ('Photo ' + (i+1)))}</option>`).join('');
+  const grid = photos.map((ph, i) => {
+    const n = commentsForPhoto(a, i).length;
+    const label = ph.name || ('Photo ' + (i+1));
+    return `
+    <button data-photo="${i}" title="${escapeAttr(label)}" class="group relative aspect-square rounded-lg overflow-hidden bg-[var(--lsc-surface)] cursor-pointer border-2 ${n ? 'border-[var(--lsc-terra)]' : 'border-transparent hover:border-[var(--lsc-sage)]'} transition">
+      <img src="${escapeAttr(ph.reviewLink)}" alt="${escapeAttr(label)}" loading="lazy" class="w-full h-full object-cover pointer-events-none" oncontextmenu="return false">
+      ${n ? `<span class="absolute top-1.5 right-1.5 mono text-[9px] px-1.5 py-0.5 rounded-full bg-[var(--lsc-terra)] text-white inline-flex items-center gap-1">${icon('comment', 10)}${n}</span>` : ''}
+    </button>`;
+  }).join('');
 
   return `
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">${grid}</div>
-    <div class="mono text-[10px] text-[var(--lsc-mid)] mb-1">SELECT PHOTO FOR FEEDBACK</div>
-    <select id="photo-select" class="field w-full md:w-72">
-      <option value="">— choose a photo —</option>
-      ${opts}
-    </select>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">${grid}</div>
+    <div class="mono text-[10px] text-[var(--lsc-mid)] mb-4">TAP A PHOTO TO VIEW IT LARGER AND LEAVE NOTES</div>
   `;
 }
 
+// Full-screen single-photo review: the image large, its OWN notes beside it, and arrows
+// to walk the library. Everything here is scoped to state.lightboxIdx — the comment list
+// is filtered to that photo and the draft is read from that photo's key, so moving to a
+// photo the client hasn't touched shows an empty box, never the previous photo's text.
+function renderPhotoLightbox(a){
+  const photos = a.photos || [];
+  const i = state.lightboxIdx;
+  if(i == null || !photos[i]) return '';
+  const ph = photos[i];
+  const label = ph.name || ('Photo ' + (i+1));
+  const mine = commentsForPhoto(a, i);
+  const draft = state.photoDrafts[photoDraftKey(a, i)] || '';
+  const locked = a.status === 'approved';
+
+  return `
+  <div id="photo-lightbox" class="lb-scrim" role="dialog" aria-modal="true" aria-label="${escapeAttr(label)}">
+    <div class="lb-stage">
+      <button data-lb-prev class="lb-arrow lb-arrow-l" aria-label="Previous photo" ${i===0?'disabled':''}>${icon('chevronLeft', 20)}</button>
+      <img src="${escapeAttr(ph.reviewLink)}" alt="${escapeAttr(label)}" oncontextmenu="return false">
+      <button data-lb-next class="lb-arrow lb-arrow-r" aria-label="Next photo" ${i===photos.length-1?'disabled':''}>${icon('chevronRight', 20)}</button>
+    </div>
+
+    <aside class="lb-rail p-5 flex flex-col">
+      <div class="flex items-start justify-between gap-3 mb-1">
+        <div class="min-w-0">
+          <div class="display text-base truncate" title="${escapeAttr(label)}">${escapeHtml(label)}</div>
+          <div class="mono text-[10px] text-[var(--lsc-mid)] mt-0.5">PHOTO ${i+1} OF ${photos.length}</div>
+        </div>
+        <button id="lb-close" class="btn-ghost rounded-lg p-2 shrink-0" aria-label="Close">${icon('close', 14)}</button>
+      </div>
+
+      <div class="mono text-[10px] text-[var(--lsc-mid)] mt-5 mb-2">NOTES ON THIS PHOTO</div>
+      <div class="flex-1 min-h-0 overflow-y-auto space-y-2 mb-3">
+        ${mine.length
+          ? mine.map(c => `
+            <div class="card rounded-lg p-3 text-sm">
+              <span>${escapeHtml(c.text)}</span>
+              <div class="mono text-[9px] text-[var(--lsc-mid)] mt-1">${c.at}</div>
+            </div>`).join('')
+          : `<div class="mono text-[10px] text-[var(--lsc-mid)] leading-relaxed">No notes on this photo yet.</div>`}
+      </div>
+
+      ${locked ? `
+        <div class="mono text-[10px] text-[var(--lsc-mid)]">This library is approved — notes are closed.</div>
+      ` : `
+        <textarea id="lb-text" class="field mb-2" rows="3" placeholder="Add a note about this photo...">${escapeAttr(draft)}</textarea>
+        <button id="lb-submit" class="btn-terra rounded-lg px-4 py-2.5 mono text-xs w-full">ADD NOTE TO THIS PHOTO</button>
+      `}
+    </aside>
+  </div>`;
+}
+
+// Video assets only. Photo feedback lives in the lightbox, per photo.
 function renderRevisionForm(a){
   const hasComments = a.comments.length > 0;
   return `
   <div class="card rounded-lg p-4 mt-3">
     <textarea id="revision-text" class="field mb-3" rows="3" placeholder="Describe the revision needed...">${escapeAttr(state.revisionDraft)}</textarea>
     <div class="flex gap-3 items-center">
-      <button id="submit-revision" class="btn-terra rounded-lg px-4 py-2 mono text-xs" ${a.type==='photo' && state.selectedPhotoIdx==null ? 'disabled style="opacity:.4;cursor:not-allowed;"' : ''}>SUBMIT REVISION</button>
+      <button id="submit-revision" class="btn-terra rounded-lg px-4 py-2 mono text-xs">SUBMIT REVISION</button>
       <button id="cancel-revision" class="btn-ghost rounded-lg px-4 py-2 mono text-xs ${hasComments?'opacity-40 cursor-not-allowed':''}" ${hasComments? `title="remove revisions below to cancel and go back"` : ''}>✕ CANCEL REVISIONS</button>
-      ${a.type==='photo' ? `<span class="mono text-[10px] text-[var(--lsc-mid)]">${state.selectedPhotoIdx==null ? 'select a photo number above to enable submit' : ''}</span>` : ''}
     </div>
   </div>`;
 }
@@ -1775,14 +1934,14 @@ function bindEditor(){
 function bindClientLanding(){
   bindClientChrome();
   document.querySelectorAll('[data-open-asset]').forEach(btn => {
-    btn.onclick = () => setState({ clientScreen:'asset', activeAssetId: btn.dataset.openAsset, revisionOpen:false, selectedPhotoIdx:null, pausedAt:null, videoFailed:false, approveModalAssetId:null });
+    btn.onclick = () => setState({ clientScreen:'asset', activeAssetId: btn.dataset.openAsset, revisionOpen:false, selectedPhotoIdx:null, lightboxIdx:null, pausedAt:null, videoFailed:false, approveModalAssetId:null });
   });
 }
 
 function bindClientAsset(){
   bindClientChrome();
   document.querySelectorAll('[data-switch-asset]').forEach(btn => {
-    btn.onclick = () => setState({ activeAssetId: btn.dataset.switchAsset, revisionOpen:false, selectedPhotoIdx:null, pausedAt:null, videoFailed:false, approveModalAssetId:null });
+    btn.onclick = () => setState({ activeAssetId: btn.dataset.switchAsset, revisionOpen:false, selectedPhotoIdx:null, lightboxIdx:null, pausedAt:null, videoFailed:false, approveModalAssetId:null });
   });
 
   const p = getViewProject();
@@ -1804,10 +1963,9 @@ function bindClientAsset(){
   }
 
   document.querySelectorAll('[data-photo]').forEach(el => {
-    el.onclick = () => { const idx = Number(el.dataset.photo); setState({ selectedPhotoIdx: idx }); const sel = document.getElementById('photo-select'); if(sel) sel.value = idx; };
+    el.onclick = () => openLightbox(Number(el.dataset.photo));
   });
-  const photoSelect = document.getElementById('photo-select');
-  if(photoSelect) photoSelect.onchange = () => setState({ selectedPhotoIdx: photoSelect.value === '' ? null : Number(photoSelect.value) });
+  bindPhotoLightbox(a);
 
   const confirmApprove = document.getElementById('confirm-approve');
   if(confirmApprove) confirmApprove.onclick = () => {
@@ -1822,6 +1980,111 @@ function bindClientAsset(){
 
   bindAssetInteraction(a, p);
 }
+
+/* ---------------- photo lightbox ---------------- */
+// Repaint ONLY #lightbox-host. A full render() would rebuild the whole asset screen and
+// reload every thumbnail; this keeps navigation instant and the contact sheet untouched.
+function refreshLightbox(){
+  const host = document.getElementById('lightbox-host');
+  if(!host) return;
+  const p = getViewProject();
+  const a = p && p.assets.find(x => x.id === state.activeAssetId);
+  if(!a) return;
+  host.innerHTML = a.type === 'photo' ? renderPhotoLightbox(a) : '';
+  bindPhotoLightbox(a);
+}
+
+function openLightbox(i){
+  state.lightboxIdx = i;
+  state.selectedPhotoIdx = i;
+  refreshLightbox();
+  const box = document.getElementById('lb-text');
+  if(box) box.focus();
+}
+
+function closeLightbox(){
+  state.lightboxIdx = null;
+  refreshLightbox();
+  // The contact sheet's comment-count badges change as notes are added, so repaint it.
+  refreshAssetInteraction();
+  const canvasHost = document.getElementById('photo-canvas');
+  if(canvasHost){
+    const p = getViewProject();
+    const a = p && p.assets.find(x => x.id === state.activeAssetId);
+    if(a){ canvasHost.innerHTML = renderPhotoCanvas(a); bindPhotoThumbs(a); }
+  }
+}
+
+// Step through the library. The draft for the photo being LEFT is already saved under its
+// own key by the input handler, and the photo being entered reads its own key — so an
+// untouched photo always opens with an empty box.
+function stepLightbox(delta){
+  const p = getViewProject();
+  const a = p && p.assets.find(x => x.id === state.activeAssetId);
+  if(!a) return;
+  const photos = a.photos || [];
+  const next = (state.lightboxIdx == null ? 0 : state.lightboxIdx) + delta;
+  if(next < 0 || next >= photos.length) return;
+  openLightbox(next);
+}
+
+function bindPhotoThumbs(a){
+  document.querySelectorAll('[data-photo]').forEach(el => {
+    el.onclick = () => openLightbox(Number(el.dataset.photo));
+  });
+}
+
+function bindPhotoLightbox(a){
+  const root = document.getElementById('photo-lightbox');
+  if(!root) return;
+
+  const prev = root.querySelector('[data-lb-prev]');
+  if(prev) prev.onclick = () => stepLightbox(-1);
+  const next = root.querySelector('[data-lb-next]');
+  if(next) next.onclick = () => stepLightbox(1);
+  const close = document.getElementById('lb-close');
+  if(close) close.onclick = () => closeLightbox();
+
+  const box = document.getElementById('lb-text');
+  if(box){
+    const key = photoDraftKey(a, state.lightboxIdx);
+    // Save under THIS photo's key on every keystroke, so arrowing away and back restores
+    // the right text and never bleeds it onto a neighbour.
+    box.addEventListener('input', () => { state.photoDrafts[key] = box.value; });
+  }
+
+  const submit = document.getElementById('lb-submit');
+  if(submit) submit.onclick = () => {
+    const i = state.lightboxIdx;
+    const key = photoDraftKey(a, i);
+    const text = (state.photoDrafts[key] || '').trim();
+    if(!text) return;
+    const ph = (a.photos || [])[i] || {};
+    a.comments.push({
+      text,
+      timestamp: null,
+      photoIdx: i,
+      photoName: ph.name || null,
+      at: nowStr(),
+    });
+    a.status = 'changes';
+    persistViewProject();
+    delete state.photoDrafts[key];   // this photo only
+    refreshLightbox();
+    const again = document.getElementById('lb-text');
+    if(again) again.focus();
+  };
+}
+
+// Escape closes, arrows walk the library — but never while the client is typing a note.
+document.addEventListener('keydown', (e) => {
+  if(state.lightboxIdx == null) return;
+  const typing = e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT');
+  if(e.key === 'Escape'){ e.preventDefault(); closeLightbox(); return; }
+  if(typing) return;
+  if(e.key === 'ArrowLeft'){ e.preventDefault(); stepLightbox(-1); }
+  if(e.key === 'ArrowRight'){ e.preventDefault(); stepLightbox(1); }
+});
 
 // mm:ss for the review-timestamp pill.
 function fmtVideoTime(seconds){
@@ -1874,16 +2137,12 @@ function bindAssetInteraction(a, p){
   const submitRev = document.getElementById('submit-revision');
   if(submitRev) submitRev.onclick = () => {
     if(!state.revisionDraft.trim()) return;
-    if(a.type === 'photo' && state.selectedPhotoIdx == null) return;
+    // Video assets only — photo notes are written per photo in the lightbox.
     a.comments.push({
       text: state.revisionDraft.trim(),
-      timestamp: a.type === 'video' && state.pausedAt ? state.pausedAt : null,
-      photoIdx: a.type === 'photo' ? state.selectedPhotoIdx : null,
-      // Index alone is fragile — adding a file to the NAS folder reshuffles it. The
-      // filename is what the studio actually needs to find the right image.
-      photoName: a.type === 'photo' && state.selectedPhotoIdx != null
-        ? ((a.photos || [])[state.selectedPhotoIdx] || {}).name || null
-        : null,
+      timestamp: state.pausedAt || null,
+      photoIdx: null,
+      photoName: null,
       at: nowStr(),
     });
     a.status = 'changes';

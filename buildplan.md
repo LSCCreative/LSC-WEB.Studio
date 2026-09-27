@@ -133,3 +133,43 @@ ahead. Full context: `feature-spec.md`.
       dots (🟡🟠🟢) become a `.status-dot` CSS circle that inherits each
       badge's own colour. `setPausePill` now rewrites only `#pause-pill-time`
       so the static icon survives. | Model: Claude Code | Effort: Medium
+
+### Part E — Per-photo lightbox review + simplified review actions
+
+- [x] Slice 12: Remove the asset-level revision feature from PHOTO libraries.
+      `renderAssetInteraction` branches on `a.type`: photo assets get only
+      APPROVE CONTENT + the download link, no `want-revisions` button and no
+      `renderRevisionForm`. `renderRevisionForm` is now video-only (its
+      photo-selection guard and the `#photo-select` dropdown are both gone).
+      | Model: Claude Code | Effort: Medium
+
+- [x] Slice 13: Photo lightbox (`renderPhotoLightbox` + `bindPhotoLightbox` +
+      `refreshLightbox`). Clicking a contact-sheet frame opens a full-screen
+      scrim: the photo large on the left, a notes rail on the right (stacked
+      below it under 768px), hairline arrow buttons on either edge of the
+      image, disabled at the ends. Escape closes; ArrowLeft/Right step
+      through, but are ignored while the client is typing. Only
+      `#lightbox-host` repaints on navigation, so the contact sheet and its
+      thumbnails are never reloaded. | Model: Claude Code | Effort: Medium
+
+- [x] Slice 14: Per-photo comment isolation — the correctness requirement.
+      `commentsForPhoto(a,i)` filters the rail to `c.photoIdx === i`, and
+      drafts live in `state.photoDrafts` keyed by `photoDraftKey()`
+      (`assetId::filename`, falling back to index) instead of the single
+      shared `state.revisionDraft`. Arrowing to an untouched photo therefore
+      always shows an empty box and an empty note list; arrowing back
+      restores that photo's own draft. Submitting clears only that photo's
+      key. Commented thumbnails carry a terracotta count badge.
+      | Model: Claude Code | Effort: Medium
+
+- [x] Slice 15: Simplify the video review actions to `COMMENT REVISIONS`
+      (secondary, 12px) and `APPROVE CONTENT` (primary, 16px), with a quiet
+      `Download` link (10px, muted) underneath the row. Photo libraries get
+      the same approve + download pair. Download renders disabled when the
+      asset has no valid `downloadLink`. | Model: Claude Code | Effort: Low
+
+- [x] Slice 16: Verify. Draft and comment isolation across photos, keyboard
+      nav, approved-library lock, button hierarchy and sizes, mobile stacking
+      with 44px touch targets, and no regression to the video revision flow
+      (timestamp arming, playhead retention, approve hidden while revising).
+      | Model: Claude Code | Effort: Low

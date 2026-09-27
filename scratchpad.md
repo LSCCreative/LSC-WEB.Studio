@@ -124,6 +124,27 @@ folder that actually holds images is `Test Media/Online Video` (12 JPGs,
 despite the name). Either drop photos into the Photo Library folder or test
 against `Test Media/Online Video`.
 
+## Part E — per-photo lightbox (current work, NOT pushed)
+
+- **Photo libraries no longer have an asset-level revision panel.** All photo
+  feedback happens per photo inside `renderPhotoLightbox`. `renderRevisionForm`
+  is video-only now — don't reintroduce the `state.selectedPhotoIdx` guard.
+- **The isolation rule:** notes are filtered with `commentsForPhoto(a,i)` on
+  `c.photoIdx`, and drafts live in `state.photoDrafts` keyed by
+  `photoDraftKey()` = `assetId::filename`. The old single `state.revisionDraft`
+  is still used by the VIDEO form only. If a future change reintroduces one
+  shared draft for photos, half-typed notes will bleed between images — that
+  was the specific bug this was built to prevent.
+- `refreshLightbox()` repaints only `#lightbox-host`; `closeLightbox()` also
+  repaints `#photo-canvas` so the thumbnail comment-count badges update.
+  Same partial-repaint discipline as `#asset-interaction` — don't call
+  `render()` from these paths.
+- Review actions are now `COMMENT REVISIONS` (12px) / `APPROVE CONTENT`
+  (16px) / `Download` (10px, muted, underneath).
+- Added a `@media (max-width:767px){ .field{font-size:16px} }` override at the
+  END of the style block — it must stay last, since `.field`'s base `.9rem`
+  has equal specificity and would otherwise win on source order.
+
 ## Open questions for the user
 
 1. `MAX_PHOTOS_PER_FOLDER` is set to **200** — assumption, not confirmed.
@@ -136,7 +157,9 @@ against `Test Media/Online Video`.
 Nothing unchecked in `buildplan.md`. Everything is committed and pushed to
 `main` → live on GitHub Pages.
 
-Frontend is live on GitHub Pages and the NAS API is deployed — both halves
-of the photo feature are now in production. The only thing left is the
-user's own browser check with a real photo folder (see the NAS deploy
-section above for a folder that actually has images in it).
+Parts A-D are live (GitHub Pages + NAS API deployed). **Part E is committed
+locally but deliberately NOT pushed** — the user asked to review it before it
+goes live. Next action is theirs: look it over, then say push.
+
+Note the download link now on the REVIEW screen is a policy change worth
+confirming — see Open questions.
