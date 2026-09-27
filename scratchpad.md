@@ -82,37 +82,47 @@ tree): correct filter + natural sort, subdirectories excluded, and `null`
 for missing folder / a file / absolute path / `..` traversal / null byte /
 empty string.
 
-## Needs the live NAS (can't be done from here)
+## NAS deploy — DONE (2026-09-27)
 
-1. **Deploy the API container** — Slices 4's route is new server code; the
-   NAS box has to be rebuilt/restarted before the admin panel can use it.
-2. Then, on the live admin panel: paste a real absolute photo-folder path,
-   click `NAS LINK`, confirm the photo count toast, publish, and open the
-   client link — thumbnails should load off `/hub/files/<token>` and the
-   final screen downloads should save with the right filenames.
-   `hubApi.deliverableFolder` throws outside live mode, so this cannot be
-   proven in the sandbox (same constraint as `deliverableUrl` last feature).
+Deployed over SSH, not the UGREEN GUI. **`ssh lsc-nas` works with a key and
+the user is in the `docker` group, so no sudo is needed** — that's the fast
+path for any future backend change; don't reach for the GUI.
 
-## Part D — card thumbnails + icon set (added after review)
+Deploy is NOT a container restart. The NAS runs from its own copy at
+`/volume4/client-hub-api/app`, so it is: copy changed files over, then
+`docker compose up -d --build` in that directory. `--build` recompiles
+better-sqlite3 (~20s) and briefly recreates the container.
 
-- `renderAssetThumb(a)` drives the client-landing cards. **The video poster
-  trick is `src="<reviewLink>#t=1"` with `preload="metadata"` and `muted`** —
-  the browser Range-fetches enough to decode and paint the frame at 1s
-  without ever playing. Verified by sampling pixels off the element: seeks to
-  1s, `readyState 4`, real frame painted. Needs the backend's Range support
-  (already there in `streamFile`). Photo cards show the first three images as
-  a filmstrip. The icon fallback is layered UNDER the media (`z-index`), so a
-  broken or unlinked thumbnail shows the icon, not a blank box.
-- `ICONS` + `icon(name, size, cls)` is the stroke-based SVG set that replaced
-  every colour emoji. `statusMeta[].dot` is now a `.status-dot` CSS circle
-  using `currentColor`, so it picks up each badge's colour automatically.
-- `setPausePill()` rewrites `#pause-pill-time` only — don't go back to
-  setting `pill.textContent`, it would wipe the static clock icon beside it.
-- Monochrome dingbats (`✕ remove`, `✓ signature captured`, `⚠` toasts) were
-  left as-is — pre-existing house style, not colour emoji.
-- `isValidUrl` requires `https://`, so `blob:`/`data:` test fixtures are
-  correctly rejected by the thumbnail path. Real `/hub/files/<token>` URLs
-  pass. Don't mistake that for a bug when testing locally.
+UGOS blocks scp/sftp — transfers go `ssh lsc-nas "cat > '<dest>'" < <file>`
+with `COPYFILE_DISABLE=1` (stops Google Drive xattrs littering `._*` files).
+
+What was done:
+- Checksummed all 8 NAS src files against `42fc0b2` first — all matched, so
+  no divergent edits were clobbered. Worth repeating before any future push.
+- Backup kept at `/volume4/client-hub-api/app/src.bak.20260927-113903`.
+  Rollback = `cp -a src.bak.20260927-113903/. src/` then rebuild.
+- Copied `deliverables.js` + `hubRoutes.js`, verified md5 match both ends.
+- Rebuilt. Container `Up (healthy)`, `listening on 8097`.
+
+Verified live:
+- `/health` → `{"ok":true,"schemaVersion":"5","deliverables":{"ok":true,
+  "projects":2}}` — schema unchanged (no migration), records intact.
+- `POST /hub/deliverable-folder` → **401** (was 404). Route exists and is
+  admin-gated. `/hub/deliverable-url` still 401 — no regression.
+- Ran the deployed `listDeliverableFolderImages` inside the container against
+  the real mount: `Test Media/Online Video` → 12 images, natural-sorted; a
+  .mp4 path → null; empty folder → `[]` (route turns this into a 422);
+  missing / absolute / `..` → null.
+
+Still needs the user (browser + admin PIN, which the agent doesn't have):
+paste a folder path in the editor → NAS LINK → publish → open the client link
+and confirm thumbnails load and downloads save with the right filenames.
+
+**NAS content note:** `Test Media/Online Photo Library` is EMPTY, so it will
+fail with "no images in folder" — that's correct behaviour, not a bug. The
+folder that actually holds images is `Test Media/Online Video` (12 JPGs,
+despite the name). Either drop photos into the Photo Library folder or test
+against `Test Media/Online Video`.
 
 ## Open questions for the user
 
@@ -126,7 +136,7 @@ empty string.
 Nothing unchecked in `buildplan.md`. Everything is committed and pushed to
 `main` → live on GitHub Pages.
 
-**The one remaining action is the user's: deploy the NAS API container.**
-Until that happens `POST /hub/deliverable-folder` doesn't exist on the
-server, so the editor's `NAS LINK` button will fail on PHOTO assets (video
-assets are unaffected). Everything else on the live site works now.
+Frontend is live on GitHub Pages and the NAS API is deployed — both halves
+of the photo feature are now in production. The only thing left is the
+user's own browser check with a real photo folder (see the NAS deploy
+section above for a folder that actually has images in it).
