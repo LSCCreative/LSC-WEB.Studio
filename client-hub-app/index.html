@@ -272,6 +272,7 @@ function buildPublishedRecord(p){
       reviewLink:a.reviewLink||'', downloadLink:a.downloadLink||'', driveLink:a.driveLink||'',
       // This map whitelists fields — without photos here the client record would
       // carry no photo library at all and the grid would render empty.
+      gated: a.gated !== false,
       photos: (a.photos||[]).map(ph => ({ name:ph.name||'', reviewLink:ph.reviewLink||'', downloadLink:ph.downloadLink||'' }))
     }))
   };
@@ -382,7 +383,9 @@ function loadProjects(){
   return parsed.map(p => {
     // photos[] post-dates the first photo-library assets, so default it for stored projects.
     const assets = (Array.isArray(p.assets) ? p.assets : [])
-      .map(a => ({ ...a, photos: Array.isArray(a.photos) ? a.photos : [] }));
+      // `gated` post-dates existing projects: absent means gated, so stored deliverables
+      // stay locked rather than becoming downloadable the moment this ships.
+      .map(a => ({ ...a, photos: Array.isArray(a.photos) ? a.photos : [], gated: a.gated !== false }));
     let invoices = Array.isArray(p.invoices) ? p.invoices : [];
     // Migrate legacy single invoiceName → invoices[] final entry. Never wipe unknown fields.
     if(!invoices.length && p.invoiceName){
@@ -434,6 +437,7 @@ const ICONS = {
   chevronRight: '<path d="M9 4.5l7.5 7.5L9 19.5"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   comment: '<path d="M4 4.5h16v11H9.5L5.5 19v-3.5H4z"/>',
+  lock: '<path d="M5.5 10.5h13v9h-13z"/><path d="M8.5 10.5V7a3.5 3.5 0 017 0v3.5"/>',
 };
 // size = px. Stroke-only by default; `play` is the one solid glyph.
 function icon(name, size = 20, cls = ''){
@@ -950,7 +954,10 @@ function newAsset(type){
   // photos[] is the photo-library payload ({name, reviewLink, downloadLink} per image,
   // filled by NAS LINK from a folder). Video assets leave it empty and use
   // reviewLink/downloadLink instead; photo assets are the mirror image.
-  return { id: uid(), type, title:'', reviewLink:'', downloadLink:'', driveLink:'', deliverablePath:'', photos:[], status:'reviewing', comments:[] };
+  // gated:true by default — a deliverable stays locked until the agreement is signed
+  // unless the admin deliberately opens it. Defaulting the other way would silently
+  // expose every existing project's files during review.
+  return { id: uid(), type, title:'', reviewLink:'', downloadLink:'', driveLink:'', deliverablePath:'', photos:[], gated:true, status:'reviewing', comments:[] };
 }
 
 // Absolute NAS host path the admin copies out of the UGREEN file manager — matches
@@ -981,6 +988,13 @@ function renderEditor(){
       ${a.type === 'photo' ? `<div class="mono text-[10px] ${(a.photos||[]).length ? 'text-[var(--lsc-sage)]' : 'text-[var(--lsc-mid)]'} mb-2">${(a.photos||[]).length ? `✓ ${(a.photos||[]).length} photo${(a.photos||[]).length===1?'':'s'} linked` : 'No photos linked yet — paste the folder path and click NAS LINK.'}</div>` : ''}
       <div class="mono text-[10px] text-[var(--lsc-mid)] mb-1">GOOGLE DRIVE BACKUP LINK</div>
       <input data-field="driveLink" data-asset="${a.id}" class="field ${a.driveLink && !isValidUrl(a.driveLink)?'invalid':''}" value="${escapeAttr(a.driveLink)}">
+      <label class="flex items-start gap-2.5 mt-3 cursor-pointer select-none">
+        <input type="checkbox" data-field="gated" data-asset="${a.id}" class="mt-0.5 accent-[var(--lsc-terra)] w-4 h-4 shrink-0" ${a.gated !== false ? 'checked' : ''}>
+        <span class="mono text-[10px] text-[var(--lsc-mid)] leading-relaxed">
+          GATE DELIVERABLE BEHIND AGREEMENT
+          <span class="block opacity-70 normal-case">Locks the client's download until they've signed off. Untick to let them download it during review.</span>
+        </span>
+      </label>
     </div>`).join('');
 
   return `
@@ -1274,13 +1288,24 @@ function renderAssetInteraction(a){
     </div>` : '';
 
   // Quiet utility link under the primary action — deliberately low-contrast and small so
-  // it never competes with APPROVE CONTENT.
-  const canDownload = a.downloadLink && isValidUrl(a.downloadLink);
+  // it never competes with APPROVE CONTENT. A gated deliverable shows the lock reason
+  // instead of a live link until the agreement is signed.
+  const p = getViewProject();
+  const unlocked = downloadUnlocked(p, a);
+  const hasFile = a.type === 'photo'
+    ? (a.photos || []).some(ph => ph.downloadLink && isValidUrl(ph.downloadLink))
+    : (a.downloadLink && isValidUrl(a.downloadLink));
   const downloadLink = `
     <div class="mt-3">
-      ${canDownload
-        ? `<a href="${escapeAttr(a.downloadLink)}" target="_blank" rel="noopener" download class="mono text-[10px] text-[var(--lsc-mid)] hover:text-[var(--lsc-white)] underline underline-offset-4 inline-flex items-center gap-1.5">${icon('download', 12)}Download</a>`
-        : `<span class="mono text-[10px] text-[var(--lsc-mid)] opacity-40 inline-flex items-center gap-1.5">${icon('download', 12)}Download</span>`}
+      ${!unlocked
+        ? `<span class="mono text-[10px] text-[var(--lsc-mid)] inline-flex items-center gap-1.5" title="This deliverable unlocks once you've signed the agreement.">${icon('lock', 12)}Download · unlocks after sign-off</span>`
+        : !hasFile
+          ? `<span class="mono text-[10px] text-[var(--lsc-mid)] opacity-40 inline-flex items-center gap-1.5">${icon('download', 12)}Download</span>`
+          : a.type === 'photo'
+            // A library has no single file — each photo carries its own download inside
+            // its full view, which is also where the client is actually judging it.
+            ? `<span class="mono text-[10px] text-[var(--lsc-mid)] inline-flex items-center gap-1.5">${icon('download', 12)}Open a photo to download it</span>`
+            : `<a href="${escapeAttr(a.downloadLink)}" target="_blank" rel="noopener" download class="mono text-[10px] text-[var(--lsc-mid)] hover:text-[var(--lsc-white)] underline underline-offset-4 inline-flex items-center gap-1.5">${icon('download', 12)}Download</a>`}
     </div>`;
 
   // Photo libraries have NO asset-level revision panel — feedback is per photo, inside
@@ -1337,6 +1362,15 @@ function renderVideoCanvas(a){
     </div>
     <div id="pause-pill" class="timestamp-pill mono text-[10px] bg-[var(--lsc-terra)] text-white px-2 py-1 rounded-full inline-flex items-center gap-1.5 mb-2" ${state.pausedAt ? '' : 'style="display:none"'}>${icon('clock', 12)}<span id="pause-pill-time">${state.pausedAt || ''}</span></div>
   `;
+}
+
+// Is this asset's download available yet? A gated deliverable unlocks only once the
+// client has signed the agreement; an ungated one is available throughout review.
+// The final-delivery screen sits behind the signed agreement anyway, so gated assets
+// unlock there naturally without a special case.
+function downloadUnlocked(p, a){
+  if(a.gated === false) return true;
+  return !!(p && p.agreement && p.agreement.accepted);
 }
 
 // Stable key for a photo's draft + comments. Filename over index: adding a file to the
@@ -1409,6 +1443,15 @@ function renderPhotoLightbox(a){
         </div>
         <button id="lb-close" class="btn-ghost rounded-lg p-2 shrink-0" aria-label="Close">${icon('close', 14)}</button>
       </div>
+
+      ${(() => {
+        const proj = getViewProject();
+        const can = ph.downloadLink && isValidUrl(ph.downloadLink);
+        if(!can) return '';
+        return downloadUnlocked(proj, a)
+          ? `<a href="${escapeAttr(ph.downloadLink)}" target="_blank" rel="noopener" download class="mono text-[10px] text-[var(--lsc-mid)] hover:text-[var(--lsc-white)] underline underline-offset-4 inline-flex items-center gap-1.5 mt-2">${icon('download', 12)}Download this photo</a>`
+          : `<span class="mono text-[10px] text-[var(--lsc-mid)] inline-flex items-center gap-1.5 mt-2" title="Unlocks once you've signed the agreement.">${icon('lock', 12)}Unlocks after sign-off</span>`;
+      })()}
 
       <div class="mono text-[10px] text-[var(--lsc-mid)] mt-5 mb-2">NOTES ON THIS PHOTO</div>
       <div class="flex-1 min-h-0 overflow-y-auto space-y-2 mb-3">
@@ -1838,9 +1881,9 @@ function bindEditor(){
     el.addEventListener('input', () => { state.draft[el.dataset.field] = el.value; });
   });
   document.querySelectorAll('[data-field][data-asset]').forEach(el => {
-    el.addEventListener('input', () => {
+    el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => {
       const asset = state.draft.assets.find(a => a.id === el.dataset.asset);
-      asset[el.dataset.field] = el.value;
+      asset[el.dataset.field] = el.type === 'checkbox' ? el.checked : el.value;
     });
   });
   document.querySelectorAll('[data-invoice-input]').forEach(inp => {

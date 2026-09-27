@@ -145,6 +145,22 @@ against `Test Media/Online Video`.
   END of the style block — it must stay last, since `.field`'s base `.9rem`
   has equal specificity and would otherwise win on source order.
 
+## Deliverable gating (Slice 17)
+
+- `asset.gated` defaults **true** everywhere — `newAsset()`, `loadProjects()`
+  (`a.gated !== false`) and `buildPublishedRecord`. The `!== false` form is
+  deliberate: projects stored before the field existed have `undefined`, which
+  must read as GATED, not open.
+- `downloadUnlocked(p, a)` is the only place the rule lives. Ungated → always
+  available. Gated → only once `p.agreement.accepted`. Use it for any new
+  download surface rather than re-deriving the condition.
+- A gated asset shows "Download · unlocks after sign-off" on the review screen
+  and "Unlocks after sign-off" in the lightbox rail, both with a lock icon.
+- Photo libraries have no single download, so their per-photo link lives in the
+  lightbox rail; the review screen just says "Open a photo to download it".
+- The final-delivery screen needs no gate check — it already sits behind the
+  signed agreement, so gated assets unlock there naturally.
+
 ## Open questions for the user
 
 1. `MAX_PHOTOS_PER_FOLDER` is set to **200** — assumption, not confirmed.

@@ -173,3 +173,15 @@ ahead. Full context: `feature-spec.md`.
       with 44px touch targets, and no regression to the video revision flow
       (timestamp arming, playhead retention, approve hidden while revising).
       | Model: Claude Code | Effort: Low
+
+- [x] Slice 17: Per-asset "GATE DELIVERABLE BEHIND AGREEMENT" checkbox in the
+      editor, resolving the policy question Slice 15's review-screen Download
+      link opened. `asset.gated` defaults to **true** — on `newAsset()`, in
+      `loadProjects()`'s normaliser (`a.gated !== false`, so stored projects
+      that predate the field stay locked rather than becoming downloadable on
+      ship) and through `buildPublishedRecord`. `downloadUnlocked(p, a)` is
+      the single gate: ungated → always available; gated → only once
+      `p.agreement.accepted`. Applied to the review-screen download and to the
+      per-photo download in the lightbox rail. The generic `[data-field]`
+      asset binding now handles checkboxes (`change` + `.checked`).
+      | Model: Claude Code | Effort: Medium
