@@ -502,10 +502,6 @@
         sync();
         window.requestAnimationFrame(sync);
         window.setTimeout(sync, 220);
-        window.setTimeout(function () {
-            section.classList.toggle('svc-any-open',
-                items.some(function (d) { return d.getAttribute('data-open') === 'true'; }));
-        }, 0);
     }
 
     // Reads body.is-mouse live on each event rather than caching a device

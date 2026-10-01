@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="180" viewBox="0 0 240 180" shape-rendering="crispEdges">
+  <!-- LSC master grid tile (light surfaces). Hairlines cross at the tile centre,
+       with a plus marker on the intersection. Matches LSC-White-Background-Grid.png. -->
+  <g fill="none" stroke-width="1" vector-effect="non-scaling-stroke">
+    <path d="M0 90.5H240M120.5 0V180" stroke="#0E0E0E" stroke-opacity="0.06" vector-effect="non-scaling-stroke"/>
+    <path d="M113 90.5H128M120.5 83V98" stroke="#0E0E0E" stroke-opacity="0.45" vector-effect="non-scaling-stroke"/>
+  </g>
+</svg>

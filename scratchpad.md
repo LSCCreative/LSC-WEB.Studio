@@ -179,3 +179,36 @@ goes live. Next action is theirs: look it over, then say push.
 
 Note the download link now on the REVIEW screen is a policy change worth
 confirming — see Open questions.
+
+## FAQ page (separate from the client-hub work above) — NOT committed
+
+- New: `faq.html`, `css/faq.css`, `js/faq.js`. Only edit to existing files: one
+  `<a href="faq.html">FAQs</a>` in `index.html`'s `.footer-right`. Main nav
+  untouched on purpose (user: footer link only).
+- `faq.html` was generated from the FAQ text so the visible copy and the
+  FAQPage JSON-LD match; if copy changes, edit both (or regenerate).
+- Source copy: `LSC Billing App [V8]/LSC Creative FAQs.txt`. Q9 still says
+  "this production business" verbatim — user may want "LSC Creative".
+- Verified in browser at 1024 and 375px: no horizontal overflow, 44px targets,
+  deep links (`faq.html#q-revision-rounds`) open + scroll to the answer.
+
+## Grid unification (2026-10-02) — NOT committed
+
+User wanted ONE background grid site-wide: the hairline + plus-marker grid from
+`assets/LSC-White-Background-Grid.png`.
+- New tiles: `assets/lsc-grid-light.svg` / `assets/lsc-grid-dark.svg`
+  (240×180 cell, lines + plus at intersection, non-scaling 1px stroke).
+- Tokens in `css/main.css` `:root`: `--lsc-grid-light`, `--lsc-grid-dark`,
+  `--lsc-grid-size` (240×180), `--lsc-grid-offset`. ≤768px block at the
+  bottom shrinks to 160×120, forces scroll attachment, and gives the
+  (dark-on-phone) Process section the dark tint.
+- Replaced: Services (PNG cover), Process (PNG 480×360 + dark 56px base),
+  Works `::before` (480×360 lines), works glass panel (80px crosses), Contact
+  (56px), About modal overlay (60px), FAQ body (56px, `css/faq.css`).
+- Removed the Services open-state overlays (72px line grid + orange cross mask):
+  `.svc-grid-overlay` / `.svc-grid-cross` markup + CSS, and the now-unused
+  `svc-any-open` toggle in `js/main.js`.
+- Left alone on purpose: `.lsc-pre__grid` (preloader matrix — aligned to the
+  L/S/C morph cells, part of the logo animation, not a section background).
+- `LSC-White-Background-Grid.png` is no longer referenced; kept in assets.
+- Verified at 1024px and 375px: all sections share the grid, no overflow.

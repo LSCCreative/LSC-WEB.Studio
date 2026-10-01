@@ -43,6 +43,15 @@
   --space-lg:   clamp(2rem,     1.60rem + 2.00vw, 4rem);
   --space-xl:   clamp(3rem,     2.20rem + 4.00vw, 7rem);
   --space-2xl:  clamp(4.5rem,   3.10rem + 7.00vw, 11.5rem);
+
+  /* LSC master grid — the ONE background grid used site-wide.
+     Hairlines + plus marker at each intersection (LSC-White-Background-Grid).
+     Light tint for white surfaces, dark tint for #0B0B0D surfaces.
+     Offset puts the intersections on the cell corners. */
+  --lsc-grid-light:  url("../assets/lsc-grid-light.svg");
+  --lsc-grid-dark:   url("../assets/lsc-grid-dark.svg");
+  --lsc-grid-size:   240px 180px;
+  --lsc-grid-offset: -120px -90px;
 }
 
 /* ── PHASE 3: SCROLL-REVEAL UTILITY (js/scroll-animations.js) ──
@@ -603,8 +612,9 @@ body.dark-theme {
             
             background-color: rgba(0, 0, 0, 0.28);
             
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Cline x1='0' y1='0.5' x2='60' y2='0.5' stroke='rgba(255,255,255,0.07)' stroke-width='1'/%3E%3Cline x1='0.5' y1='0' x2='0.5' y2='60' stroke='rgba(255,255,255,0.07)' stroke-width='1'/%3E%3C/svg%3E");
-            background-size: 60px 60px;
+            background-image: var(--lsc-grid-dark);
+            background-size: var(--lsc-grid-size);
+            background-position: var(--lsc-grid-offset);
             background-repeat: repeat;
             backdrop-filter: blur(22px) saturate(140%);
             -webkit-backdrop-filter: blur(22px) saturate(140%);
@@ -1122,8 +1132,9 @@ body.is-mouse .accordion-trigger:hover .trigger-title { color: var(--lsc-terra);
 .lsc-process-section {
             padding: 0;
             background-color: #0B0B0D;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56'%3E%3Cline x1='0' y1='0.5' x2='56' y2='0.5' stroke='white' stroke-opacity='0.04' stroke-width='1'/%3E%3Cline x1='0.5' y1='0' x2='0.5' y2='56' stroke='white' stroke-opacity='0.04' stroke-width='1'/%3E%3C/svg%3E");
-            background-size: 56px 56px;
+            background-image: var(--lsc-grid-dark);
+            background-size: var(--lsc-grid-size);
+            background-position: var(--lsc-grid-offset);
             background-repeat: repeat;
             border-top: 1px solid rgba(168,78,46,0.2);
             position: relative;
@@ -1331,9 +1342,10 @@ body.is-mouse .accordion-trigger:hover .trigger-title { color: var(--lsc-terra);
 
 .lsc-process-section {
             background-color: #FFFFFF;
-            background-image: url("../assets/LSC-White-Background-Grid.png");
+            background-image: var(--lsc-grid-light);
             background-attachment: fixed;
-            background-size: 480px 360px;
+            background-size: var(--lsc-grid-size);
+            background-position: var(--lsc-grid-offset);
             background-repeat: repeat;
             border-top: 1px solid rgba(14, 14, 14, 0.08);
 }
@@ -1500,8 +1512,9 @@ body.is-mouse .footer-right a:hover {
             inset: 0;
             z-index: 0;
             pointer-events: none;
-            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22480%22%20height%3D%22360%22%3E%3Cline%20x1%3D%220%22%20y1%3D%220.5%22%20x2%3D%22480%22%20y2%3D%220.5%22%20stroke%3D%22rgba%28255%2C255%2C255%2C0.04%29%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%220.5%22%20y1%3D%220%22%20x2%3D%220.5%22%20y2%3D%22360%22%20stroke%3D%22rgba%28255%2C255%2C255%2C0.04%29%22%20stroke-width%3D%221%22%2F%3E%3C%2Fsvg%3E");
-            background-size: 480px 360px;
+            background-image: var(--lsc-grid-dark);
+            background-size: var(--lsc-grid-size);
+            background-position: var(--lsc-grid-offset);
             background-repeat: repeat;
 }
 
@@ -1766,9 +1779,10 @@ body.is-mouse .footer-right a:hover {
             z-index: 3;
             padding: 22px 26px 26px;
             background-color: rgba(30, 34, 40, 0.42);
-            background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2280%22%20height%3D%2280%22%3E%3Cline%20x1%3D%2240%22%20y1%3D%2234%22%20x2%3D%2240%22%20y2%3D%2246%22%20stroke%3D%22rgba(255%2C255%2C255%2C0.12)%22%20stroke-width%3D%221%22%2F%3E%3Cline%20x1%3D%2234%22%20y1%3D%2240%22%20x2%3D%2246%22%20y2%3D%2240%22%20stroke%3D%22rgba(255%2C255%2C255%2C0.12)%22%20stroke-width%3D%221%22%2F%3E%3C%2Fsvg%3E");
+            background-image: var(--lsc-grid-dark);
+            background-size: var(--lsc-grid-size);
+            background-position: var(--lsc-grid-offset);
             background-repeat: repeat;
-            background-size: 80px 80px;
             backdrop-filter: blur(24px);
             -webkit-backdrop-filter: blur(24px);
             border-top: 1px solid rgba(255, 255, 255, 0.13);
@@ -2088,8 +2102,9 @@ body.is-mouse .footer-right a:hover {
 .lsc-contact-section {
             padding: 160px 5vw 140px;
             background-color: #0B0B0D;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56'%3E%3Cline x1='0' y1='0.5' x2='56' y2='0.5' stroke='white' stroke-opacity='0.04' stroke-width='1'/%3E%3Cline x1='0.5' y1='0' x2='0.5' y2='56' stroke='white' stroke-opacity='0.04' stroke-width='1'/%3E%3C/svg%3E");
-            background-size: 56px 56px;
+            background-image: var(--lsc-grid-dark);
+            background-size: var(--lsc-grid-size);
+            background-position: var(--lsc-grid-offset);
             background-repeat: repeat;
             border-top: 1px solid rgba(168,78,46,0.25);
             position: relative;
@@ -2490,12 +2505,11 @@ body.works-hovered .hud-corner {
    ============================================================ */
 .svc-section {
             background-color: #FFFFFF;
-            /* path is relative to /css/, so step up one level to /assets/ */
-            background-image: url("../assets/LSC-White-Background-Grid.png");
+            background-image: var(--lsc-grid-light);
             background-attachment: fixed;
-            background-position: center center;
-            background-size: cover;
-            background-repeat: no-repeat;
+            background-size: var(--lsc-grid-size);
+            background-position: var(--lsc-grid-offset);
+            background-repeat: repeat;
             border-top: 1px solid rgba(14,14,14,0.08);
             padding: clamp(56px, 7vw, 104px) 5vw clamp(72px, 8vw, 128px);
             position: relative;
@@ -2511,32 +2525,6 @@ body.works-hovered .hud-corner {
             position: relative;
             z-index: 1;
 }
-
-/* Drawn grid overlay — reveals as a discipline opens */
-.svc-grid-overlay,
-.svc-grid-cross {
-            position: absolute;
-            inset: 0;
-            z-index: 0;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.5s ease;
-}
-.svc-grid-overlay {
-            background-image:
-                linear-gradient(to right, rgba(14,14,14,0.05) 1px, transparent 1px),
-                linear-gradient(to bottom, rgba(14,14,14,0.05) 1px, transparent 1px);
-            background-size: 72px 72px;
-}
-.svc-grid-cross {
-            background: var(--lsc-terra);
-            -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='72'%20height='72'%3E%3Crect%20x='30'%20y='35'%20width='12'%20height='2'/%3E%3Crect%20x='35'%20y='30'%20width='2'%20height='12'/%3E%3C/svg%3E");
-            mask-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='72'%20height='72'%3E%3Crect%20x='30'%20y='35'%20width='12'%20height='2'/%3E%3Crect%20x='35'%20y='30'%20width='2'%20height='12'/%3E%3C/svg%3E");
-            -webkit-mask-size: 72px 72px; mask-size: 72px 72px;
-            -webkit-mask-position: -36px -36px; mask-position: -36px -36px;
-}
-.svc-section.svc-any-open .svc-grid-overlay { opacity: 1; }
-.svc-section.svc-any-open .svc-grid-cross  { opacity: 0.35; }
 
 .svc-header {
             display: flex;
@@ -3298,5 +3286,20 @@ body.works-hovered .hud-corner {
     input[type="url"],
     textarea,
     select { font-size: 16px !important;
+    }
+}
+
+@media (max-width: 768px) {
+    /* LSC master grid on phones — same grid, tighter cell so a few columns
+       still read on a 375px screen. iOS ignores fixed attachment, so scroll. */
+    :root {
+                --lsc-grid-size:   160px 120px;
+                --lsc-grid-offset: -80px -60px;
+    }
+    .lsc-process-section,
+    .svc-section { background-attachment: scroll !important;
+    }
+    /* Process turns dark on phones — swap to the dark tint of the same grid */
+    .lsc-process-section { background-image: var(--lsc-grid-dark) !important;
     }
 }
