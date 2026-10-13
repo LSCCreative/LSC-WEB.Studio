@@ -19,7 +19,7 @@ services:
     build: .
     image: client-hub-api:latest
     container_name: client-hub-api
-    restart: unless-stopped
+    restart: always
 
     # Loopback-only: the public path is the Cloudflare Tunnel, never the LAN.
     ports:
