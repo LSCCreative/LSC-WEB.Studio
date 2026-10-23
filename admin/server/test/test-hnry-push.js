@@ -25,7 +25,7 @@ const { createApp } = require('../src/app');
 const { hashPassword } = require('../src/auth');
 const { PRICING_SHAPE } = require('../src/calc');
 const { createHnry } = require('../src/hnry');
-const { describe } = require('../src/hnry-push');
+const { describe, mainDescription, shootText, periodOf } = require('../src/hnry-push');
 const { amountDue } = require('../src/invoices');
 const { fakeHnry } = require('./fake-hnry');
 
@@ -122,7 +122,7 @@ test('accepting a pair pushes ONE draft, the deposit, at the deposit\'s own amou
   assert.equal(fake.invoices.length, 1, 'one draft in Hnry');
   const draft = fake.invoices[0];
   assert.equal(draft.poNumber, `INV-${est.upid}-D`, 'the app\'s number rides in the PO field');
-  assert.deepEqual(draft.items, [{ description: `Deposit invoice (40%): ${est.name}`, quantity: 1, price: totalsOf(deposit).totalIncGst }]);
+  assert.deepEqual(draft.items, [{ description: `${est.name}: Deposit invoice (40%)`, quantity: 1, price: totalsOf(deposit).totalIncGst }]);
   assert.ok(totalsOf(deposit).totalIncGst > 0);
   assert.equal(fake.total(draft.id), Math.round(totalsOf(deposit).totalIncGst * 100));
 
@@ -155,7 +155,7 @@ test('a single invoice is pushed whole, as "Invoice: <project>"', async () => {
   const [single] = invoicesOf(est.projectId);
   assert.equal(single.kind, 'single');
   assert.equal(fake.invoices.length, 1);
-  assert.deepEqual(fake.invoices[0].items, [{ description: `Invoice: ${est.name}`, quantity: 1, price: amountDue('single', totalsOf(single)) }]);
+  assert.deepEqual(fake.invoices[0].items, [{ description: `${est.name}: Invoice`, quantity: 1, price: amountDue('single', totalsOf(single)) }]);
   assert.equal(fake.invoices[0].poNumber, single.number);
   assert.equal(single.hnry_number, fake.invoices[0].invoiceNumber);
 });
@@ -171,11 +171,94 @@ test('Create invoices on a project accepted without them pushes too', async () =
   assert.equal(fake.invoices.length, 1);
 });
 
-test('the description reads the way the user asked: deposit with its percent, final/single plain', () => {
-  assert.equal(describe({ kind: 'deposit', pct: 50 }, 'Brand film'), 'Deposit invoice (50%): Brand film');
-  assert.equal(describe({ kind: 'deposit', pct: 33.333 }, 'Brand film'), 'Deposit invoice (33.33%): Brand film');
-  assert.equal(describe({ kind: 'single', pct: null }, ' Brand film '), 'Invoice: Brand film');
-  assert.equal(describe({ kind: 'single' }, ''), 'Invoice: Project');
+test('the description reads the way the user asked: project name first, deposit with its percent', () => {
+  assert.equal(describe({ kind: 'deposit', pct: 50 }, 'Brand film'), 'Brand film: Deposit invoice (50%)');
+  assert.equal(describe({ kind: 'deposit', pct: 33.333 }, 'Brand film'), 'Brand film: Deposit invoice (33.33%)');
+  assert.equal(describe({ kind: 'final' }, 'Brand film'), 'Brand film: Final invoice');
+  assert.equal(describe({ kind: 'single', pct: null }, ' Brand film '), 'Brand film: Invoice');
+  assert.equal(describe({ kind: 'single' }, ''), 'Project: Invoice');
+});
+
+/* ── Shoot dates and deliverables (Hnry has no Comments input) ──────── */
+
+const day = (date, status = 'confirmed') => ({ id: 'd' + date, date, status });
+
+test('shoot dates read like a person wrote them: grouped by month, the year once per year', () => {
+  assert.equal(shootText(['2026-11-03']), '3 Nov 2026');
+  assert.equal(shootText(['2026-11-03', '2026-11-04']), '3 and 4 Nov 2026');
+  assert.equal(shootText(['2026-11-03', '2026-11-04', '2026-11-10']), '3, 4 and 10 Nov 2026');
+  assert.equal(shootText(['2026-10-28', '2026-10-30', '2026-11-03']), '28 and 30 Oct, 3 Nov 2026');
+  assert.equal(shootText(['2026-12-30', '2027-01-02']), '30 Dec 2026, 2 Jan 2027');
+});
+
+test('the main line: title, then Shoot (confirmed days only, sorted, once each) and Deliverables', () => {
+  const days = [day('2026-11-04'), day('2026-11-03'), day('2026-11-03'), day('2026-11-20', 'proposed'), day('2026-11-21', 'pencilled'), { id: 'tbc', date: null, status: 'confirmed' }];
+  const deliverables = [
+    { name: 'Hero film', duration: '60s', format: '16:9', qty: 1 },
+    { name: ' Cut-down ', duration: '15s', format: '9:16', qty: 3 },
+    { name: 'Stills', qty: 0 },
+    { name: '   ' },
+  ];
+  assert.equal(mainDescription({ kind: 'deposit', pct: 50 }, 'Acme brand film', days, deliverables),
+    'Acme brand film: Deposit invoice (50%)\nShoot: 3 and 4 Nov 2026\nDeliverables: 1 × Hero film (60s, 16:9), 3 × Cut-down (15s, 9:16), 1 × Stills');
+  assert.deepEqual(periodOf(days), { periodStartDate: '2026-11-03', periodEndDate: '2026-11-04' });
+  // Nothing confirmed and nothing to deliver: the title alone, and no Period.
+  assert.equal(mainDescription({ kind: 'final' }, 'Acme', [day('2026-11-03', 'proposed')], []), 'Acme: Final invoice');
+  assert.deepEqual(periodOf([day('2026-11-03', 'pencilled')]), {});
+});
+
+test('a long main line stays within Hnry\'s 500 characters: deliverables give way, then the shoot list becomes a range', () => {
+  const many = Array.from({ length: 60 }, (_, i) => ({ name: 'Social cut ' + (i + 1), duration: '15s', format: '9:16', qty: 1 }));
+  const text = mainDescription({ kind: 'single' }, 'Acme', [day('2026-11-03')], many);
+  assert.ok(text.length <= 500, String(text.length));
+  assert.match(text, /^Acme: Invoice\nShoot: 3 Nov 2026\nDeliverables: 1 × Social cut 1 \(15s, 9:16\), .* and \d+ more$/);
+  const dates = Array.from({ length: 120 }, (_, i) => new Date(Date.UTC(2026, 0, 1 + i * 3)).toISOString().slice(0, 10));
+  const long = mainDescription({ kind: 'single' }, 'Acme', dates.map((d) => day(d)), []);
+  assert.ok(long.length <= 500);
+  assert.equal(long, `Acme: Invoice\nShoot: 1 Jan 2026 to ${shootText([dates[119]])} (120 days)`);
+});
+
+test('accepting pushes the shoot dates and deliverables on the main line and the shoot as Hnry\'s Period', async () => {
+  const est = await shoot({
+    days: [
+      { id: 'd_h_a', date: '2026-11-04', status: 'confirmed' },
+      { id: 'd_h_b', date: '2026-11-03', status: 'confirmed' },
+      { id: 'd_h_c', date: '2026-11-12', status: 'proposed' },
+    ],
+    activeRows: {
+      deliverables: [{ id: 'dv_hero', name: 'Hero film', format: '16:9', duration: '60s', qty: 1 }],
+      prod: [{ name: 'Video Capture', qty: 1, mu: 1120, dayUnit: 'full', hoursPerUnit: 8 }],
+    },
+  });
+  const r = await act(est.projectId, 'accept', { invoicing: 'pair', depositPct: 50 });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  await idle();
+  assert.equal(fake.invoices.length, 1);
+  const draft = fake.invoices[0];
+  // Accepting confirms every dated day (confirmDays), the proposed 12th too.
+  assert.equal(draft.items[0].description, `${est.name}: Deposit invoice (50%)\nShoot: 3, 4 and 12 Nov 2026\nDeliverables: 1 × Hero film (60s, 16:9)`);
+  assert.equal(draft.periodStartDate, '2026-11-03');
+  assert.equal(draft.periodEndDate, '2026-11-12');
+  const [deposit] = invoicesOf(est.projectId);
+  assert.equal(fake.total(draft.id), Math.round(totalsOf(deposit).totalIncGst * 100), 'the price is untouched');
+});
+
+test('the final reads the days as they stand: a moved shoot shows its new date, a day added unconfirmed is left out', async () => {
+  const est = await shoot({ days: [{ id: 'd_h_move', date: '2026-12-01', status: 'proposed' }] });
+  const r = await act(est.projectId, 'accept', { invoicing: 'pair', depositPct: 50 });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  await idle();
+  assert.equal(fake.invoices[0].items[0].description, `${est.name}: Deposit invoice (50%)\nShoot: 1 Dec 2026`);
+  db.prepare("UPDATE production_days SET date = '2026-12-08' WHERE id = 'd_h_move'").run();
+  const at = nowIso();
+  db.prepare("INSERT INTO production_days (id, estimate_id, date, status, created_at, updated_at) VALUES ('d_h_pick', ?, '2026-12-09', 'pencilled', ?, ?)").run(est.id, at, at);
+  const final = invoicesOf(est.projectId).find((i) => i.kind === 'final');
+  const f = await api(`/api/invoices/${final.id}/hnry`, { method: 'POST', body: '{}' }).then(json);
+  assert.equal(f.status, 200, JSON.stringify(f.body));
+  const draft = fake.invoices[1];
+  assert.equal(draft.items[0].description, `${est.name}: Final invoice\nShoot: 8 Dec 2026`);
+  assert.deepEqual([draft.periodStartDate, draft.periodEndDate], ['2026-12-08', '2026-12-08']);
+  assert.equal(fake.total(draft.id), Math.round(amountDue('final', totalsOf(final)) * 100), 'the price is untouched');
 });
 
 /* ── The accept never waits for Hnry, and never fails because of it ──── */

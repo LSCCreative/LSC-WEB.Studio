@@ -13,14 +13,16 @@
  * nothing is pushed and the app behaves as it did before Hnry.
  *
  * WHAT: each invoice becomes one Hnry DRAFT made of LINES, in this order:
- *   deposit  "Deposit invoice (N%): <project>"                    the deposit
- *   single   "Invoice: <project>"                                 the balance
- *   final    "Final invoice: <project>"                           the job's total
+ *   deposit  "<project>: Deposit invoice (N%)"                    the deposit
+ *   single   "<project>: Invoice"                                 the balance
+ *   final    "<project>: Final invoice"                           the job's total
  *            one line per extra (or "Additional work" when the pieces can't be
  *            made to add up), then "Less deposit (<the deposit's Hnry number>)"
  *            as a negative line
- * The app's own invoice number rides in Hnry's PO field. The user sends the
- * draft from Hnry.
+ * The first line goes on with "Shoot: …" and "Deliverables: …" lines, and the
+ * confirmed shoot days set Hnry's Period (mainDescription, below). The app's
+ * own invoice number rides in Hnry's PO field. The user sends the draft from
+ * Hnry.
  *
  * MONEY RULES (the reason this file is Opus work):
  *   - Every price comes from the invoice's STORED totals, never repriced, and
@@ -54,6 +56,7 @@ const { readSettings, readPricing } = require('./ratecard');
 const { extrasTotals } = require('./calc');
 const { logActivity } = require('./routes/projects');
 const { HnryError } = require('./hnry');
+const { readDays } = require('./days');
 
 /* Pushed by the app on its own at acceptance; a final waits for the user. */
 const AUTO = new Set(['deposit', 'single']);
@@ -69,14 +72,115 @@ function pctText(pct) {
 
 const nameOf = (projectName) => String(projectName || '').trim().slice(0, 200) || 'Project';
 
+/* The main line's first line, project name first (the user's call, 2026-10-23). */
 function describe(row, projectName) {
   const name = nameOf(projectName);
   if (row.kind === 'deposit') {
     const pct = pctText(row.pct);
-    return `Deposit invoice${pct ? ` (${pct}%)` : ''}: ${name}`;
+    return `${name}: Deposit invoice${pct ? ` (${pct}%)` : ''}`;
   }
-  if (row.kind === 'final') return `Final invoice: ${name}`;
-  return `Invoice: ${name}`;
+  if (row.kind === 'final') return `${name}: Final invoice`;
+  return `${name}: Invoice`;
+}
+
+/* ── Shoot dates and deliverables on the main line ─────────────────────
+   Zapier's Hnry app has no Comments input (read from the account 2026-10-23),
+   so what the user wanted there rides under the main line's first line:
+     Brand film: Deposit invoice (50%)
+     Shoot: 3 and 4 Nov 2026
+     Deliverables: 1 × Hero film (60s, 16:9), 3 × Cut-down (15s, 9:16)
+   and the first and last shoot day become Hnry's Period. Only CONFIRMED days
+   count, read from the project's days as they stand when the push runs (a
+   shoot moved after acceptance shows its real dates); the deliverables are the
+   accepted estimate's, the same allow-listed fields the client's quote page
+   shows. Nothing priced or internal goes in. */
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const YMD = /^(\d{4})-(\d{2})-(\d{2})$/;
+const MAIN_LINE_MAX = 500; // hnry.js refuses a longer description
+
+/* The confirmed shoot days' dates, sorted, each once. */
+function shootDates(days) {
+  const set = new Set();
+  for (const d of Array.isArray(days) ? days : []) {
+    if (d && d.status === 'confirmed' && typeof d.date === 'string' && YMD.test(d.date)) set.add(d.date);
+  }
+  return [...set].sort();
+}
+
+const listText = (items) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`);
+const dayText = (ymd) => {
+  const [, y, m, d] = YMD.exec(ymd);
+  return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
+};
+
+/* "3 Nov 2026", "3, 4 and 10 Nov 2026", "28 and 30 Oct, 3 Nov 2026",
+   "30 Dec 2026, 2 Jan 2027": days grouped by month, the year after its last month. */
+function shootText(dates) {
+  const groups = [];
+  for (const ymd of dates) {
+    const [, y, m, d] = YMD.exec(ymd);
+    const last = groups[groups.length - 1];
+    if (last && last.y === y && last.m === m) last.days.push(String(Number(d)));
+    else groups.push({ y, m, days: [String(Number(d))] });
+  }
+  return groups.map((g, i) => {
+    const next = groups[i + 1];
+    return `${listText(g.days)} ${MONTHS[Number(g.m) - 1]}${!next || next.y !== g.y ? ` ${g.y}` : ''}`;
+  }).join(', ');
+}
+
+const clean = (v) => String(v === undefined || v === null ? '' : v).replace(/\s+/g, ' ').trim();
+
+/* "2 × Hero film (60s, 16:9)": quantity, name, then length and format if given. */
+function deliverableTexts(rows) {
+  return (Array.isArray(rows) ? rows : []).filter((d) => d && clean(d.name)).map((d) => {
+    const q = Number.isInteger(Number(d.qty)) && Number(d.qty) > 0 ? Number(d.qty) : 1;
+    const spec = [clean(d.duration), clean(d.format)].filter(Boolean).join(', ');
+    return `${q} × ${clean(d.name)}${spec ? ` (${spec})` : ''}`;
+  });
+}
+
+/* As many items as fit in `room` characters after `prefix`, then "and N more". */
+function fitList(prefix, items, room) {
+  for (let n = items.length; n > 0; n -= 1) {
+    const more = items.length - n;
+    const s = prefix + items.slice(0, n).join(', ') + (more ? ` and ${more} more` : '');
+    if (s.length <= room) return s;
+  }
+  return '';
+}
+
+/**
+ * The main line's description: the title, then "Shoot: …" and "Deliverables:
+ * …" on their own lines when there are any, kept to MAIN_LINE_MAX. A long list
+ * gives way first (deliverables to "and N more", shoot days to a range), never
+ * the title.
+ */
+function mainDescription(row, projectName, days, deliverables) {
+  const title = describe(row, projectName);
+  const dates = shootDates(days);
+  let room = MAIN_LINE_MAX - title.length;
+  const parts = [title];
+  if (dates.length) {
+    let shoot = `Shoot: ${shootText(dates)}`;
+    if (shoot.length + 1 > room) {
+      shoot = `Shoot: ${dayText(dates[0])} to ${dayText(dates[dates.length - 1])} (${dates.length} days)`;
+    }
+    if (shoot.length + 1 <= room) {
+      parts.push(shoot);
+      room -= shoot.length + 1;
+    }
+  }
+  const deliv = fitList('Deliverables: ', deliverableTexts(deliverables), room - 1);
+  if (deliv) parts.push(deliv);
+  return parts.join('\n');
+}
+
+/* Hnry's Period: the first and last confirmed shoot day, or nothing. */
+function periodOf(days) {
+  const dates = shootDates(days);
+  return dates.length ? { periodStartDate: dates[0], periodEndDate: dates[dates.length - 1] } : {};
 }
 
 /* Does any figure on the invoice carry GST? (A deposit's totals are flat; a
@@ -129,12 +233,22 @@ function extraLines(db, row, snapshot, totals) {
   return [{ description: 'Additional work', price: stored / 100 }];
 }
 
+/* The project's days as they stand now; the accepted snapshot's when the
+   estimate itself is gone. */
+function daysFor(db, row, snapshot) {
+  const live = row.estimate_id && db.prepare('SELECT 1 FROM estimates WHERE id = ?').get(row.estimate_id);
+  return live ? readDays(db, row.estimate_id) : ((snapshot && snapshot.days) || []);
+}
+
 /**
  * The invoice's lines, or throws PlanError. `price`s are in dollars, ex GST
- * (GST has already been refused), and add up to what the app bills.
+ * (GST has already been refused), and add up to what the app bills. Only the
+ * first line carries the shoot dates and deliverables (`days`).
  */
-function planFor(db, row, snapshot, totals) {
+function planFor(db, row, snapshot, totals, days = daysFor(db, row, snapshot)) {
   const name = snapshot && snapshot.name;
+  const deliverables = snapshot && snapshot.activeRows && snapshot.activeRows.deliverables;
+  const main = mainDescription(row, name, days, deliverables);
   // Nothing owed (a 100% deposit leaves a $0 final) is nothing to invoice.
   if (!(cents(amountDue(row.kind, totals)) > 0)) throw new PlanError('zero_amount', 'The invoice has nothing to bill.');
   let lines;
@@ -150,10 +264,10 @@ function planFor(db, row, snapshot, totals) {
         throw new PlanError('deposit_not_in_hnry', 'Create the deposit invoice in Hnry first: the final takes it off by its Hnry number.');
       }
     }
-    lines = [{ description: describe(row, name), price: job / 100 }, ...extraLines(db, row, snapshot, totals)];
+    lines = [{ description: main, price: job / 100 }, ...extraLines(db, row, snapshot, totals)];
     if (less !== 0) lines.push({ description: `Less deposit (${depositRow.hnry_number})`, price: -less / 100 });
   } else {
-    lines = [{ description: describe(row, name), price: amountDue(row.kind, totals) }];
+    lines = [{ description: main, price: amountDue(row.kind, totals) }];
   }
   const sum = lines.reduce((s, l) => s + cents(l.price), 0);
   if (sum !== cents(amountDue(row.kind, totals)) || lines.some((l) => cents(l.price) === 0)) {
@@ -215,9 +329,10 @@ function createHnryPusher(db, hnry, opts = {}) {
       return fail(row, 'gst_registered', 'GST handling in Hnry isn’t set up yet.');
     }
     const snapshot = parseJson(row.estimate_snapshot_json, {});
+    const days = daysFor(db, row, snapshot);
     let lines;
     try {
-      lines = planFor(db, row, snapshot, totals);
+      lines = planFor(db, row, snapshot, totals, days);
     } catch (err) {
       if (err instanceof PlanError) return fail(row, err.code, err.message);
       throw err;
@@ -232,6 +347,7 @@ function createHnryPusher(db, hnry, opts = {}) {
         if (!made) {
           made = await hnry.createInvoice({
             clientId, poNumber: row.number, description: lines[0].description, quantity: 1, price: lines[0].price,
+            ...periodOf(days),
           });
         }
         const at = now();
@@ -296,4 +412,6 @@ function createHnryPusher(db, hnry, opts = {}) {
   };
 }
 
-module.exports = { createHnryPusher, describe, planFor, carriesGst, PlanError, AUTO, PUSHABLE };
+module.exports = {
+  createHnryPusher, describe, mainDescription, shootText, periodOf, planFor, carriesGst, PlanError, AUTO, PUSHABLE,
+};

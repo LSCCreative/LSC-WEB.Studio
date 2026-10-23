@@ -8,9 +8,10 @@
  *
  * What Hnry can do here is what Zapier's Hnry app exposes, no more (read
  * 2026-10-22 from the Zap editor, see the brief):
- *   - Create Invoice: ONE line (description, quantity, price). Always a DRAFT:
- *     the user sends it from Hnry. No GST, no comments, no send, no card toggle
- *     (card payment is on by default in Hnry).
+ *   - Create Invoice: ONE line (description, quantity, price), dates, the
+ *     Period and the reference. Always a DRAFT: the user sends it from Hnry. No
+ *     GST, no comments (rechecked on the account 2026-10-23), no send, no card
+ *     toggle (card payment is on by default in Hnry).
  *   - Add Item to Existing Invoice: one more line, onto a draft.
  *   - Find Invoice: by client or by PO/reference; sees drafts.
  *   - Find or Create Client: by name.
@@ -284,10 +285,11 @@ function createHnry(config = {}, transport) {
 
     /**
      * A DRAFT invoice with one line. `price` is the line's amount in dollars
-     * (ex GST: Hnry adds none for an unregistered user). Resolves { id, number,
-     * status, poNumber }.
+     * (ex GST: Hnry adds none for an unregistered user); the description may run
+     * over several lines. `periodStartDate`/`periodEndDate` (YYYY-MM-DD, both or
+     * neither) set Hnry's Period. Resolves { id, number, status, poNumber }.
      */
-    async createInvoice({ clientId, invoiceDate, dueDate, poNumber, description, quantity, price } = {}) {
+    async createInvoice({ clientId, invoiceDate, dueDate, periodStartDate, periodEndDate, poNumber, description, quantity, price } = {}) {
       const inputs = {
         clientId: text(clientId, 'The Hnry client', 200),
         poNumber: text(poNumber, 'The reference', 100),
@@ -301,6 +303,16 @@ function createHnry(config = {}, transport) {
       const due = ymd(dueDate, 'The due date');
       if (inv) inputs.invoiceDate = inv;
       if (due) inputs.dueDate = due;
+      // The Period (the shoot days, hnry-push.js): both ends or neither.
+      const start = ymd(periodStartDate, 'The period start');
+      const end = ymd(periodEndDate, 'The period end');
+      if (Boolean(start) !== Boolean(end) || (start && end < start)) {
+        throw new HnryError('bad_input', 'The period needs a start and an end, in order.');
+      }
+      if (start) {
+        inputs.periodStartDate = start;
+        inputs.periodEndDate = end;
+      }
       const rows = await call(ACTIONS.createInvoice, inputs);
       if (!rows.length) throw new HnryError('unexpected_shape', 'Hnry returned no invoice.');
       return toInvoice(rows[0]);

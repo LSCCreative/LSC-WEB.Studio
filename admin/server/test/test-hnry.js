@@ -70,7 +70,7 @@ test('createInvoice makes one DRAFT line and hands back Hnry\'s id and number', 
   const { fake, hnry } = setup();
   const c = await hnry.findOrCreateClient({ name: 'Acme' });
   const inv = await hnry.createInvoice({
-    clientId: c.id, poNumber: 'INV-UP-1-D', description: 'Deposit invoice (50%): Brand film', price: 2750.505, dueDate: '2026-11-11',
+    clientId: c.id, poNumber: 'INV-UP-1-D', description: 'Brand film: Deposit invoice (50%)', price: 2750.505, dueDate: '2026-11-11',
   });
   assert.match(inv.id, /^[A-Za-z0-9+/=]+$/);
   assert.match(inv.number, /^INV-\d+$/);
@@ -81,7 +81,7 @@ test('createInvoice makes one DRAFT line and hands back Hnry\'s id and number', 
   assert.deepEqual(Object.keys(sent).sort(), ['clientId', 'dueDate', 'invoiceItems', 'poNumber'], 'the line goes in invoiceItems, as Hnry\'s Create Invoice takes it');
   const [line] = sent.invoiceItems;
   assert.equal(sent.invoiceItems.length, 1);
-  assert.equal(line.description, 'Deposit invoice (50%): Brand film');
+  assert.equal(line.description, 'Brand film: Deposit invoice (50%)');
   assert.equal(line.price, 2750.51, 'to the cent');
   assert.equal(line.quantity, 1, 'quantity defaults to 1');
   assert.equal(sent.dueDate, '2026-11-11');
@@ -89,10 +89,25 @@ test('createInvoice makes one DRAFT line and hands back Hnry\'s id and number', 
   assert.equal(fake.total(inv.id), 275051);
 });
 
+test('createInvoice sends the Period only as a pair of dates in order', async () => {
+  const { fake, hnry } = setup();
+  const c = await hnry.findOrCreateClient({ name: 'Acme' });
+  await hnry.createInvoice({ clientId: c.id, poNumber: 'P-1', description: 'Acme: Invoice\nShoot: 3 and 4 Nov 2026', price: 10, periodStartDate: '2026-11-03', periodEndDate: '2026-11-04' });
+  const sent = fake.calls.at(-1).inputs;
+  assert.equal(sent.periodStartDate, '2026-11-03');
+  assert.equal(sent.periodEndDate, '2026-11-04');
+  assert.equal(sent.invoiceItems[0].description, 'Acme: Invoice\nShoot: 3 and 4 Nov 2026', 'line breaks kept');
+  const calls = fake.calls.length;
+  for (const bad of [{ periodStartDate: '2026-11-03' }, { periodEndDate: '2026-11-04' }, { periodStartDate: '2026-11-05', periodEndDate: '2026-11-04' }, { periodStartDate: '3/11/2026', periodEndDate: '2026-11-04' }]) {
+    await assert.rejects(hnry.createInvoice({ clientId: c.id, poNumber: 'P-2', description: 'x', price: 10, ...bad }), { code: 'bad_input' });
+  }
+  assert.equal(fake.calls.length, calls, 'nothing sent');
+});
+
 test('a final adds its extras and a negative "less deposit" line, and the draft sums to the cent', async () => {
   const { fake, hnry } = setup();
   const c = await hnry.findOrCreateClient({ name: 'Acme' });
-  const inv = await hnry.createInvoice({ clientId: c.id, poNumber: 'INV-UP-1-F', description: 'Final invoice: Brand film', price: 5000.5 });
+  const inv = await hnry.createInvoice({ clientId: c.id, poNumber: 'INV-UP-1-F', description: 'Brand film: Final invoice', price: 5000.5 });
   await hnry.addItem({ invoiceId: inv.id, description: 'Extra day', quantity: 1, price: 250.25 });
   await hnry.addItem({ invoiceId: inv.id, description: 'Less deposit (INV-10670001)', price: -2500.25 });
   assert.equal(fake.total(inv.id), 275050, '5000.50 + 250.25 - 2500.25');

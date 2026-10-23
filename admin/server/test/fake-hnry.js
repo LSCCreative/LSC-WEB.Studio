@@ -92,6 +92,8 @@ function fakeHnry() {
             invoiceNumber: `INV-${n}`,
             status: 'DRAFT',
             poNumber: inputs.poNumber || '',
+            periodStartDate: inputs.periodStartDate || null,
+            periodEndDate: inputs.periodEndDate || null,
             items: [{ description: line.description, quantity: line.quantity, price: line.price }],
           };
           invoices.push(inv);

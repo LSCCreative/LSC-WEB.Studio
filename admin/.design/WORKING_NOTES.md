@@ -173,6 +173,10 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   says registered (brief C2). Lines come from STORED totals and must sum to `amountDue` to the cent;
   only names, the reference, ids and client-facing prices go to Hnry, never an internal figure
   (`Project build archive/tracks/hnry-invoicing/migration-check.js` section 4 checks it).
+- Zapier's Hnry app has no Comments input and a line has no name, only a description (checked on the
+  account 2026-10-23). So the main line is "<project>: Deposit invoice (N%)" then "Shoot: …" (confirmed
+  days, read at push time) and "Deliverables: …" lines, max 500 chars, and the shoot sets Hnry's Period
+  (`hnry-push.js` `mainDescription`/`periodOf`). Accepting confirms every dated day (`confirmDays`).
 
 ## Frontend traps
 

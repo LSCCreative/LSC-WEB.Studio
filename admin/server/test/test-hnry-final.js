@@ -144,7 +144,7 @@ test('the final goes as its balance line, each extra, and a negative "less depos
   const draft = draftOf(final);
   assert.ok(draft, 'a draft carrying the final\'s number');
   assert.deepEqual(draft.items.map((i) => i.description), [
-    `Final invoice: ${est.name}`,
+    `${est.name}: Final invoice`,
     'Overtime — per hour (×2)',
     'Raw Footage Handover',
     `Less deposit (${row(deposit.id).hnry_number})`,
@@ -176,7 +176,7 @@ test('with no extras the final is its balance line and the deduction', async () 
   assert.equal((await toHnry(final.id)).status, 200);
   const draft = draftOf(final);
   assert.equal(draft.items.length, 2);
-  assert.equal(draft.items[0].description, `Final invoice: ${est.name}`);
+  assert.equal(draft.items[0].description, `${est.name}: Final invoice`);
   assert.match(draft.items[1].description, /^Less deposit \(INV-\d+\)$/);
   assert.equal(fake.total(draft.id), cents(totalsOf(row(final.id)).balanceDue));
 });
