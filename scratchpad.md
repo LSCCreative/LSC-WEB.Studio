@@ -3,6 +3,178 @@
 > High-frequency memory zone. Wiped clean when the current feature merges to
 > main. Keep this brutally current — overwrite, don't append history.
 
+## PLANNING (design-flow): merged admin + paid delivery — Phase 1 done, nothing built
+
+User ran `/design-flow` to put deliverables behind payment; it grew into merging
+the Billing App here. Design Tokens phase was skipped at the start (see below).
+Agreed order: **merge → Bunny → payment**. `feature-spec.md` / `buildplan.md`
+still describe Bunny only and are untouched. Next: Phase 2 Design Brief.
+
+- **Names:** Billing App → "Scope & Sales", adopts the hub's UI/brand. Client Hub
+  → "Client Portal". Full merge: one repo, one API container, one database.
+- **Admin tabs:** Scope & Sales (Dashboard, pipeline before acceptance, Finance &
+  Price) and Clients. Each client: Projects (active / complete, archive from
+  complete, archived sub-tab), Client details, Invoice index. Settings → account menu.
+- **Project page:** Production (shoot days, call sheets, trip planner),
+  Deliverables, Payments. One server-side project under the billing UPID; hub
+  projects leave `localStorage` via a one-time import.
+- **Lifecycle:** accepted quote opens the client project. Portal invite goes on
+  first draft published (manual send also available). Complete is automatic:
+  finals approved + signed + all invoices paid (signed alone if payment is off).
+- **Assets:** stage replaces the `gated` checkbox. Draft Cut: comment or approve,
+  never downloadable or payable. Final: re-approve → sign → pay → download, same
+  asset, comment history kept.
+- **Payment:** final invoice via Hnry, order approve → sign → pay. Downloads and
+  the Drive link lock; review stays open. Per-project "Payment required" toggle
+  (on for new, off for existing live projects). Billing pushes invoice number,
+  amount, due date and PDF.
+- **Unlock:** Mark paid in billing, plus a hub admin override. Hnry via Zapier has
+  no paid trigger or pay link, and Hnry sends no payment email. To test: does Find
+  Invoice report PAID on a real paid invoice? If yes, add a ~15 min check.
+  Client "I've paid" button alerts the admin and never unlocks by itself.
+- **Review copy:** NAS review URLs are the permanent public master, so payment
+  projects review over Bunny HLS only. The gate isn't real without Bunny publishing
+  + signed URLs (Slice 9).
+- **Login/hosting:** billing account is the one admin login (replaces hub PIN).
+  app.lsccreative.studio is served from the merged NAS container; main site and
+  portal stay on Pages.
+
+Merge facts: no table-name collisions; both on `media_net`; both Express 5 +
+better-sqlite3 12. Billing is CommonJS (server ~20k lines, web JS ~38k, CSS ~16k,
+875 tests), hub is ESM (755 lines). Billing has `trip-should-fix` and `ui-clarity`
+worktrees and uncommitted `.design/quote-format/` to settle first.
+
+## ACTIVE FEATURE: Bunny delivery layer (planned 2026-10-20)
+
+The user asked for something specific: Bunny for **client-facing media delivery
+only**. The NAS stays master and backend, and records/auth/DB don't move (the
+2026-10-17 "migrate DB to Bunny" slice stays dropped). Spec in
+`feature-spec.md`, 13 slices (0-12) in `buildplan.md`. No code written yet.
+
+- Top constraint (the user's words): the player is huge to maintain. Keep
+  our own `<video id="asset-video">` and attach HLS to it, no Bunny iframe.
+  Every [WEB] slice re-runs the 6-point player contract in the spec.
+- The widget and editor link through the NAS relative path (admin projects
+  live in browser localStorage, so the NAS can't write into an asset).
+- Bunny Stream fetch-from-URL pulls from the existing `/hub/files/<token>`
+  URL. Confirm its params against the OpenAPI before Slice 2.
+
+### Slice 0 progress (2026-10-20, done in the browser pane) — PARTIAL
+Done:
+- Reused existing Stream library "Client Deliverables", ID `683470`, CDN host
+  `vz-0c8c724c-a53.b-cdn.net`. Webhook set to
+  `https://hub-api.lsccreative.studio/hub/bunny-webhook`. Its CDN token auth +
+  block-direct-URL were ON; both turned OFF (re-enable in Slice 9). Direct
+  play ON. Existing 2 videos are therefore unsigned until Slice 9.
+- New Edge Storage zone `lsc-client-media` (ID 2003290, main region Sydney, no
+  replicas, S3 off) + pull zone `lscclientmedia` (ID 6833812), CDN host
+  `lscclientmedia.b-cdn.net`.
+- Test HLS (200 OK):
+  `https://vz-0c8c724c-a53.b-cdn.net/a3fdcf0a-f70d-4aa9-bb48-e04968478b30/playlist.m3u8`
+Skipped on purpose: Optimizer + Dynamic Image API ($9.50/mo, user declined).
+Slice 7 (resized photos) needs it later.
+Secrets: all 8 BUNNY_* vars now in 1Password Environment "LSC Client Hub Bunny" (names verified).
+Leftover: NAS `.env` via create_local_env_file at deploy (Slice 2/5); scrub gitignored
+`client-hub-docs/Bunny.Net Storage zone & Pull Zone Details.rtf` (7 key/password lines) + rotate what it held.
+
+### Slice 1 (2026-10-21) — CODE DONE, awaiting real Safari + iPhone check
+`client-hub-app/index.html` only:
+- hls.js **1.7.3 light build** (released 2026-09-11) from jsdelivr, pinned + SRI
+  (`HLS_JS` const). Light = no subtitles/alt-audio/DRM, which Bunny review
+  streams don't need. **Lazy-loaded** by `loadHlsJs()` only when a non-Apple
+  browser opens an HLS asset (no `<script>` in `<head>`). A failed load
+  resolves anyway → plain `src` fallback, and resets so the next attach retries.
+- `#asset-video` renders `data-src` (no `src`). An asset with an EMPTY review
+  link skips the player and renders the Drive fallback card directly
+  (`renderVideoCanvas`), since the old `src=""` error path no longer exists.
+- `attachReviewSource` OWNS `video.onerror` (onFail for native/plain, recovery
+  routing for hls.js). `bindClientAsset` sets only onplay/onpause, then attaches.
+  Re-attaching to the SAME element only swaps the hls instance (keeps the pill
+  handlers), which Slice 9's 403 re-attach relies on.
+- hls.js buffers one segment (`maxBufferLength` AND `maxMaxBufferLength` = 2)
+  until the first `play`, then restores `Hls.DefaultConfig`. Note:
+  `maxBufferLength` alone is only a floor. hls.js otherwise grows to
+  `maxMaxBufferLength` (600s), and paused it pulled the whole 41s test video.
+- Landing-card thumbnail skips the `<video>` for `.m3u8` links (`isHlsUrl`
+  helper) → icon until Slice 4's `posterLink`.
+- `attachReviewSource` branch rule: not `.m3u8` → plain `src` (NAS links
+  unchanged); `.m3u8` on Apple WebKit (`navigator.vendor === 'Apple Computer, Inc.'`
+  = Safari + every iOS browser) → native `src`; `.m3u8` elsewhere → hls.js;
+  no MSE → native `src`. Note: Chrome 152 also says `canPlayType(mpegurl)='maybe'`,
+  which is why the rule keys on vendor, not canPlayType alone.
+- Module-level `reviewHls` / `reviewVideo`. `render()` calls `detachReviewSource()`
+  first, which nulls the old element's onerror/onplay/onpause (stops a stale
+  error flipping `videoFailed` on the next asset) and destroys hls.
+- Fatal errors: before MANIFEST_PARSED → fail straight to `videoFailed` (a bad
+  link used to hang forever because `startLoad()` can't re-fetch a manifest that
+  never loaded — caught in testing). After it: one recovery (`recoverMediaError`
+  / `startLoad`), then fail. In hls mode `video.onerror` is routed through the
+  same single recovery (hls.js doesn't watch the element's own error event).
+- onplay/onpause/setPausePill/refreshAssetInteraction untouched.
+
+Verified in the browser pane (Chromium 152), Bunny test stream:
+- hls.js branch: contract 1-4 pass; seek while panel open re-stamps (00:17);
+  3 notes at 5.2/23.8/36.1s → same `<video>`, same Hls instance, playhead held,
+  panel open, box empty+focused, logged 00:05/00:23/00:36. Timeline starts at
+  0 (first frag 0.005s, buffered 0.08s).
+- Native branch (vendor spoofed to Apple in Chromium, so the exact Safari code
+  path ran): contract 1-4 pass, 3 notes 00:08/00:20/00:33, same element.
+- Item 5: 404 HLS link → Drive card in ~0.6s (both branches). Forced fatal
+  MEDIA_ERROR mid-playback → recovered, same element, playhead 12.30s kept;
+  second fatal → Drive card, hls null.
+- Plain webm (NAS-style link) → no hls instance, plays, pill/approve-hide work.
+- Leaving the asset screen → `reviewHls` and `reviewVideo` both null.
+- 375px: hls.js plays, contract holds, no horizontal overflow.
+- After the /code-review fixes (all re-run, both branches): contract 1-6 pass
+  again. Paused buffer = 0.1-4.0s only, a paused seek to 30s loads 28-32s only,
+  and play restores defaults. Empty link → Drive card, no `<video>`. hls.js not
+  loaded at boot or on landing. CDN 404 → native `src` fallback, loader resets,
+  next attach loads 1.7.3 with SRI OK.
+Test project `hls-test` removed from localStorage afterwards.
+
+2026-10-28 — real desktop Safari 27.0.1 via a throwaway harness (session scratchpad,
+not in repo: same-origin iframe drives the real app, POSTs results to a localhost-only
+server that serves only client-hub-app/ + fonts). Chromium run of the same harness: 80/80.
+**DESKTOP SAFARI: 81/81 PASS** (run `safari4`, 1280px + 375px). Native branch, hls.js
+never loaded, no Hls instance, timeline from 0 (41.16s). Contract 1-6 all pass: no pill
+on a plain pause; COMMENT REVISIONS stamps 00:03; play clears it; seek to 17.4 with panel
+open + pause → 00:17; 3 notes at 5.2/23.8/36.1 → 00:05/00:23/00:36 saved, same <video>,
+playhead unchanged, panel open, box empty + focused, approve absent; 404 HLS → Drive card
+in ~0.6s; leaving the screen releases the player; no overflow at 375. Plain mp4
+(NAS-style) stamps + submits the same way.
+Gotcha for future harness runs: Safari rejects script `play()` (NotAllowedError) even
+muted and even on screen without a user gesture, so the harness shows a CLICK TO PLAY
+button once per <video>. Real clients always press play themselves, so not an app issue.
+
+2026-11-03 — iOS Simulator (Xcode 27.2, iPhone 17, Mobile Safari iOS 27.2).
+**iPHONE SIMULATOR: 44/44 PASS** (run `iphone2`, device width): native branch, contract
+1-6, 3 notes, 404 → Drive card, no overflow. An earlier run went 40/41: its one failure
+was the harness's in-browser MediaRecorder blob clip, which iOS wouldn't load. A real
+mp4 over HTTP with Range support (what the NAS `/hub/files/` route sends) passes.
+Also did the real client flow with real taps, no harness, top-level page, Bunny stream:
+play → pause in fullscreen → ✕ → frame held, no pill → COMMENT REVISIONS → pill 00:38,
+approve gone → typed note, SUBMIT → logged 00:38, box empty + focused, keyboard up, panel
+open, video still 00:38 with pill intact. Pill + note + Submit all fit above the keyboard.
+CONFIRMED (not changed): `#asset-video` has no `playsinline`, so on iPhone every play
+opens native fullscreen and the client must pause, then ✕, to reach COMMENT REVISIONS.
+Works, but it's extra steps. Pre-existing (NAS links same). Ask the user before changing.
+Oddity: iOS fullscreen showed 0:39 where the inline player + pill show 00:38. Likely
+rounding vs floor, not measured.
+NOT verified: a physical iPhone (Simulator decodes on the Mac's hardware). User OK'd
+ticking Slice 1 on the Simulator pass (2026-11-03); the physical check is in Slice 5.
+Slice 1 code in client-hub-app/index.html is still UNCOMMITTED, so it isn't live yet.
+Harness recipe for later [WEB] slices (the scratchpad copy gets wiped): same-origin iframe
+of the real app, seed `lsc_hub_projects_v1` in localStorage, `?project=hls-test`, read
+state via `iframe.contentWindow.eval`, first play in a real click, server allowlisted to
+client-hub-app/ + fonts, localhost only. Simulator reaches localhost directly.
+Disk: `xcodebuild -downloadPlatform iOS` installed TWO runtimes. Deleted the unused iPhone
+Duo one (24B91016s) with the user's OK; 13 GB free. Kept iOS 27.2 24B8117 (7.7 GB) +
+iPhone 17 for the [WEB] slices' contract re-runs.
+
+Next: Slice 2 [API] | Model: Opus 5.5 | Effort: High
+
+## Previous feature notes (Client Review-Flow Fixes — complete, in git)
+
 ## Current Focus
 
 All 9 slices done and verified locally. Feature is code-complete; the ONE
