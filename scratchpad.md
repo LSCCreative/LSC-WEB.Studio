@@ -3,12 +3,19 @@
 > High-frequency memory zone. Wiped clean when the current feature merges to
 > main. Keep this brutally current — overwrite, don't append history.
 
-## PLANNING (design-flow): merged admin + paid delivery — Phase 1 done, nothing built
+## PLANNING (design-flow): merged admin + paid delivery — Phase 2 brief written, nothing built
 
 User ran `/design-flow` to put deliverables behind payment; it grew into merging
-the Billing App here. Design Tokens phase was skipped at the start (see below).
-Agreed order: **merge → Bunny → payment**. `feature-spec.md` / `buildplan.md`
-still describe Bunny only and are untouched. Next: Phase 2 Design Brief.
+the Billing App here. Full decisions: `.design/merged-admin/DESIGN_BRIEF.md`.
+Design Tokens was skipped at the start, but the rebrand now needs a token mapping;
+raise it at Phase 4. Agreed order: **merge → Bunny → payment**. `feature-spec.md` /
+`buildplan.md` still describe Bunny only and are untouched. Next: user confirms the
+brief's 7 defaults, then Phase 3 Information Architecture.
+
+Found in Phase 2 (code reading, not run live): on live projects client notes and
+approvals never reach the server (`persistViewProject` no-ops, no route), the record
+has no signed state, and `POST /hub/agreement` has no login check. User says no live
+clients today, so this is built in the merge with no stopgap.
 
 - **Names:** Billing App → "Scope & Sales", adopts the hub's UI/brand. Client Hub
   → "Client Portal". Full merge: one repo, one API container, one database.
@@ -44,7 +51,13 @@ better-sqlite3 12. Billing is CommonJS (server ~20k lines, web JS ~38k, CSS ~16k
 875 tests), hub is ESM (755 lines). Billing has `trip-should-fix` and `ui-clarity`
 worktrees and uncommitted `.design/quote-format/` to settle first.
 
-## ACTIVE FEATURE: Bunny delivery layer (planned 2026-10-20)
+## ACTIVE FEATURE: Bunny delivery layer (planned 2026-10-20) — PAUSED until the merge lands
+
+Decision 2026-11-03: Bunny continues AFTER the merge (order merge → Bunny → payment). Next agent:
+the "first unchecked task" rule is suspended for `buildplan.md` until then. Work the merge first
+(next: user confirms the brief's 7 defaults, then Phase 3 IA). Slice 2 code stays uncommitted on
+branch `bunny-delivery-layer`; commit or stash it before merge work so it isn't lost. Slice 3's
+"Next" line below is the resume point.
 
 The user asked for something specific: Bunny for **client-facing media delivery
 only**. The NAS stays master and backend, and records/auth/DB don't move (the
@@ -171,7 +184,44 @@ Disk: `xcodebuild -downloadPlatform iOS` installed TWO runtimes. Deleted the unu
 Duo one (24B91016s) with the user's OK; 13 GB free. Kept iOS 27.2 24B8117 (7.7 GB) +
 iPhone 17 for the [WEB] slices' contract re-runs.
 
-Next: Slice 2 [API] | Model: Opus 5.5 | Effort: High
+### Slice 2 (2026-11-03) — CODE DONE, uncommitted, not deployed, no real Bunny call yet
+New `src/bunny.js`, `bunny_assets` + `bunny_collections` (schema 6), `POST /hub/publish-asset`,
+`GET /hub/publish-status`, `.env` names in the compose comment.
+- **Fetch returns no video id** (OpenAPI 1.6.18: `{success,message,statusCode}` only). So the
+  title carries a tag, `<file> [lsc-<16 hex>]`, and the id comes from `GET /videos?search=tag`.
+  3 tries after fetch; if still unlisted the row stays `processing` with a NULL id and
+  `/hub/publish-status` keeps looking. Unlisted after 30 min → `failed`.
+- First-publish tag = hash of the path, so a crash after fetch adopts the video instead of a
+  second pull. Repeat publishes get a time-salted tag so they can't find the old video.
+- Calls I made beyond the plan: failed rows retry without `force`; a failed `force` keeps the
+  working video (502, row untouched); `force` leaves the old video on Bunny, since a client
+  record may still use it (only Slice 11's collection delete removes it); root-level files →
+  422 (no project folder); only .mp4/.mov/.webm/.m4v; response adds `sourceChanged` for a NAS
+  file replaced since publishing (Slice 4 should show this, or the client reviews the old cut).
+- Boot requires 8 BUNNY_ vars, not `BUNNY_CDN_TOKEN_KEY` (Slice 9).
+Verified: 57/57 in a throwaway harness (real API process, temp DB + tree, fake Bunny built from
+the OpenAPI shapes, real network blocked). Covers guards, idempotency, 3 simultaneous publishes,
+force, failures, late listing, adoption, timeout, restart, no key in logs.
+NOT verified: real Bunny. Open assumption: a fetched video is listed and searchable by title
+soon after the call. Also unproven: Bunny pulling a large master through the Cloudflare Tunnel.
+**DEPLOY TRAP:** add the BUNNY_ vars to the NAS `.env` BEFORE rebuilding. Missing vars stop boot,
+and `restart: always` makes that a crash loop that takes the live API down. Whether the NAS has
+them is unchecked (my SSH read was blocked by the permission classifier; the user can check).
+For Slice 3: Bunny's REST status enum differs from the webhook's. REST (OpenAPI) 3 = transcoding,
+4 = finished, 5 = error, 6 = upload failed; the plan's webhook mapping has 3 = finished. Use
+`statusFromVideo` for the 30-min fallback, NOT the webhook map. A webhook can also arrive before
+the row has its id, so "unknown id → ignore" needs the 30-min fallback or a lookup behind it.
+
+**Live Bunny test (2026-11-03, real library 683470):** called the real `bunny.js` (keys via a
+1Password-mounted env file in the session scratchpad, never printed) with a public 5s sample mp4.
+`findOrCreateCollection` ok; `fetchVideo` accepted; `findVideoByTag` found the video on the 3rd
+poll ~12.6s after fetch (status 3 → 4 "ready" in ~15s more); `hlsUrl` returned 200. So the title-tag
+lookup works. BUT the inline lookup in `publishVideo` only waits 3×1s, so on a real publish the row
+will usually be saved `processing` with a NULL id and rely on `/hub/publish-status` to adopt it — that
+path is the design, but is only unit-tested against the fake. NOT live-tested: the NAS `/hub/files/<token>`
+source URL through the Tunnel, the full route/DB, webhook. Test collection and video were deleted from Bunny afterwards. Slice 2 left unticked until a real NAS publish.
+
+Next: Slice 3 [API] | Model: Sonnet 5.5 | Effort: Medium (once Slice 2 is ticked)
 
 ## Previous feature notes (Client Review-Flow Fixes — complete, in git)
 

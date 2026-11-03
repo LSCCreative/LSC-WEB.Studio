@@ -68,3 +68,20 @@ the active project.
   `scratchpad.md`) — e.g. "Next: Slice N | Model: X | Effort: Y" — so the
   user can set it before work starts, and note it again in `scratchpad.md`'s
   handoff notes.
+
+## Secrets & SSH (1Password MCP)
+
+The `1password` MCP server is configured in `.mcp.json` (command `1password-mcp`, STDIO; no secrets in the
+file, safe to commit). It exposes 1Password **Environments** tools: `list_environments`, `list_variables`
+(names only), `list_local_env_files`, `append_variables`, `create_environment`, `rename_environment`,
+`create_local_env_file`, `authenticate`. First use needs approval in the 1Password desktop app.
+
+- **Never** put API keys, tokens, passwords or private keys in tracked files, chat, scratchpads or logs.
+  Store them in a 1Password Environment and reference them by variable name.
+- To run something that needs secrets, use `create_local_env_file` (a locally mounted `.env` backed by
+  1Password) and let the app/process read it. Don't `cat`/print/commit that file, and don't paste values
+  into responses.
+- Add a new secret with `append_variables`; ask the user before creating or renaming Environments.
+- **SSH keys are not part of this MCP.** Use the 1Password SSH agent (enable in 1Password > Settings >
+  Developer > "Use the SSH agent"; keys then authenticate via Touch ID). Never read, copy or generate
+  private keys into the repo; ask the user to run any `ssh`/`git` command that needs a key approval.

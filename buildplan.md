@@ -4,6 +4,18 @@
 
 Full context and decisions: `feature-spec.md`. Work strictly top-to-bottom.
 
+> **PAUSED (2026-11-03): this plan resumes AFTER the Billing App / Client Hub
+> merge.** Agreed order is merge → Bunny → payment (see `.design/merged-admin/
+> DESIGN_BRIEF.md` and `scratchpad.md`). Do not start Slice 2 or later until
+> the merge lands. When resuming, first re-check against the merged codebase:
+> file paths (`nas/client-hub-api/` and `client-hub-app/` may move), the admin
+> login (the billing account replaces the hub PIN, so `requireAdmin`, the
+> editor's admin calls and Slice 10's widget sign-in all change), and the data
+> model (hub projects move from `localStorage` to one server-side project, so
+> the "link by NAS path" decision and Slice 4's editor work need rethinking).
+> Slice 0, Slice 1 and the Slice 2 code (uncommitted, 57/57 against a fake
+> Bunny, real-Bunny lookup proven 2026-11-03) carry over.
+
 Tags: **[USER]** = only the user can do it (dashboards, keys, NAS shell).
 **[WEB]** = `client-hub-app/index.html`. **[API]** = `nas/client-hub-api/`
 (needs a NAS redeploy, `docker compose up -d --build`, before anything
@@ -71,6 +83,10 @@ the backend, and Bunny is for media delivery only.
       /hub/publish-status?path=` (admin). First confirm fetch's
       parameters against Bunny's OpenAPI. Never log keys.
       | Model: Opus 5.5 | Effort: High
+      _Status 2026-11-03: code done, passes 57/57 against a fake Bunny. Left
+      unticked: no real Bunny call yet, and fetch returns no video id, so the
+      lookup by title tag is unproven. Add the BUNNY_ vars to the NAS `.env`
+      before deploying — see `scratchpad.md`._
 
 - [ ] Slice 3: **[API]** `POST /hub/bunny-webhook`, mounted with
       `express.raw()` so the HMAC is computed over the exact bytes. Verify
