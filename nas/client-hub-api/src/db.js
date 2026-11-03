@@ -79,6 +79,36 @@ db.exec(`
     ip_address         TEXT NOT NULL DEFAULT '',
     received_at        TEXT NOT NULL
   );
+
+  -- Bunny's client-facing copy of a NAS file, keyed by the same relative path
+  -- as deliverable_tokens. bunny_video_id stays NULL until Bunny lists the
+  -- fetched video; publish_tag (in the video title) is how it gets found, since
+  -- Stream's fetch response has no id. source_size/source_mtime record the file
+  -- that was published, so a replaced cut can be reported instead of hidden.
+  -- storage_path is for Edge Storage kinds (photo, master — Slices 6 and 8).
+  CREATE TABLE IF NOT EXISTS bunny_assets (
+    relative_path  TEXT NOT NULL,
+    kind           TEXT NOT NULL,
+    bunny_video_id TEXT,
+    storage_path   TEXT,
+    collection_id  TEXT,
+    publish_tag    TEXT,
+    status         TEXT NOT NULL,
+    error          TEXT,
+    source_size    INTEGER,
+    source_mtime   INTEGER,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL,
+    UNIQUE(relative_path, kind)
+  );
+  CREATE INDEX IF NOT EXISTS idx_bunny_assets_video_id ON bunny_assets(bunny_video_id);
+
+  -- One Stream collection per top-level NAS project folder.
+  CREATE TABLE IF NOT EXISTS bunny_collections (
+    folder_name   TEXT PRIMARY KEY,
+    collection_id TEXT NOT NULL,
+    created_at    TEXT NOT NULL
+  );
 `);
 
 // Slice 14 migration: a NAS already running Slice 4's schema has
@@ -107,7 +137,7 @@ if (deliverableCols.length && !deliverableCols.some(c => c.name === 'downloadabl
 db.prepare(`
   INSERT INTO meta (key, value) VALUES ('schema_version', ?)
   ON CONFLICT(key) DO UPDATE SET value = excluded.value
-`).run('5');
+`).run('6');
 
 export function schemaVersion() {
   return db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get().value;

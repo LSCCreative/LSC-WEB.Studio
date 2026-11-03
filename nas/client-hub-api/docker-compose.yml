@@ -37,6 +37,11 @@ services:
     #   ADMIN_EMAIL=lachlan@creativelsc.com
     #   ADMIN_PIN_HASH=<sha256 hex of the 4-digit admin PIN>
     #   SIGNING_SECRET=<long random string, signs record/file URLs>
+    #   BUNNY_STREAM_LIBRARY_ID, BUNNY_STREAM_API_KEY, BUNNY_STREAM_READ_KEY,
+    #   BUNNY_STREAM_CDN_HOST, BUNNY_STORAGE_ZONE, BUNNY_STORAGE_PASSWORD,
+    #   BUNNY_STORAGE_HOST, BUNNY_STORAGE_CDN_HOST (1Password: "LSC Client Hub Bunny")
+    # The API refuses to boot if any of these are missing, so add them BEFORE
+    # rebuilding: with restart: always, a missing one is a crash loop.
     env_file:
       - .env
 
