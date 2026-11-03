@@ -1,7 +1,8 @@
 # ─────────────────────────────────────────────────────────────────────
-#  ⚠️  THIS REPO IS MIRRORED TO THE LIVE PUBLIC SITE by Bunny CI/CD.
-#  Anything committed here becomes publicly reachable on lsccreative.studio.
-#  Keep internal planning docs and ALL credentials out of it.
+#  ⚠️  THIS REPO IS PUBLIC ON GITHUB, including its history.
+#  Only the allow-list in .github/workflows/deploy-pages.yml reaches lsccreative.studio,
+#  but anything committed here can be read on GitHub.
+#  Keep ALL credentials out of it.
 # ─────────────────────────────────────────────────────────────────────
 
 # Internal workspace: planning docs, runbooks, Bunny credentials.

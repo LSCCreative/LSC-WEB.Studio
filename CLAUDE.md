@@ -3,7 +3,9 @@
 Static site: plain HTML/CSS/JS, no build step, no package manager. `index.html` +
 `css/` + `js/` is the main marketing site. `client-hub-app/index.html` is a
 single-file JS app (inline `<script>`, Tailwind via CDN, local state) for the
-client project tracker. `CNAME` implies GitHub Pages hosting.
+client project tracker. Hosted on GitHub Pages behind Cloudflare; every push to
+`main` deploys through `.github/workflows/deploy-pages.yml`, which publishes an
+allow-list of paths only. A new public file or folder must be added to that list.
 
 ## Build / Run / Test
 
