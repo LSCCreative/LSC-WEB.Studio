@@ -2132,7 +2132,7 @@ const EstimateEditor = (() => {
 
     overlay.innerHTML =
       '<div class="modal-box kp-box" role="dialog" aria-modal="true" aria-labelledby="kp-title" aria-describedby="kp-where">' +
-      '<p class="ad-eyebrow" id="kp-where">' + esc(where) + '</p>' +
+      '<p class="dd-eyebrow" id="kp-where">' + esc(where) + '</p>' +
       '<h2 class="modal-title" id="kp-title">Add On-Set Equipment</h2>' +
       (ready.length
         ? '<p class="kp-intro">Your own gear, billed at its day rate. It counts as your income, not a cost passed through.</p>' +

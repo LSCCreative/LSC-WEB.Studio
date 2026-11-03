@@ -7,7 +7,7 @@ unless you hit a real misunderstanding).
 
 ## 1. Live
 
-`main` `782416f` (hnry-invoicing deployed 2026-10-23, NAS then Pages), schema **v20** live. Production-day-booking through Breakpoints went to Pages 2026-10-21 (web only); post-multipliers NAS then Pages earlier that day. Pricing floor was deployed 2026-10-20.
+`main` `782416f` (hnry-invoicing deployed 2026-10-23, NAS then Pages), schema **v20** live. The day dialog's `ad-*` names became `dd-*` on Pages 2026-11-03 (web only; ad blockers were hiding the dialog). Production-day-booking through Breakpoints went to Pages 2026-10-21 (web only); post-multipliers NAS then Pages earlier that day. Pricing floor was deployed 2026-10-20.
 Every track is built, reviewed and deployed: nas-hosted base, price-calculator / Finance, overhead-
 finance, service-rate-tiers, estimate-accuracy tasks 1–3, 5a, 6, production-booking A–E (surcharges,
 booking, Home calendar, projects, invoices, client pages, e-signing, Resend email), account recovery,

@@ -206,22 +206,22 @@ const BookingBlock = (() => {
     if (!date) return '';
     const msgs = [];
     if (info.locked) {
-      msgs.push('<p class="ad-msg is-lock">' + esc(short(date)) + ' is confirmed for <b>' +
+      msgs.push('<p class="dd-msg is-lock">' + esc(short(date)) + ' is confirmed for <b>' +
         esc(upidList(info.confirmed)) + '</b>. Write a specification note to book it anyway.</p>');
     } else if (info.confirmed.length) {
-      msgs.push('<p class="ad-msg is-warn">Since confirmed for <b>' + esc(upidList(info.confirmed)) +
+      msgs.push('<p class="dd-msg is-warn">Since confirmed for <b>' + esc(upidList(info.confirmed)) +
         '</b>. This day was booked first.</p>');
     }
     if (info.pencilled.length) {
-      msgs.push('<p class="ad-msg is-warn">Already pencilled for <b>' + esc(upidList(info.pencilled)) +
+      msgs.push('<p class="dd-msg is-warn">Already pencilled for <b>' + esc(upidList(info.pencilled)) +
         '</b>.' + (info.locked || info.confirmed.length ? '' : ' Add anyway?') + '</p>');
     }
     if (info.unknown) {
-      msgs.push('<p class="ad-msg">Other projects’ bookings couldn’t be checked just now. ' +
+      msgs.push('<p class="dd-msg">Other projects’ bookings couldn’t be checked just now. ' +
         'The date is checked again when you save.</p>');
     }
     if (info.ownAlready) {
-      msgs.push('<p class="ad-msg">This estimate already has a day on ' + esc(short(date)) + '.</p>');
+      msgs.push('<p class="dd-msg">This estimate already has a day on ' + esc(short(date)) + '.</p>');
     }
     return msgs.join('');
   }
@@ -255,47 +255,47 @@ const BookingBlock = (() => {
     const v = a.values;
 
     const time = (f, label) =>
-      '<div class="ad-time"><label for="ad-' + f + '">' + label + '</label>' +
-      '<input id="ad-' + f + '" type="time" class="text-inp" value="' + esc(v[f] || '') + '"' +
-      ' aria-describedby="ad-overnight' + (f === 'endTime' ? ' ad-time-err' : '') + '"></div>';
+      '<div class="dd-time"><label for="dd-' + f + '">' + label + '</label>' +
+      '<input id="dd-' + f + '" type="time" class="text-inp" value="' + esc(v[f] || '') + '"' +
+      ' aria-describedby="dd-overnight' + (f === 'endTime' ? ' dd-time-err' : '') + '"></div>';
 
     dlg.overlay.innerHTML =
-      '<form class="modal-box ad-box" role="dialog" aria-modal="true" aria-labelledby="ad-title"' +
-      ' aria-describedby="ad-msgs" novalidate>' +
+      '<form class="modal-box dd-box" role="dialog" aria-modal="true" aria-labelledby="dd-title"' +
+      ' aria-describedby="dd-msgs" novalidate>' +
       (a.toCard
-        ? '<div class="ad-head"><p class="ad-eyebrow">' + esc(a.eyebrow) + '</p>' +
-          '<button type="button" class="btn btn-quiet btn-sm ad-tocard" id="ad-tocard">' + esc(a.toCard.label) +
+        ? '<div class="dd-head"><p class="dd-eyebrow">' + esc(a.eyebrow) + '</p>' +
+          '<button type="button" class="btn btn-quiet btn-sm dd-tocard" id="dd-tocard">' + esc(a.toCard.label) +
           '<span aria-hidden="true"> ↓</span></button></div>'
-        : '<p class="ad-eyebrow">' + esc(a.eyebrow) + '</p>') +
-      '<h2 class="modal-title" id="ad-title">' + esc(dialogTitle(v.date)) + '</h2>' +
+        : '<p class="dd-eyebrow">' + esc(a.eyebrow) + '</p>') +
+      '<h2 class="modal-title" id="dd-title">' + esc(dialogTitle(v.date)) + '</h2>' +
       (edit
-        ? '<div class="field ad-date"><label for="ad-date">Date</label>' +
-          '<input id="ad-date" type="date" class="text-inp" value="' + esc(v.date || '') + '"' +
-          ' aria-describedby="ad-date-hint">' +
-          '<span class="ad-hint" id="ad-date-hint">Moving it re-checks other bookings.</span></div>'
+        ? '<div class="field dd-date"><label for="dd-date">Date</label>' +
+          '<input id="dd-date" type="date" class="text-inp" value="' + esc(v.date || '') + '"' +
+          ' aria-describedby="dd-date-hint">' +
+          '<span class="dd-hint" id="dd-date-hint">Moving it re-checks other bookings.</span></div>'
         : '') +
-      '<div class="ad-msgs" id="ad-msgs" aria-live="polite">' + dialogMsgs(v.date, a.info) + '</div>' +
-      '<div class="field ad-note" hidden><label for="ad-note">Specification note</label>' +
-      '<input id="ad-note" type="text" class="text-inp" maxlength="' + MAX_NOTE + '" placeholder="e.g. Subcontractor shooting"' +
-      ' value="' + esc(v.overrideNote || '') + '" aria-describedby="ad-msgs ad-note-hint">' +
-      '<span class="ad-hint" id="ad-note-hint">Kept with the day. Needed to book a date confirmed elsewhere.</span></div>' +
-      '<div class="ad-times">' + time('startTime', 'Bump in') + time('endTime', 'Bump out') + '</div>' +
-      '<p class="ad-overnight" id="ad-overnight" hidden>Ends the next day. The shoot runs past midnight and stays on its start date.</p>' +
+      '<div class="dd-msgs" id="dd-msgs" aria-live="polite">' + dialogMsgs(v.date, a.info) + '</div>' +
+      '<div class="field dd-note" hidden><label for="dd-note">Specification note</label>' +
+      '<input id="dd-note" type="text" class="text-inp" maxlength="' + MAX_NOTE + '" placeholder="e.g. Subcontractor shooting"' +
+      ' value="' + esc(v.overrideNote || '') + '" aria-describedby="dd-msgs dd-note-hint">' +
+      '<span class="dd-hint" id="dd-note-hint">Kept with the day. Needed to book a date confirmed elsewhere.</span></div>' +
+      '<div class="dd-times">' + time('startTime', 'Bump in') + time('endTime', 'Bump out') + '</div>' +
+      '<p class="dd-overnight" id="dd-overnight" hidden>Ends the next day. The shoot runs past midnight and stays on its start date.</p>' +
       // Bump out before bump in is an overnight shoot (above); the same time twice is no shoot at all.
-      '<p class="ad-err" id="ad-time-err" hidden>Bump out can’t be the same time as bump in.</p>' +
-      '<fieldset class="ad-status"><legend>Status</legend><div class="ad-status-opts">' +
+      '<p class="dd-err" id="dd-time-err" hidden>Bump out can’t be the same time as bump in.</p>' +
+      '<fieldset class="dd-status"><legend>Status</legend><div class="dd-status-opts">' +
       STATUSES.map(([s, w]) =>
-        '<label class="ad-opt is-' + s + '"><input type="radio" name="ad-status" value="' + s + '"' +
+        '<label class="dd-opt is-' + s + '"><input type="radio" name="dd-status" value="' + s + '"' +
         (s === v.status ? ' checked' : '') + '>' +
-        '<span class="ad-swatch" aria-hidden="true"></span><span>' + w + '</span></label>'
+        '<span class="dd-swatch" aria-hidden="true"></span><span>' + w + '</span></label>'
       ).join('') +
       '</div></fieldset>' +
       '<div class="modal-actions">' +
       (a.another
-        ? '<button type="button" class="btn btn-quiet ad-another" id="ad-another">' + esc(a.another.label) + '</button>'
+        ? '<button type="button" class="btn btn-quiet dd-another" id="dd-another">' + esc(a.another.label) + '</button>'
         : '') +
-      '<button type="button" class="btn btn-ghost" id="ad-cancel">Cancel</button>' +
-      '<button type="submit" class="btn btn-primary" id="ad-submit">' + (edit ? 'Save day' : 'Add day') + '</button>' +
+      '<button type="button" class="btn btn-ghost" id="dd-cancel">Cancel</button>' +
+      '<button type="submit" class="btn btn-primary" id="dd-submit">' + (edit ? 'Save day' : 'Add day') + '</button>' +
       '</div>' +
       '</form>';
 
@@ -304,11 +304,11 @@ const BookingBlock = (() => {
     document.addEventListener('keydown', onDialogKeydown);
     dlg.overlay.addEventListener('pointerdown', onDialogPointerDown);
     dlg.overlay.addEventListener('click', onDialogClick);
-    $d('ad-cancel').addEventListener('click', () => closeDialog(true));
+    $d('dd-cancel').addEventListener('click', () => closeDialog(true));
     // The add dialog takes over when it is ready (openDialog closes this one), so focus is never left on nothing.
-    if (a.another) $d('ad-another').addEventListener('click', () => a.another.run());
+    if (a.another) $d('dd-another').addEventListener('click', () => a.another.run());
     if (a.toCard) {
-      $d('ad-tocard').addEventListener('click', () => {
+      $d('dd-tocard').addEventListener('click', () => {
         const run = a.toCard.run;
         closeDialog(false); // focus goes to the card instead
         run();
@@ -316,12 +316,12 @@ const BookingBlock = (() => {
     }
 
     const form = dlg.overlay.querySelector('form');
-    const date = edit ? $d('ad-date') : null;
-    const noteBox = dlg.overlay.querySelector('.ad-note');
-    const note = $d('ad-note');
-    const start = $d('ad-startTime');
-    const end = $d('ad-endTime');
-    const submit = $d('ad-submit');
+    const date = edit ? $d('dd-date') : null;
+    const noteBox = dlg.overlay.querySelector('.dd-note');
+    const note = $d('dd-note');
+    const start = $d('dd-startTime');
+    const end = $d('dd-endTime');
+    const submit = $d('dd-submit');
     let locked = false;
 
     // The note is asked for on a locked date, and kept on show once a day has one.
@@ -333,20 +333,20 @@ const BookingBlock = (() => {
     };
     const applyInfo = (info) => {
       locked = Boolean(info.locked);
-      $d('ad-msgs').innerHTML = dialogMsgs(dateValue(), info);
+      $d('dd-msgs').innerHTML = dialogMsgs(dateValue(), info);
       noteBox.hidden = !(locked || (edit && v.overrideNote));
       gate();
     };
     const dateValue = () => (edit ? (C.isDate(date.value) ? date.value : null) : v.date);
-    const status = () => form.elements['ad-status'].value || NEW_STATUS;
-    const timeErr = $d('ad-time-err');
+    const status = () => form.elements['dd-status'].value || NEW_STATUS;
+    const timeErr = $d('dd-time-err');
     /* The server takes any pair, and days saved before this check may hold the
        same time twice: those re-save as they are until their times are touched. */
     const keptTimes = () => edit && start.value === (v.startTime || '') && end.value === (v.endTime || '');
     const sameTime = () => Boolean(start.value) && start.value === end.value && !keptTimes();
     // The overnight line follows the times as they're typed; the same-time error clears once they differ.
     const overnight = () => {
-      $d('ad-overnight').hidden = !(start.value && end.value && end.value < start.value);
+      $d('dd-overnight').hidden = !(start.value && end.value && end.value < start.value);
       if (!timeErr.hidden && !sameTime()) {
         timeErr.hidden = true;
         end.removeAttribute('aria-invalid');
@@ -369,12 +369,12 @@ const BookingBlock = (() => {
     if (date) {
       date.addEventListener('change', () => {
         date.removeAttribute('aria-invalid');
-        $d('ad-title').textContent = dialogTitle(dateValue());
+        $d('dd-title').textContent = dialogTitle(dateValue());
         recheck();
       });
     }
     form.addEventListener('change', (e) => {
-      if (e.target.name === 'ad-status') recheck();
+      if (e.target.name === 'dd-status') recheck();
     });
 
     form.addEventListener('submit', (e) => {

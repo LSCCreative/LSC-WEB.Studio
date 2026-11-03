@@ -217,6 +217,8 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   so Coming up can sit between the lists and Recent activity. Any `grid-area` on their children must be
   reset to `auto` at ≥768. View-transition names go on only while the calendar resizes (`.is-moving`).
 - Module globals are top-level `const`s: `window.LSCData` is undefined; use `typeof`.
+- Ad blockers hide by name, on every site: `ad-*` and its like are off limits for a class or id (the day dialog's
+  `.ad-box` was hidden by EasyList, leaving only its backdrop; it is `dd-*` now). `test-blocker-names.js` guards the prefix.
 
 ## Testing and previews
 
