@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Server runtime data — never commit real client/billing data or secrets
+server/data/
+server/.env
+
+# Frontend config — holds the real NAS/tunnel API URL, generated at deploy
+# time by the GitHub Actions workflow, see web/README.md
+web/js/config.js
+
+# OS cruft
+.DS_Store
+
+# Editor/tooling
+.clinerules/
+
+# Old Electron app — being retired, not yet tracked in git (see CLAUDE.md)
+/index.html
+/main.js
+/preload.js
+/icon.icns
+/package.json
+/package-lock.json
+/BILLING.csv
+
+# Local agent credentials — repo is public, never commit
+.credentials.local.md
+
+# Brand font masters (desktop OTF/TTF + licences). The repo is public and the
+# Delight licence forbids redistributing the font files in any form. Only the
+# .woff2 a page actually loads is copied into web/fonts/ (see
+# Project build archive/tracks/production-booking/DECISIONS.md D57).
+/Visual Design/
+
+# Business documents (personal contact details; the repo is public)
+LSC-Service-Agreement*
+
+# Review screenshots: local only, often large (see each track's HANDOVER)
+Project build archive/tracks/*/screenshots/
+.design/*/screenshots/
+
+# Secrets: use 1Password Environments
+.env
+.env.*

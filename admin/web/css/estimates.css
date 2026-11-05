@@ -1,0 +1,1199 @@
+/* Estimate screens — additive only. app.css is the verbatim desktop
+   stylesheet and carries everything these screens actually look like; this
+   file adds the few things the desktop app had no need for. */
+
+/* The desktop app reported a failed save with alert(). A blocking dialog is
+   the one place a user cannot look at the form behind it, which is exactly
+   what they need to see when a save fails. This is that message, inline above
+   the actions and next to the work it failed to save. */
+#editor-error,
+#export-error {
+  display: none;
+  margin-top: 18px;
+  padding: 10px 14px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: 12px;
+}
+#editor-error.show,
+#export-error.show {
+  display: block;
+}
+/* Sits between .est-header's rule and the first block, so it takes the
+   header's bottom spacing instead of adding its own above. */
+#export-error {
+  margin: -8px 0 26px;
+}
+#export-error .btn {
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+/* The cards (estimates and clients) are the only route into a record, so each
+   one's title is a real <button class="card-open"> — announced as something
+   to activate, rather than a focusable list item that says nothing about
+   opening. Its ::before is stretched over the whole card, so the card stays
+   one click target exactly as before. The button is reset to render as the
+   bare .card-name text it replaced.
+
+   The ring goes on the card, not the button: a ring round the title alone
+   would not say "this card", and .proj-card's overflow:hidden would clip one
+   drawn on the stretched pseudo. Same ring as a11y.css everywhere else, plus
+   the hover state's border and underline so the two inputs still agree. */
+.card-open {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.card-open::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.card-open:focus-visible {
+  outline: none;
+}
+.proj-card:has(.card-open:focus-visible) {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
+  border-color: var(--accent);
+}
+.proj-card:has(.card-open:focus-visible)::after {
+  transform: scaleX(1);
+}
+
+/* The GST-free toggle in the document-type bar. Only rendered when the business
+   is GST-registered, so it is never a control that cannot do anything — see the
+   note in js/views/estimate-editor.js. Pushed to the far end of the bar so it
+   doesn't read as part of the invoice-number group beside it. */
+.doc-gst-free {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+.doc-gst-free input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* .spinner is display:none in app.css and switched on inline while a write is
+   in flight. Inside a .btn it needs the flex box's alignment, not the
+   inline-block the desktop app's export button got away with. */
+.btn .spinner {
+  flex-shrink: 0;
+}
+
+/* ── Two classes that replaced inline styles in the editor's markup ────────
+   Both carry exactly what the `style` attribute carried, so every width from
+   768px up renders identically. They exist because css/responsive.css has to
+   override them in the mobile band, and a declaration in a style attribute can
+   only be beaten with !important — which nothing could then beat in turn. */
+
+/* The line-item row's delete cell. app.css centres nothing by default; this is
+   the `style="justify-content:center"` those six-column rows used to carry. */
+.gt-row .del-cell {
+  justify-content: center;
+}
+
+/* Total (inc GST) and Est. Take-Home each take two of the summary bar's five
+   columns. The mobile band stacks the bar to one column and sets this back to
+   `auto`; a span of 2 there would conjure an implicit second column and push
+   the figure off the screen. */
+.summary-bar .sum-span2 {
+  grid-column: span 2;
+}
+
+/* ── First-run setup steps ─────────────────────────────────────────────────
+   Shown inside the estimates empty state while the rate card or the invoice
+   settings have never been saved. app.css's .empty-state supplies the dashed
+   border and the muted heading; only the step list is new. */
+
+/* The plain empty state is one centred sentence. This one carries a paragraph
+   and an action per step, which read badly centred, so the block stays centred
+   in the card while its contents don't. */
+.empty-state.first-run {
+  padding: 48px 30px;
+}
+
+.first-run-steps {
+  list-style: none;
+  margin: 24px auto 0;
+  padding: 0;
+  max-width: 520px;
+  text-align: left;
+}
+
+.first-run-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+}
+
+.first-run-step-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.first-run-step-title {
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+/* app.css sets .empty-state p to 12px centred; inside the left-aligned column
+   these want the tighter measure that a two-line explanation needs. */
+.empty-state.first-run .first-run-step-text p {
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+/* Keeps "Open Settings" on one line beside its paragraph. */
+.first-run-step .btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.empty-state.first-run .first-run-skip {
+  margin: 22px auto 0;
+  max-width: 520px;
+  font-size: 11px;
+}
+
+/* ── The advisory Minimum Job Price ─────────────────────────────────────────
+   A second opinion sitting under the totals, never a price. The whole visual
+   job here is to be legible and obviously secondary: no accent fill, no card,
+   no green or red. --accent is spoken for by "Total (inc GST)" one row up —
+   the figure a client actually pays — and lending it to an advisory number
+   would put the two in competition. Since pricing-floor PF5 it says whether
+   the quote clears it, but still without a green/red pair this palette does
+   not have (HANDOVER.md decision 42): "under by $X" is --accent-text, the
+   Rate Card's "below floor" voice, and "clears it" is plain text. */
+
+/* Est. Take-Home: green only while the quote clears its Minimum Job Price
+   (estimate-editor.js paintMinimum, pricing-floor PF10). Plain text otherwise. */
+#s-takehome.is-clear {
+  color: var(--ok);
+}
+
+.mjp-toggle-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-bottom: 10px;
+}
+
+/* The same label-wraps-a-checkbox construction as .doc-gst-free above and
+   settings' .set-check — the app's existing switch, not a new one. */
+.mjp-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+/* app.css's `.field input { width: 100% }` does not reach here, but the editor
+   sets widths on inputs liberally; pinning it is cheaper than checking. */
+.mjp-toggle input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.mjp-toggle-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Bordered like a .summary-bar so it reads as part of the same block, but one
+   row of flowing text rather than a grid of cells — a sixth .sum-item would
+   read as one more headline figure, which is the one thing it is not. */
+.mjp-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  /* No top margin: the second .summary-bar's own 24px bottom margin is the gap,
+     so this sits on the spacing rhythm the editor already uses rather than
+     inventing a second one. A negative margin was tried first, to pull it flush
+     against the bar — it left a 10px gap between two bordered boxes, which is
+     the worst of both readings: too close to be a separate block, too far to be
+     the same one. Measured, not eyeballed; the pane was hidden at the time and
+     a screenshot would have shown nothing at all. */
+  margin: 0 0 24px;
+  padding: 12px 18px;
+  border: 1px solid var(--border);
+}
+/* Required: the display:flex above would otherwise beat the browser's own
+   [hidden] rule, and switching the toggle off would hide nothing. */
+.mjp-line[hidden] {
+  display: none;
+}
+
+.mjp-line-label {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--muted);
+}
+
+/* Delight, like every other money figure in the app, but at 17px against the
+   bar's 19px — close enough to belong, small enough to sit below it. */
+.mjp-line-value {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--text);
+}
+
+.mjp-line-verdict {
+  font-size: 12px;
+  color: var(--text);
+}
+.mjp-line-verdict.is-under {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+/* Its own row under the figure: the working, not part of the verdict. */
+.mjp-line-note {
+  flex-basis: 100%;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* Nothing to show yet. The figure is already an em dash; this keeps the two
+   halves from reading as a real number with a footnote. */
+.mjp-unset .mjp-line-value {
+  color: var(--muted);
+}
+
+/* ── The (?) and the cost breakdown dialog ──────────────────────────────────
+   The figure and its trigger are one unit inside .mjp-line's 12px row gap, so
+   they get their own tighter gap rather than sitting the same distance apart as
+   the label and the note do. */
+.mjp-line-fig {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+/* A 20px ring, sized off the 17px figure beside it rather than off nothing:
+   big enough to aim at with a mouse, small enough that it reads as an
+   annotation on the number instead of a second control competing with it.
+   Muted at rest and --text on hover, which is the same quiet-until-wanted
+   treatment the rate-card note's links got (HANDOVER.md decision 21) — accent
+   here would make a help affordance the loudest thing in the block.
+
+   No focus rule: a11y.css's selector list already covers every button in the
+   app, and adding one here would be a second opinion about the same ring. */
+.mjp-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  /* Nudges the circle onto the figure's optical centre: .mjp-line aligns its
+     children on the baseline, which for a 20px ring holding 11px text sits
+     lower than the money's own. */
+  align-self: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.mjp-help:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+/* Required for the same reason .mjp-line[hidden] is: the display above would
+   otherwise beat the browser's own [hidden] rule, and the trigger would show
+   over an em dash it has no breakdown for. */
+.mjp-help[hidden] {
+  display: none;
+}
+
+/* Each row is a money line with its working underneath, so the dialog reads as
+   statements rather than a table needing a header to explain its columns.
+   The rule above the total is the only full-width border inside the box: it is
+   the one place the reader is being asked to see a sum. */
+.cb-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cb-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.cb-row-label {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.cb-row-value {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* "Your hours" and its four shares (PF5): the shares sit indented on a
+   hairline, a step down in size, so the group reads as one figure taken
+   apart and the column still adds straight down to the total: the group's
+   own figure is the shares' sum, so it is muted, not counted twice. */
+.cb-group-head .cb-row-value {
+  color: var(--muted);
+}
+.cb-group-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+  padding-left: 14px;
+  border-left: 1px solid var(--border);
+}
+.cb-group-rows .cb-row-value {
+  font-size: 14px;
+}
+
+.cb-row-note {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+  /* Clear of the value column, so a long note never runs under a figure. */
+  padding-right: 40px;
+}
+
+.cb-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.cb-total-label {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--muted);
+}
+
+/* --text, not --accent, for the same reason the line this dialog explains is
+   not accent either (see the block comment above .mjp-toggle-row): --accent is
+   spoken for by "Total (inc GST)", the figure a client actually pays, and an
+   advisory number wearing it competes with the one that isn't advisory. The
+   first draft of this rule used accent and was wrong on both counts — it also
+   measured 2.8:1 on --surface, under WCAG's 3:1 for large text, where --text
+   is 11.49:1. The rule above it and the 19px are what mark it as the sum.
+
+   19px matches the summary bar's own headline figure, and is two steps up from
+   the 15px rows above so the total reads as their conclusion. */
+.cb-total-value {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 19px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.cb-note {
+  margin: 18px 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/* ── Editor and detail: labour without a Rate column (2026-09-21) ───────────
+   See estimate-editor.js's buildLabourRow. app.css's six-track grid loses its
+   Rate track; Service takes the width back, so Price and Client Bill still
+   sit exactly under the expense sections' Price and Client Bill. */
+.labour-grid {
+  grid-template-columns: 3fr 90px 90px 110px 32px;
+}
+
+/* What a labour line's quantity counts, under its name — on every priced line
+   since service units (see buildLabourRow). The Rate Card's own
+   .pricing-row-meta size and colour, so the same words look the same on both
+   screens. app.css makes every .gt-row cell a centred flex row, which would
+   set the line beside the name; this stacks it underneath instead. Below 768px
+   the first cell is display:block already. */
+.gt-row > div.lab-svc {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+}
+.lab-unit {
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+/* The line's unit, switchable (estimate-editor.js switchUnit): the Rate Card's
+   .pricing-unit-sel chrome, so "per [full day ▾]" looks the same on both
+   screens. Fixed width for the same reason as there: a closed select is as
+   wide as its longest option, and the other options carry a price or "no
+   price yet", while the one on show is only a unit's name. */
+.lab-unit-sel {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  color: var(--text);
+  font-family: var(--font-family-body);
+  font-size: 10.5px;
+  padding: 2px 4px;
+  outline: none;
+  cursor: pointer;
+  width: 7.6em;
+}
+.lab-unit-sel:focus {
+  border-color: var(--accent);
+}
+.lab-unit-sel:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
+}
+.lab-unit-sel option {
+  background: var(--color-bg-float);
+  color: var(--text);
+}
+/* The picker's unit select sits between the service select and Add, at one
+   fixed width rather than the service select's flex:1. It used to be as wide
+   as its longest option, so Add sat 6px further right in Production than in
+   the other blocks, and 259px out for a service with a "no price yet, needs
+   Profit Goals" option (design review D4). The closed select only needs
+   "Full day · $1,600"; a longer option is clipped there and shown whole in
+   the open list. min-width:0 lets it clip rather than grow to that option.
+   Below 768px responsive.css stacks both full width. */
+.bb-picker .unit-select {
+  flex: 0 0 10.5em;
+  width: 10.5em;
+  min-width: 0;
+  max-width: none;
+}
+.bb-picker .unit-select:disabled {
+  cursor: default;
+  color: var(--muted);
+}
+
+/* Every detail-view section table is four columns; one fixed set of widths
+   lines their edges up down the page instead of each table sizing its columns
+   to its own contents. Inert below 768px, where these tables stack. */
+.est-table-4 {
+  table-layout: fixed;
+}
+.est-table-4 th:not(:first-child) {
+  width: 17%;
+}
+
+/* Were inline styles. The Take-Home note used --muted2 (1.67:1); --muted is
+   6.15:1 on --bg. The accent labels read --accent-text (a11y.css). */
+.sum-label-note {
+  font-size: 9px;
+  color: var(--muted);
+}
+.field label.label-accent,
+.inv-num-wrap label.label-accent {
+  color: var(--accent-text);
+}
+/* A UPID fixed by its invoices (D36, task 19): it reads, it can't be typed
+   in, and the note under it says why. */
+#f-upid[readonly] {
+  background: transparent;
+  border-style: dashed;
+  cursor: default;
+}
+/* Under the blank UPID of a copy Duplicate just made (D60): where it came
+   from, and why it needs its own. Also under a fixed UPID. */
+.field-copy-note {
+  margin: 2px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+/* "Total (inc GST)" sits on the cell's own accent tint, which costs
+   --accent-text its margin (4.29:1 at 9px). The tint and the accent figure
+   under it already carry the emphasis; the label reads --text. */
+.sum-label.sum-label-strong {
+  color: var(--text);
+}
+
+/* ── Where this estimate's prices come from (2026-09-28 audit) ─────────────
+   Each line keeps the price it was added at; this bar is the one place to
+   change that — all lines to today's card, or to the client's last project.
+   Same label idiom as the document-type bar above it. */
+.rates-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin: -8px 0 22px;
+  padding: 10px 0 12px;
+  border-top: 1px solid var(--color-border-hairline);
+}
+.rates-bar-label {
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--muted);
+}
+.rates-bar-note {
+  font-size: 11px;
+  color: var(--muted);
+}
+/* The toggle reuses .doc-gst-free's switch idiom; it sits after the note,
+   not pushed to the far end — the button is. */
+.rates-last {
+  margin-left: 0;
+}
+.rates-last input[disabled] + span {
+  color: var(--muted);
+}
+.rates-bar .btn {
+  margin-left: auto;
+}
+
+/* ── Deliverables (production-booking B2-3, D86) ────────────────────────────
+   D86 made this the editor's one non-neutral block (accent border and tint).
+   ui-clarity's U17 keeps terracotta for the one primary action, so it is an
+   ordinary panel now (task 11's Deliverables); it still leads the money. */
+/* Type · Name · Format · Length · Qty · Post hrs (rec.) · ×. The editor's
+   only; the read-only screens keep app.css's four-column .deliv-grid. */
+.deliv-grid.deliv-typed {
+  grid-template-columns: 150px 2.4fr 1fr 1fr 70px 116px 32px;
+}
+/* The Type picker: .lab-unit-sel's chrome, at the row's text size and the
+   cell's full width. */
+.deliv-type-sel {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  color: var(--text);
+  font-family: var(--font-family-body);
+  font-size: 12px;
+  padding: 4px 6px;
+  outline: none;
+  cursor: pointer;
+}
+.deliv-type-sel:focus {
+  border-color: var(--accent);
+}
+.deliv-type-sel:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
+}
+.deliv-type-sel option {
+  background: var(--color-bg-float);
+  color: var(--text);
+}
+/* Phones: the stacked label/value rows of responsive.css, with the picker
+   as tall as the inputs beside it (its 16px text is responsive.css's). */
+@media (max-width: 767px) {
+  .deliv-type-sel {
+    min-height: 44px;
+  }
+}
+
+/* ── The post-production planner (production-booking B2-10, D93, D95) ───────
+   The head of Post-Production: two figures in Delight, labelled like the
+   summary bar's, and the comparison in words. A guide, so it sits on the
+   picker's quiet tint rather than the accent. */
+.post-plan {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 28px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--color-bg-panel);
+}
+.post-plan[hidden] {
+  display: none;
+}
+.pp-figs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  margin: 0;
+}
+.pp-fig dt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.pp-fig dt .info {
+  /* The 18px button inside a 9px label: kept from growing the label's line. */
+  margin: -5px 0;
+}
+.pp-fig dd {
+  margin: 0;
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 19px;
+  color: var(--text);
+}
+.pp-on {
+  margin: 0 0 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+/* "Video Editor · Brand Story" (D95), the tag muted after the name. */
+.post-tag {
+  margin-left: 4px;
+  color: var(--muted);
+}
+.post-tag.is-unnamed {
+  font-style: italic;
+}
+
+/* ── The surcharge box (production-booking B2-11, D87) ─────────────────────
+   Bordered like the summary bars it sits above, so it reads as part of the
+   totals block. A list: what and where on the left, the $ right, then the
+   total under a rule — the one place in the box the reader is asked to see a
+   sum. Owner-only, and not a headline figure, so it stays neutral. */
+.sur-box {
+  margin: 0 0 24px;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+}
+.sur-box[hidden],
+.sur-box-rows[hidden],
+.sur-box-total[hidden],
+.sur-box-none[hidden] {
+  display: none;
+}
+.sur-box-head {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.sur-box-h {
+  font-family: var(--font-family-body);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-base);
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--text);
+}
+.sur-box-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.sur-box-row,
+.sur-box-total {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 16px;
+}
+.sur-box-row {
+  padding: 5px 0;
+  font-size: 12px;
+  color: var(--text);
+}
+.sur-box-detail {
+  color: var(--muted);
+}
+.sur-box-amt {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* A row's figure is plain body type, so the total under it is the one that
+   reads bold (task 33 DR17: "+$320.00" was the same weight twice). */
+.sur-box-row .sur-box-amt {
+  font-family: inherit;
+  font-weight: 400;
+  font-size: 12px;
+}
+.sur-box-total {
+  margin: 8px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.sur-box-total-label {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--muted);
+}
+.sur-box-total .sur-box-amt {
+  grid-row: span 2;
+  font-size: 17px;
+}
+.sur-box-note,
+.sur-box-none {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* ── The Totals row (B2-11, D88) ───────────────────────────────────────────
+   The page's last word: every figure a step up from the bar above (19px),
+   and Total (inc GST) above the 30px page title, the largest on the screen.
+   Prefixed with .totals-row so these outrank the bands' plain .sum-value
+   sizes in responsive.css, which load later. */
+.totals-row .sum-value {
+  font-size: 25px;
+  line-height: 1.15;
+}
+.totals-row .sum-value.tot-main {
+  font-size: 36px;
+}
+/* The take-home ⓘ (D88) inside a 9px label: kept from growing the line. */
+.totals-row .sum-label .info {
+  margin: -5px 0;
+}
+.totals-row .sum-label .info-btn {
+  vertical-align: middle;
+}
+@media (max-width: 1099px) {
+  .totals-row .sum-value {
+    font-size: 20px;
+  }
+  .totals-row .sum-value.tot-main {
+    font-size: 28px;
+  }
+}
+@media (max-width: 767px) {
+  .totals-row .sum-value {
+    font-size: 22px;
+  }
+  .totals-row .sum-value.tot-main {
+    font-size: 30px;
+  }
+  .sur-box {
+    padding: 12px 14px;
+  }
+}
+
+/* The doc-type bar without its Document Type select (D62, task 18): the
+   Short notice row. Above the phone band it keeps the height the select gave
+   it, so nothing below it in the editor moves; on a phone it takes what its
+   two ticks need. */
+@media (min-width: 768px) {
+  .doc-type-bar {
+    min-height: 61px;
+  }
+}
+
+/* ── The editor's six panels (ui-clarity task 11, U21) ──────────────────────
+   Job details · Deliverables · Production booking · Services · On set, by
+   day · Summary: each a collapsible .panel (app.css), stacked at
+   --panel-gap. Inside Services and On set, each category is a sub-section on
+   the panel's own layer (the inset layer is the inputs' fill), its head a
+   smaller title and a subtle rule between them, not a panel within a panel.
+   They stay .billing-blocks, so responsive.css's tablet floor and phone
+   stacking reach their grids as before. Written phone first. */
+.ed-panels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--panel-gap);
+  margin-bottom: var(--space-7);
+}
+/* Production booking is also a .billing-block; the stack sets the gap. */
+.ed-panels .ed-panel.billing-block {
+  margin-bottom: 0;
+}
+/* A head's summary wraps under the name on a phone, rather than past the
+   panel's edge ("3 days · 2 confirmed · 1 pencilled · 28 Oct – 4 Nov · 1
+   rental" is wider than 375). */
+.ed-panel .panel-sum {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.ed-panel .panel-sum .ref {
+  white-space: nowrap;
+}
+.ed-panel .panel-sum .fig {
+  margin-left: var(--space-2);
+}
+.ed-panel .panel-head {
+  flex-wrap: wrap;
+}
+/* Job details' and Production booking's summaries are words, too long to sit
+   beside the name on a phone: there they take their own line, starting under
+   the name (past the chevron, its margins and the toggle's gap). */
+@media (max-width: 767px) {
+  .ed-panel .ed-sum-line {
+    flex-basis: 100%;
+    margin-left: 0;
+    padding-left: calc(7px + var(--space-1) + var(--space-2) + var(--space-4));
+  }
+}
+/* A body of fields and figures rather than rows. */
+.ed-panel-body:not(.is-flush) {
+  padding-top: var(--panel-pad-y);
+  padding-bottom: var(--panel-pad-y);
+}
+.ed-panel-empty {
+  padding: var(--space-6) var(--panel-pad-x);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+/* Job details: the client fields, the Short notice row, then Prices, which
+   closes the panel. */
+.ed-panel .rates-bar {
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+/* The sub-sections. */
+.ed-panel .ed-sub {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.ed-panel .ed-sub + .ed-sub {
+  border-top: 1px solid var(--color-border-subtle);
+}
+.ed-sub > .bb-head {
+  min-height: 0;
+  padding: var(--space-6) var(--panel-pad-x) var(--space-5);
+  border-bottom: 0;
+}
+.ed-sub > .bb-head .bb-label {
+  font-family: var(--font-family-body);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-snug);
+}
+/* The last rows of a sub-section meet the rule (or the panel's foot edge)
+   below them; a hairline there would double it. */
+.ed-panel .ed-sub .gt-body > .gt-row:last-child {
+  border-bottom: 0;
+}
+/* On set's day groups line up with the sub-section titles above them. */
+.ed-panel .onset-group,
+.ed-panel .onset-empty {
+  padding-left: var(--panel-pad-x);
+  padding-right: var(--panel-pad-x);
+}
+/* Deliverables has no sub-head: its table's head row starts the panel body. */
+.ed-panel .deliv-block > .gt-head {
+  padding-top: var(--space-3);
+}
+/* The grids' first column starts on the panel's edge, under its title. */
+@media (min-width: 768px) {
+  .ed-panel .ed-sub .gt-head > div:first-child,
+  .ed-panel .ed-sub .gt-row > div:first-child {
+    padding-left: var(--panel-pad-x);
+  }
+  .ed-panel .ed-sub .gt-head > div:last-child,
+  .ed-panel .ed-sub .gt-row > div:last-child {
+    padding-right: var(--space-5);
+  }
+}
+
+/* Summary: the surcharges, the overhead tick, the bars, the floor. Its last
+   figure sits on the panel's padding, not a margin of its own. */
+.ed-panel-body > :last-child {
+  margin-bottom: 0;
+}
+
+/* ── Jump rail and sticky bar (ui-clarity task 12, U5) ──────────────────────
+   Phone first. Below 1100px the panels are headed by a Jump to… select, and
+   the bar is pinned to the foot of the screen: the client total, ⋯ and Save
+   (Cancel is in ⋯ below 768px). From 1100px the rail sits beside the page as
+   Settings' and Finance's do, and #main widens by it (--max-width-page), so
+   the panels keep the 1000px they had wherever the window has room (from
+   1296px). Between 1100 and that they are narrower.
+
+   Two lengths here are the layout's, not tokens, and match settings.css and
+   finance.css: 70px clears the 52px sticky header, and 86px is that header
+   plus #main's 34px top padding, where the rail rests before any scroll. */
+
+/* A jump lands the panel's head just under the header, not behind it. */
+.ed-panels > .panel {
+  scroll-margin-top: 70px;
+}
+
+.ed-rail {
+  display: none;
+}
+
+.ed-jump {
+  margin-bottom: var(--panel-gap);
+}
+/* 16px so iOS doesn't zoom on focus; full width so it reads as the page's
+   own control rather than a stray field. */
+.ed-jump select {
+  width: 100%;
+  min-height: var(--control-h);
+  padding: 0 var(--space-5);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--input-radius);
+  color: var(--color-text-primary);
+  font: var(--font-weight-normal) var(--font-size-md) / var(--line-height-snug) var(--font-family-body);
+  cursor: pointer;
+}
+
+/* The bar. Edge to edge on a phone (out through #main's 16px gutter), on the
+   float layer with the bar's shadow, the specimen's look. Its own surface, so
+   the rows scrolling under it don't show through. */
+.ed-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 50;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-6);
+  margin: 0 calc(-1 * var(--space-6));
+  padding: var(--space-4) var(--space-6) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+  background: var(--color-bg-float);
+  box-shadow: var(--shadow-bar);
+  border-top: 1px solid var(--color-border-subtle);
+}
+/* A refused save, on top of the bar and beside Save, whatever part of the
+   page the owner was on when they pressed it. */
+.ed-bar #editor-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+.ed-bar-total {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+/* Grey, so the bar's one terracotta is Save. */
+.ed-bar-label {
+  color: var(--color-text-secondary);
+}
+.ed-bar-fig {
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-xl);
+  line-height: var(--line-height-tight);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+}
+.ed-bar-acts {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+.ed-bar-more {
+  min-width: var(--touch-min);
+  padding-left: 0;
+  padding-right: 0;
+  font-size: var(--font-size-lg);
+}
+.ed-bar-more[hidden],
+.ed-bar .ed-bar-cancel {
+  display: none;
+}
+
+/* Autosave's status (trip-planner task 8, T15). Quiet grey while all is
+   well; warm only when something isn't saved. On a phone it takes its own
+   line under the total and Done; from 768px it sits beside the buttons. A
+   status that names a field is a button to it (44px tall below 768px). */
+.ed-autosave {
+  order: 1;
+  flex-basis: 100%;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-secondary);
+}
+.ed-autosave:empty {
+  display: none;
+}
+.ed-autosave[data-kind="refused"] {
+  color: var(--color-status-warning-text);
+}
+.ed-autosave[data-kind="conflict"] {
+  color: var(--color-status-error-text);
+}
+.ed-autosave-spin {
+  display: inline-block;
+  margin-right: var(--space-3);
+  vertical-align: -1px;
+}
+.ed-autosave-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-min);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.ed-autosave-link:hover {
+  color: var(--color-text-primary);
+}
+
+/* The toast clears the bar instead of sitting on Save: the bar's measured
+   height (watchBar), which grows when it wraps on a phone. */
+body:has(.ed-bar) .export-toast {
+  bottom: calc(var(--ed-bar-h, var(--space-11)) + var(--space-4));
+}
+
+@media (min-width: 768px) {
+  .ed-jump select {
+    width: auto;
+    min-width: 50%;
+    font-size: var(--font-size-base);
+  }
+  .ed-bar {
+    margin: 0;
+    padding: var(--space-5) var(--space-6);
+    border: 0;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+  }
+  .ed-bar .ed-bar-cancel {
+    display: inline-flex;
+  }
+  .ed-bar-fig {
+    font-size: var(--font-size-2xl);
+  }
+  .ed-bar-more {
+    min-width: var(--control-h);
+  }
+  /* Beside the buttons, right-aligned, so the bar reads total … status ⋯ Done. */
+  .ed-autosave {
+    order: 0;
+    flex: 0 1 auto;
+    max-width: 52ch;
+    margin-left: auto;
+    text-align: right;
+  }
+  .ed-autosave:not([hidden]):not(:empty) ~ .ed-bar-acts {
+    margin-left: 0;
+  }
+  .ed-autosave-link {
+    min-height: var(--target-min);
+    text-align: right;
+  }
+}
+
+@media (min-width: 1100px) {
+  #main:has(.ed-shell) {
+    max-width: var(--max-width-page);
+  }
+  .ed-shell {
+    display: grid;
+    grid-template-columns: var(--rail-width) minmax(0, 1fr);
+    column-gap: var(--space-8);
+    align-items: start;
+  }
+  .ed-main {
+    min-width: 0;
+  }
+  .ed-jump {
+    display: none;
+  }
+  /* The Settings rail's twin: .nav-links on a 1px spine, the panel being
+     read marked on it. */
+  .ed-rail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    position: sticky;
+    top: 86px;
+    border-left: 1px solid var(--color-border-subtle);
+  }
+  .ed-rail .nav-link {
+    justify-content: flex-start;
+    width: 100%;
+    margin-left: -1px;
+    padding: var(--space-4) var(--space-6);
+    text-align: left;
+    border-bottom: 0;
+    border-left: 2px solid transparent;
+    border-radius: 0;
+  }
+  .ed-rail .nav-link[aria-current='true'] {
+    color: var(--color-text-primary);
+    border-left-color: var(--color-accent-mark);
+  }
+}
+
+/* ── The Summary panel's insides, flattened (ui-clarity task 18) ───────────
+   One layer in from the panel (the inset fill), divided by hairlines: no
+   outlined boxes inside a panel (U2), and no terracotta tint on Total (inc
+   GST), whose size already makes it the headline (D88 keeps the order and
+   sizes). Scoped to the editor, the bars' only user. */
+#ed-summary .summary-bar,
+#ed-summary .sur-box,
+#ed-summary .mjp-line {
+  border: 0;
+  border-radius: var(--panel-radius);
+  background: var(--color-bg-inset);
+}
+#ed-summary .sum-item {
+  border-right: 1px solid var(--color-border-hairline);
+}
+#ed-summary .sum-item:last-child {
+  border-right: 0;
+}
+@media (max-width: 767px) {
+  #ed-summary .sum-item {
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border-hairline);
+  }
+  #ed-summary .sum-item:last-child {
+    border-bottom: 0;
+  }
+}

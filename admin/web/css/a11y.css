@@ -1,0 +1,180 @@
+/* Accessibility pass: loaded last, so these win ties with the screen files.
+   Holds the app-wide focus rings, placeholders, field errors, headings,
+   .sr-only and reduced motion. The colour tokens it used to define (--muted,
+   --accent-text, --ok, --err-*) live in tokens.css now (ui-clarity task 1),
+   where each carries its measured contrast. */
+
+.gt-body .empty-row {
+  color: var(--muted);
+}
+
+/* Terracotta as text reads --accent-text (#E08B68, 6.7:1 on a panel), never
+   --accent, which is a fill (white on it 4.98:1). Headline figures (a card's
+   total, Total (inc GST), Balance due) are not terracotta: it marks the one
+   action (U17, task 18). */
+.est-upid {
+  color: var(--accent-text);
+}
+/* The detail totals card's Total (inc GST) row sits on the inset fill; the
+   figure is the editor's headline size. */
+.net-row td.tv {
+  font-family: var(--font-family-display);
+  font-size: 19px;
+}
+.card-num {
+  color: var(--muted);
+}
+
+/* Placeholders carry the expected format (ABN, BSB, invoice number), which is
+   information, so they get a text colour: --color-text-tertiary is 4.9:1 on
+   the inset input fill. */
+::placeholder {
+  color: var(--color-text-tertiary);
+  opacity: 1;
+}
+
+/* The one focus ring (ui-clarity task 2): --shadow-focus, a 2px page-coloured
+   gap then a 2px --color-border-focus ring, drawn as a shadow so it follows
+   each control's radius. app.css sets `outline:none` on its inputs; this puts
+   the ring on every focusable thing instead. The transparent outline is for
+   forced-colours mode, which drops shadows and paints the outline. Screen
+   files that ring something differently (a whole card, an inset ring on a
+   calendar cell) use the same colour. `:focus-visible` rather than `:focus`
+   so a mouse click doesn't ring anything. */
+.btn:focus-visible,
+.nav-link:focus-visible,
+.back-btn:focus-visible,
+.del-btn:focus-visible,
+.field input:focus-visible,
+.field textarea:focus-visible,
+.svc-select:focus-visible,
+.text-inp:focus-visible,
+.num-inp:focus-visible,
+.doc-type-select:focus-visible,
+.inv-num-inp:focus-visible,
+.pricing-table input:focus-visible,
+.tax-setting input:focus-visible,
+.pricing-sec-label-inp:focus-visible,
+.set-check input:focus-visible,
+.client-save-toggle input:focus-visible,
+.typeahead-item:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
+}
+
+/* ── Focus not hidden (WCAG 2.4.11) ────────────────────────────────────────
+   Tab scrolls the next control into view, and without these it lands under
+   the sticky header (going back up) or under a screen's sticky foot bar
+   (going down): measured 18 controls fully hidden on the editor at 1280, 30
+   on Settings at 375 (ui-clarity task 14). The editor's bar wraps and grows,
+   so its height is measured into --ed-bar-h (estimate-editor.js watchBar);
+   Settings' bar is one row of one button at every width. */
+html {
+  scroll-padding-top: calc(var(--header-h) + var(--space-6));
+}
+html:has(.ed-bar) {
+  scroll-padding-bottom: calc(var(--ed-bar-h, var(--space-11)) + var(--space-6));
+}
+html:has(.set-save-bar) {
+  scroll-padding-bottom: calc(var(--control-h) + var(--space-10));
+}
+
+/* ── Target size (WCAG 2.5.8) ───────────────────────────────────────────────
+   Below 768px every target is 44px (responsive.css, and --control-h-sm
+   becomes --touch-min). From 768px nothing a pointer aims at is under 24px;
+   these measured 14–23px tall (ui-clarity task 14). A label that wraps a
+   checkbox is the checkbox's target, so it takes the small control height:
+   28px here, 44px on a phone. In a media query so the phone's 44px rules,
+   which this file would otherwise outrank by loading last, still apply. */
+.mjp-toggle,
+.sn-check,
+.set-check {
+  min-height: var(--control-h-sm);
+}
+@media (min-width: 768px) {
+  .btn-sm,
+  .btn-xs,
+  .line-move,
+  .lab-unit-sel,
+  .onset-edit {
+    min-height: var(--target-min);
+  }
+  .del-btn,
+  .line-handle {
+    min-width: var(--target-min);
+    min-height: var(--target-min);
+  }
+}
+
+/* ── Field-level errors ─────────────────────────────────────────────────────
+   LSCUtil.showFieldErrors() sets aria-invalid="true" on each field a failed
+   save names; this is its visible half. --err-text, the colour the message
+   itself is written in,
+   so the sentence and the field it means read as one thing. !important
+   because each input family (.field input, .pricing-table input,
+   .tax-setting input) sets its own border-colour at up to
+   (0,2,1) and on :focus, and the flag must survive being focused — the focus
+   ring is the outline above, so nothing is lost. Clears on the next edit. */
+input[aria-invalid='true'],
+select[aria-invalid='true'],
+textarea[aria-invalid='true'] {
+  border-color: var(--err-text) !important;
+}
+
+/* ── Headings ───────────────────────────────────────────────────────────────
+   Page titles are <h1>, block and section heads <h2>, the Settings
+   groups <h3> — for screen-reader navigation only. Every one keeps its old
+   class, and every class sets its own size and weight, so these two lines only
+   matter where a class sets neither (.set-group-head's weight) and stop the UA
+   bold/2em defaults leaking in. app.css's `*` reset already zeroes margins. */
+h1, h2, h3 {
+  font-size: inherit;
+  font-weight: inherit;
+}
+/* Was a <span> sitting inline with its .bb-label-tag; a block heading would
+   push the tag onto its own line. */
+.bb-label {
+  display: inline;
+}
+
+/* ── Screen-reader-only text ────────────────────────────────────────────────
+   Present in the accessibility tree, absent from the screen. Holds the live
+   regions LSCUtil.announce() writes to (util.js). clip-path rather than
+   display:none or visibility:hidden, both of which remove it from the tree
+   too and silence the region. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────────
+   The app's only motion is short colour fades and the toast's slide; honour
+   the OS setting for all of it in one place. The spinner is exempt: it is a
+   busy indicator, and a frozen one reads as a hung save. */
+@media (prefers-reduced-motion: reduce) {
+  *:not(.spinner), *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* A screen's heading, focused on arrival when the focus went with the screen
+   before it (LSCUtil.landFocus): it is where reading starts, not a control,
+   so it takes no ring. */
+h1[tabindex='-1']:focus {
+  outline: none;
+}

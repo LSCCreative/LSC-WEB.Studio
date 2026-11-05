@@ -1,0 +1,731 @@
+/* Overhead → Depreciation — see js/views/depreciation.js.
+ *
+ * Additive. The summary card is overhead.css's .oh-summary / .oh-stat (the same
+ * two-stat card the Operating Costs tab opens with, so the two tabs start the
+ * same way); the register is .est-block / .est-table / .oh-table, inheriting
+ * the <768px stacked layout through data-label; the threshold row is
+ * .tax-setting; the modal is .modal-box with .form-grid and .field. This file
+ * is only what those don't do.
+ */
+
+.dep-stat-sub {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* The disposed filter sits just above the register it filters. */
+.dep-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.dep-filter input {
+  accent-color: var(--accent);
+}
+
+/* A disposed asset stays readable — it is still on its disposal year's
+   schedule — but steps back, and says why in words, not only by colour. */
+.dep-table tr.dep-disposed td {
+  color: var(--muted);
+}
+.dep-tag {
+  margin-left: 6px;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+.dep-iawo {
+  margin-top: 22px;
+}
+.dep-iawo-ctl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Same treatment as #overhead-error: inline, above what refused. */
+#dep-error,
+#dep-modal-error {
+  display: none;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+#dep-error.show,
+#dep-modal-error.show {
+  display: block;
+}
+
+/* ── The modal ──────────────────────────────────────────────────────────────
+   Longer than the expense modal — five groups of fields — so it is wider, and
+   the overlay scrolls it rather than letting
+   the Save button fall off a short screen. */
+#modal-depreciation-asset {
+  overflow-y: auto;
+  align-items: flex-start;
+  padding: 40px 16px;
+}
+.dep-modal {
+  width: 640px;
+  max-width: 100%;
+}
+/* Group headings: the rate card's 10px tracked label, in --text, with a rule
+   above — the only divider inside the box, one per group. */
+.dep-group {
+  margin: 22px 0 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--text);
+}
+.dep-modal .field select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+  padding: 9px 12px;
+  width: 100%;
+}
+.dep-modal .field textarea {
+  resize: vertical;
+}
+/* A checkbox with its sentence as the label. `.field label` (app.css) makes
+   every field label a 10px uppercase caption and `.field input` makes every
+   input full-width; this one is a statement you tick, so both are undone at a
+   specificity that beats them rather than with !important. */
+.field label.dep-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+  cursor: pointer;
+}
+.field .dep-check input {
+  width: auto;
+  accent-color: var(--accent);
+}
+.dep-reserve-line {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text);
+}
+
+/* ── The Dispose dialog ─────────────────────────────────────────────────────
+   Same .modal-box and .form-grid as Add / Edit. The preview is what saving
+   will do, so it reads as a statement in --text with the figures emphasised;
+   the lodged-year line is a warning (accent rule, --accent-text), not an
+   error — the save is still allowed. Undo sits apart at the left of the
+   actions row so it isn't mistaken for Cancel. */
+.dep-disp-intro {
+  margin: -4px 0 16px;
+}
+.dep-disp-preview {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.dep-disp-preview p {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.dep-disp-preview p:last-child {
+  margin-bottom: 0;
+}
+.dep-disp-preview strong {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.dep-disp-preview .dep-disp-warn {
+  margin-top: 10px;
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
+  color: var(--accent-text);
+}
+.dep-disp-undo {
+  margin-right: auto;
+}
+.dep-modal .field select#dep-disp-reason {
+  max-width: 100%;
+}
+
+/* ── The schedule ───────────────────────────────────────────────────────────
+   A section of its own under the register: a heading row carrying the FY
+   <select> (the page's .doc-type-select, which responsive.css already raises
+   to 44px under a thumb), two totals, then one .est-block per kind of line —
+   individual assets, pools, disposals — because they are different arithmetic
+   and different lines on the return, not one table with blank columns. */
+.dep-sched {
+  margin-top: 34px;
+}
+.dep-sched-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  margin-bottom: 14px;
+}
+/* The Dashboard's section-heading scale (.dash-h): names a part of the page,
+   in --text; the muted 9px .sum-label stays for figure captions. */
+.dep-sched-h {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--text);
+  margin: 0;
+}
+.dep-fy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dep-fy .sum-label {
+  margin: 0;
+}
+
+.dep-sched-totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.dep-sched-total {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 16px 20px;
+}
+/* 26px Delight, the Dashboard's panel-headline size (.dash-big): a figure
+   worth reading, below the page's largest type. */
+.dep-sched-figure {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 26px;
+  color: var(--text);
+  letter-spacing: 0.02em;
+  margin: 4px 0 2px;
+  font-variant-numeric: tabular-nums;
+}
+.dep-sched-figure.is-empty {
+  color: var(--muted);
+}
+
+.dep-sched .est-block {
+  margin-bottom: 14px;
+}
+.dep-sched-table td {
+  font-variant-numeric: tabular-nums;
+}
+.dep-sched-table td:first-child {
+  color: var(--text);
+}
+/* The column the accountant copies onto the return. Weight, not colour — the
+   accent is reserved for the below-floor badge and the active rail item. */
+.dep-sched-table td.dep-strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.dep-sched-table tr.dep-total-row td {
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  font-weight: 600;
+}
+.dep-bal-kind {
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--muted);
+}
+.dep-pool-added {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.dep-sched-note {
+  margin: 0;
+  padding: 10px 16px 12px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+  border-top: 1px solid var(--color-border-hairline);
+}
+.dep-sched-foot {
+  padding: 2px 0 0;
+  border-top: none;
+  max-width: 78ch;
+}
+.dep-sched-state {
+  margin: 0;
+  padding: 18px 16px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.dep-sched-state p {
+  margin: 0 0 10px;
+}
+
+/* Announces the year that just loaded to a screen reader, and nothing to the
+   eye — the tables beside it already say it. */
+.dep-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The register and every schedule table scroll sideways inside their block
+   when the rail leaves them too little room (768–1099px) — see scrollOpen() in
+   the view. Harmless where the table fits; below 768px the rows stack into
+   cards and there is nothing to scroll. The ring is inset because .est-block
+   clips anything drawn outside it. */
+.dep-scroll {
+  overflow-x: auto;
+  /* The default track is a light-theme bar across a dark page. */
+  scrollbar-color: var(--muted2) transparent;
+}
+.dep-scroll:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  box-shadow: inset 0 0 0 2px var(--color-border-focus);
+}
+
+/* ── Lodgement ──────────────────────────────────────────────────────────────
+   A lodged year opens with a statement of that fact: a bordered "Lodged"
+   badge in --text (a status, not a warning, so no accent) and one line saying
+   the figures are frozen. */
+.dep-lodged {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.dep-lodged:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
+}
+.dep-lodged p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.dep-lodged-badge {
+  flex-shrink: 0;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--text);
+  border: 1px solid var(--text);
+  padding: 2px 7px;
+}
+
+/* Divergence IS the warning: the accent rule down its left edge and the
+   heading in --accent-text (raw --accent is 3.71:1 — fills and rules only),
+   as the Dashboard marks a below-floor row. The list stays in --text so every
+   lodged/now pair is fully legible. */
+.dep-diverge {
+  margin: 0 0 18px;
+  padding: 12px 16px 12px 18px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  background: var(--surface);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text);
+}
+.dep-diverge p {
+  margin: 0;
+  color: var(--muted);
+}
+.dep-diverge .dep-diverge-h {
+  color: var(--accent-text);
+  margin-bottom: 8px;
+}
+.dep-diverge ul {
+  margin: 0 0 10px;
+  padding-left: 18px;
+}
+.dep-diverge li + li {
+  margin-top: 4px;
+}
+.dep-diverge strong {
+  font-weight: 600;
+}
+.dep-tag-changed {
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+/* The CSV and the lock, at the foot of the schedule. */
+.dep-actions {
+  margin: 4px 0 16px;
+}
+.dep-actions-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+.dep-actions-row .btn {
+  white-space: nowrap;
+}
+.dep-actions-note {
+  margin: 0;
+  flex: 1 1 260px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+#dep-csv-spin {
+  display: none;
+}
+#dep-actions-error {
+  display: none;
+  margin: 10px 0 0;
+  padding: 10px 14px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+#dep-actions-error.show {
+  display: block;
+}
+
+/* The multi-year export (own-kit K7): under the year's own CSV and lock,
+   ruled off from them because it isn't about the year selected above. */
+.dep-multi {
+  margin: 16px 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.dep-multi-h {
+  margin: 0 0 10px;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--text);
+}
+.dep-multi-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin-bottom: 8px;
+}
+.dep-multi-row .btn {
+  white-space: nowrap;
+}
+#dep-multi-spin {
+  display: none;
+}
+.dep-multi-error {
+  display: none;
+  margin: 10px 0 0;
+  padding: 10px 14px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.dep-multi-error.show {
+  display: block;
+}
+
+/* ── The decline curve ──────────────────────────────────────────────────────
+   Between the register and the schedule: an asset's view, so it sits under
+   the list of assets, and the schedule → CSV → lock run stays unbroken at the
+   foot of the tab where the accountant's work ends. The head is the
+   schedule's own (.dep-sched-head / .dep-sched-h / .dep-fy), with an Asset
+   picker where the schedule has its FY picker. The drawing is overhead-charts.js's.
+
+   COLOUR: the brief's scoped exception, on the donut's terms — the current FY
+   is the one terracotta point (--oh-chart-accent, 4.70:1 on --bg), and the
+   rest of the curve is ONE ramp step, --oh-c3's warm grey (7.08:1), rather
+   than a different ramp colour per year. Years are a sequence, not categories;
+   six hues along one line would read as six series. Past and projected differ
+   by fill and dash, never by colour alone. */
+.dep-decline {
+  margin-top: 34px;
+}
+.dep-decline .doc-type-select {
+  max-width: 260px;
+}
+.dep-decline-line {
+  fill: none;
+  stroke: var(--oh-c3);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+/* Projected: what the chain gives if nothing changes. Dashed, so it reads as
+   a forecast even in greyscale or to someone who can't separate the tones. */
+.dep-decline-line.is-projected {
+  stroke-dasharray: 5 5;
+}
+.dep-decline-area {
+  fill: var(--oh-c3);
+  fill-opacity: 0.07;
+  stroke: none;
+}
+/* Solid for a reported year, ringed for a projected one — the trend chart's
+   ringed dot, in the curve's grey. */
+.dep-decline-dot {
+  fill: var(--oh-c3);
+}
+.dep-decline-dot.is-projected {
+  fill: var(--bg);
+  stroke: var(--oh-c3);
+  stroke-width: 2;
+}
+/* The start — cost base on the day it was first used. Smaller and ringed in
+   --muted rather than the curve's grey, so it reads as where the line comes
+   from, not as another year. */
+.dep-decline-dot.is-origin {
+  fill: var(--bg);
+  stroke: var(--muted);
+  stroke-width: 1.5;
+}
+/* This financial year. A --bg ring separates it from the line running
+   through it, so the accent is read against the page, not against the grey. */
+.dep-decline-dot.is-now {
+  fill: var(--oh-chart-accent);
+  stroke: var(--bg);
+  stroke-width: 2;
+}
+.dep-decline-guide {
+  stroke: var(--oh-chart-accent);
+  stroke-opacity: 0.45;
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+  shape-rendering: crispEdges;
+}
+/* The FY under the terracotta point names it in the same colour — 4.70:1,
+   over the 4.5:1 text bar, which --accent (3.71:1) is not. */
+.oh-chart-date.dep-decline-fy-now {
+  fill: var(--oh-chart-accent);
+}
+
+/* ── Recovery: Overhead Floor / On-Set Kit (own-kit K3) ─────────────────────
+   In the modal, a pair of radio tiles, each saying what the choice does. The
+   radio stays native (accent-color) so its checked state, keyboard and focus
+   ring are the browser's; the tile border follows it via :has(). Stacked on a
+   phone, side by side once there is room for two sentences. */
+.dep-recovery {
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.dep-recovery legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+}
+.dep-recovery-opts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+@media (min-width: 560px) {
+  .dep-recovery-opts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.dep-rec-opt {
+  position: relative;
+  display: block;
+  min-height: 44px;
+  padding: 12px 14px 12px 40px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.dep-rec-opt input {
+  position: absolute;
+  top: 13px;
+  left: 14px;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.dep-rec-opt:hover {
+  border-color: var(--muted);
+}
+.dep-rec-opt:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+.dep-rec-opt-body {
+  display: block;
+}
+.dep-rec-opt-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.dep-rec-opt-sub {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.dep-unused {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+/* The live line under the fields. A switch of a saved asset is the thing to
+   read before saving, so it gets the double-count hint's accent rule (a
+   "look at this", not an error); a missing figure says so in --accent-text. */
+.dep-reserve-line strong {
+  font-weight: 600;
+  font-family: var(--font-figures);
+}
+.dep-reserve-line.is-move {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  background: var(--surface);
+}
+.dep-reserve-line.is-gap {
+  color: var(--accent-text);
+}
+
+/* In the register: a tag naming the recovery (words, not colour), the
+   figure it recovers by, and the gap when one is missing. On-Set Kit's tag is
+   drawn in --text, the floor's stays muted: the floor is the default, kit is
+   the exception worth seeing down the column. The gap uses the accent rule
+   and --accent-text, the screen's "look at this", never the error red. */
+.dep-th-sub {
+  display: block;
+  font-size: var(--font-size-xs);
+  color: var(--muted);
+}
+.dep-cell-note {
+  color: var(--muted);
+}
+.dep-rec {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.dep-table .dep-rec-tag {
+  margin-left: 0;
+}
+.dep-table .dep-rec-tag.is-kit {
+  color: var(--text);
+  border-color: var(--text);
+}
+.dep-rec-fig {
+  font-family: var(--font-figures);
+  color: var(--text);
+  white-space: nowrap;
+}
+.dep-rec-gap {
+  max-width: 26ch;
+  padding-left: 7px;
+  border-left: 2px solid var(--accent);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--accent-text);
+}
+.dep-table tr.dep-disposed .dep-rec-tag.is-kit {
+  color: var(--muted);
+  border-color: var(--border);
+}
+/* An asset's name is the user's own text, up to 200 characters: one with no
+   spaces would otherwise set the Asset column's width and push every other
+   column out of the register (design review, should-fix 3). */
+.dep-table .dep-name,
+.dep-sched-table .dep-name {
+  overflow-wrap: anywhere;
+}
+/* At 768–1099 the register scrolls sideways, and Recovery, its last figure
+   column, sat under the pinned actions until scrolled to: the gap warnings
+   (K-D3) went unseen. There the block moves under the asset's name instead,
+   and the column goes (design review, should-fix 1). The copy in the name
+   cell is display:none everywhere else, so it is read once. */
+.dep-rec-inline {
+  display: none;
+}
+@media (min-width: 768px) and (max-width: 1099px) {
+  .dep-table .dep-rec-th,
+  .dep-table .dep-rec-td {
+    display: none;
+  }
+  .dep-rec-inline {
+    display: block;
+    margin-top: 6px;
+  }
+}
+/* Stacked under 768px the cell is a label-and-value row, so the block sits
+   to the right like every other value, its lines aligned to that edge. */
+@media (max-width: 767px) {
+  .dep-rec {
+    align-items: flex-end;
+    text-align: right;
+  }
+  .dep-rec-gap {
+    padding-left: 0;
+    padding-right: 7px;
+    border-left: 0;
+    border-right: 2px solid var(--accent);
+  }
+}
+/* A date that wraps "2025-/08-/10" down three lines is worse than the few
+   pixels of extra scroll it costs in the 768–1099 band. */
+.dep-table td.dep-nowrap {
+  white-space: nowrap;
+}
+.dep-rec-fig .dep-cell-note {
+  font-family: var(--font-family-body);
+}

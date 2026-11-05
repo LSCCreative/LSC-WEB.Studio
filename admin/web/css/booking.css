@@ -1,0 +1,1596 @@
+/* The estimate editor's Production Booking block and its add-day dialog
+   (js/views/booking-block.js). New classes only: every other editor block
+   keeps its rules, so nothing above or below this one moves.
+
+   Written phone first. The calendar sits above the day cards at every width,
+   the panel's full width and compact until Expand (production-day-booking:
+   it was a 420px column beside them from 1296px; only the service menu still
+   is, while it is open). */
+
+/* responsive.css gives every .billing-block a 660px floor below 1100 and lets
+   it scroll sideways, so the editor's money grids can't squash. This block has
+   no grid: its content wraps, so it doesn't scroll. Doubled class to outrank
+   it from this earlier file (the same fix as the Rate Card's Surcharges
+   block). Its head is the editor's panel head (task 11, estimates.css). */
+.billing-block.booking-block {
+  overflow-x: hidden;
+}
+
+/* ── The body: calendar and cards ──────────────────────────────────────────── */
+
+.booking-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  padding: var(--panel-pad-y) var(--panel-pad-x);
+}
+.booking-body[hidden] {
+  display: none;
+}
+/* The service menu swaps in for the calendar (B2-4). Where the panels have
+   their full 1000px (from 1296px, tokens.css's --max-width-page; media
+   queries can't read tokens), it stands in a 420px column beside the cards,
+   so the card it adds to stays in sight. Narrower, the cards' item rows don't
+   fit beside it, so it sits above them. A media query, not a container query:
+   containment would make this block the box for the Gear rentals ⓘ's fixed
+   popover. */
+@media (min-width: 1296px) {
+  .booking-body:has(> .booking-cal-col.is-menu) {
+    grid-template-columns: 420px minmax(0, 1fr);
+    align-items: start;
+  }
+}
+.booking-load-note {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.booking-days-col {
+  container: days / inline-size;
+  min-width: 0;
+}
+.booking-days-bar {
+  margin-bottom: 10px;
+}
+.booking-days-label {
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--muted);
+}
+/* One line: the calendar is the only way to add a day. */
+.booking-empty {
+  padding: 14px;
+  border: 1px dashed var(--border);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.booking-empty[hidden] {
+  display: none;
+}
+
+/* ── A day card ────────────────────────────────────────────────────────────── */
+
+.day-cards {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.day-cards:empty {
+  display: none;
+}
+/* A status rail down the left edge, in the calendar's own colours (hatched
+   when pencilled), so a card and its tile read as the same thing. The word is
+   in the chip beside the title: the rail is never the only signal. */
+.day-card {
+  position: relative;
+  padding: 10px 12px 12px 16px;
+  background: var(--color-bg-panel);
+  border: 1px solid var(--border);
+}
+.day-card::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: -1px;
+  bottom: -1px;
+  width: 4px;
+  background: var(--cal-confirmed);
+}
+.day-card.is-pencilled::before {
+  background: var(--cal-hatch);
+}
+.day-card.is-proposed::before {
+  background: var(--cal-proposed);
+}
+.day-card.is-locked {
+  border-color: var(--err-border);
+}
+
+/* The quiet head (production-day-booking task 4): what the day is, when it
+   runs and how sure it is, then ⋯ (Edit day, Duplicate, Remove). On a narrow
+   column the times take a line of their own under the title; once the column
+   holds them, one line. */
+.day-card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    'title chip more'
+    'when  when when';
+  align-items: center;
+  column-gap: var(--space-4);
+  row-gap: 2px;
+}
+@container days (min-width: 460px) {
+  .day-card-head {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas: 'title when chip more';
+    column-gap: var(--space-5);
+  }
+}
+.day-card-title {
+  grid-area: title;
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+.day-when {
+  grid-area: when;
+  min-width: 0;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  letter-spacing: 0;
+  color: var(--color-text-secondary);
+}
+.day-when:empty {
+  display: none;
+}
+.day-when.is-unset {
+  color: var(--muted);
+}
+.day-card-head .status-chip {
+  grid-area: chip;
+}
+/* ⋯ keeps its 44px target on a phone (--control-h-sm) without making the head
+   taller: the negative margins give the height back to the card's padding. */
+.day-more {
+  grid-area: more;
+  min-width: var(--control-h-sm);
+  min-height: var(--control-h-sm);
+  margin: -8px -8px -8px 0;
+  padding: 0;
+  font-size: var(--font-size-lg);
+  line-height: 1;
+}
+
+.day-hint {
+  font-size: 10px;
+  color: var(--muted);
+}
+.day-note {
+  margin-top: 10px;
+}
+.day-note[hidden] {
+  display: none;
+}
+
+.day-clash {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.day-clash[hidden] {
+  display: none;
+}
+/* Another project's booking on this date. A pencil is a heads-up in the
+   pencilled colour's rule; a lock (D16) uses the app's error treatment, because
+   it is the one that stops the save. */
+.day-clash {
+  padding-left: 8px;
+  border-left: 2px solid var(--cal-pencilled);
+  color: var(--muted);
+}
+.day-clash.is-note {
+  border-left-color: var(--cal-confirmed);
+}
+.day-clash.is-lock {
+  padding: 8px 10px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+}
+
+/* A day Google Calendar didn't take (trip-planner task 14): the pencilled
+   colour's rule, like a clash, so it reads as a heads-up and not an error.
+   A Date TBC day's line is the same shape in the proposed colour: nothing is
+   wrong, it just isn't dated yet. */
+.day-sync,
+.day-tbc {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 8px 0 0;
+  padding-left: 8px;
+  border-left: 2px solid var(--cal-pencilled);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.day-sync[hidden] {
+  display: none;
+}
+.day-tbc {
+  border-left-color: var(--cal-proposed);
+}
+/* The quiet button's own padding is 8px: pull it back so its words line up
+   with the sentence when it wraps under it on a phone. */
+.day-sync-retry,
+.day-tbc-set {
+  margin-left: -8px;
+}
+/* A touch tablet (768 and up, no mouse or trackpad) gets a phone's 44px
+   targets on the card and in the dialog's head (Breakpoints).
+   Prefixed, because a11y.css's 24px floor for .btn-sm loads last. */
+@media (min-width: 768px) and (not (any-pointer: fine)) {
+  .booking-block .day-more,
+  .booking-block .day-menu-btn,
+  .booking-block .day-trip,
+  .booking-block .day-sync-retry,
+  .booking-block .day-tbc-set,
+  #modal-add-day .dd-tocard {
+    min-height: var(--touch-min);
+  }
+  .booking-block .day-more {
+    min-width: var(--touch-min);
+  }
+}
+
+/* ── The add-day dialog ────────────────────────────────────────────────────── */
+
+/* A bottom sheet on a phone, full width, buttons full width at 44px
+   (brief, Responsive Behavior); a centred box from 768px. */
+#modal-add-day {
+  align-items: flex-end;
+}
+#modal-add-day .dd-box {
+  width: 100%;
+  max-width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 20px 16px calc(20px + env(safe-area-inset-bottom));
+  border-bottom: none;
+}
+@media (min-width: 768px) {
+  #modal-add-day {
+    align-items: center;
+  }
+  #modal-add-day .dd-box {
+    width: 460px;
+    max-width: 95vw;
+    padding: 26px 30px;
+    border-bottom: 1px solid var(--border);
+  }
+}
+.dd-eyebrow {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+#modal-add-day .modal-title {
+  margin-bottom: 14px;
+}
+/* Edit from the calendar: the eyebrow, and "Go to its items ↓" on its right,
+   the way through to the day's card. Text-only, so its words meet the edge. */
+.dd-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: 4px;
+}
+.dd-head .dd-eyebrow {
+  margin-bottom: 0;
+}
+.dd-tocard {
+  flex-shrink: 0;
+  margin-right: calc(-1 * var(--space-4));
+}
+.dd-msgs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.dd-msg {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.dd-msg b {
+  color: var(--text);
+  font-weight: 600;
+}
+.dd-msg.is-warn {
+  padding-left: 10px;
+  border-left: 2px solid var(--cal-pencilled);
+  color: var(--text);
+}
+.dd-msg.is-lock {
+  padding: 9px 12px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+}
+.dd-msg.is-lock b {
+  color: var(--err-text);
+}
+.dd-msgs:empty {
+  display: none;
+}
+/* Edit day's Date (task 4), and the specification note: label, field, hint. */
+.dd-date,
+.dd-note {
+  margin-bottom: 14px;
+}
+.dd-note[hidden] {
+  display: none;
+}
+.dd-date input,
+.dd-note input {
+  min-height: 44px;
+  font-size: 16px;
+}
+.dd-date input {
+  font-family: var(--font-family-mono);
+  color-scheme: dark;
+}
+.dd-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+/* Desktop sizes only with a mouse or trackpad: a touch tablet keeps the
+   sheet's 44px fields and 16px type (Breakpoints; as calendar.css). */
+@media (min-width: 768px) and (any-pointer: fine) {
+  .dd-date input,
+  .dd-note input {
+    min-height: 0;
+    font-size: 13px;
+  }
+}
+
+/* Bump in / Bump out (production-day-booking task 2): two equal fields side
+   by side at every width; a time input is narrow enough for 375px. */
+.dd-times {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-5);
+}
+.dd-time {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.dd-time label,
+.dd-status legend {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+}
+.dd-time input {
+  min-height: var(--touch-min);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-md);
+  color-scheme: dark;
+}
+.dd-overnight {
+  margin-top: var(--space-4);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+}
+
+/* Status: three radios drawn as one segmented row, each with its own mark. */
+.dd-status {
+  margin: var(--space-6) 0 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.dd-status legend {
+  margin-bottom: var(--space-3);
+  padding: 0;
+}
+.dd-status-opts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--color-border-strong);
+}
+.dd-opt {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  min-height: var(--touch-min);
+  padding: 0 var(--space-4);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--easing-default), color var(--duration-fast) var(--easing-default);
+}
+.dd-opt + .dd-opt {
+  border-left: 1px solid var(--color-border-strong);
+}
+.dd-opt input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.dd-opt:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+.dd-opt:has(input:checked) {
+  background: var(--color-bg-selected);
+  color: var(--color-text-primary);
+  box-shadow: inset 0 -2px 0 var(--color-accent-mark);
+}
+.dd-opt:has(input:focus-visible) {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: -2px;
+}
+/* The status's own mark: a solid square, a hatched square, a quarter square. */
+.dd-swatch {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  background: var(--cal-confirmed);
+}
+.dd-opt.is-pencilled .dd-swatch {
+  background: var(--cal-hatch);
+}
+.dd-opt.is-proposed .dd-swatch {
+  width: 6px;
+  height: 6px;
+  margin: 0 3px;
+  background: var(--cal-proposed);
+}
+/* Bump out the same as bump in, said after Save is pressed (task 6). */
+.dd-err {
+  margin-top: var(--space-4);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  color: var(--err-text);
+}
+.dd-err[hidden],
+.dd-overnight[hidden] {
+  display: none;
+}
+.dd-time input[aria-invalid='true'] {
+  border-color: var(--err-border);
+}
+#modal-add-day .modal-actions .btn {
+  min-height: var(--touch-min);
+}
+/* "+ Another day on Sat 3 Oct" (edit from the calendar): its own row on the
+   sheet, then to the left of Cancel and Save, apart from the pair. */
+.dd-another {
+  flex: 1 0 100%;
+  justify-content: center;
+}
+@media (min-width: 768px) and (any-pointer: fine) {
+  .dd-time input {
+    min-height: var(--control-h);
+    font-size: var(--font-size-base);
+  }
+  .dd-opt {
+    min-height: var(--control-h);
+  }
+  #modal-add-day .modal-actions .btn {
+    min-height: var(--control-h);
+  }
+}
+@media (min-width: 768px) {
+  .dd-another {
+    flex: 0 0 auto;
+    margin-right: auto;
+    margin-left: calc(-1 * var(--space-4)); /* text-only: its words line up with the form's edge */
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dd-opt {
+    transition: none;
+  }
+}
+
+/* ── Production items on a day (task 7) ─────────────────────────────────────
+   The editor's own labour grid, picker and rows, inside the day card. The
+   card is narrower than a full billing block, so responsive.css's 660px grid
+   floor (below 1100) is lifted here: the grid's Service column takes up the
+   difference, and below 768 the rows stack as they do everywhere else. */
+.billing-block.booking-block .bb-picker,
+.billing-block.booking-block .gt-head,
+.billing-block.booking-block .gt-row,
+.billing-block.booking-block .gt-body > * {
+  min-width: 0;
+}
+.day-items {
+  margin: 10px -12px -12px -16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.day-items-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 8px 12px 8px 16px;
+}
+.day-items-label {
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--muted);
+}
+.day-items-sum {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.day-items-sum b {
+  color: var(--text);
+  font-family: var(--font-figures);
+  font-weight: var(--font-weight-normal);
+}
+.day-picker {
+  border-top: 1px solid var(--border);
+}
+.day-items-none {
+  padding: 10px 16px;
+  font-size: 11px;
+  color: var(--muted);
+}
+/* D26: a hint, not a price. */
+.day-hours {
+  padding: 8px 16px 10px;
+  border-top: 1px solid var(--color-border-hairline);
+  font-size: 11px;
+  color: var(--muted);
+}
+.day-hours[hidden] {
+  display: none;
+}
+
+/* A Production line's price with "incl. weekend ×1.5" under it. Wrapping, not
+   a column, so it works both in the grid cell and in the stacked phone row
+   (label | value, with the note on its own line beneath). */
+.gt-row > div.bill-col {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+/* app.css's width:100% on .bill-cell would, once the cell wraps, put the
+   price on a line below its stacked label; it fills the line's rest instead. */
+.gt-row > div.bill-col .bill-cell {
+  flex: 1 1 auto;
+  width: auto;
+}
+.sur-note {
+  flex: 1 0 100%;
+  font-size: 10px;
+  line-height: 1.35;
+  text-align: right;
+  color: var(--muted);
+}
+.sur-note[hidden] {
+  display: none;
+}
+
+/* ── Short notice, in the doc-type bar (D19) ──────────────────────────────── */
+
+.sn-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.sn-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+.sn-check input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.sn-hint {
+  font-size: 11px;
+  color: var(--cal-pencilled);
+}
+.sn-hint:empty {
+  display: none;
+}
+/* On a phone the whole label is the target, 44px tall (task 9). The box
+   itself grows a little so it is visible at thumb distance; the label still
+   does the work. Above 768 it keeps the doc-type bar's desktop size. */
+@media (max-width: 767px) {
+  .sn-check {
+    min-height: 44px;
+    padding-right: 6px;
+  }
+  .sn-check input[type='checkbox'] {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+/* ── The estimate detail: Production by day (task 8) ─────────────────────────
+   Production on an estimate with booked days reads as one group per day: a
+   head row (date, status chip, times, clash note) over that day's items. The
+   chip carries its word, so status is never colour alone. Inert on any
+   estimate without days, which renders exactly as before. */
+.est-day-head th {
+  padding: 10px 14px 6px;
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+  border-bottom: 1px solid var(--color-border-hairline);
+}
+.est-day-head th > * {
+  margin-right: 10px;
+  vertical-align: middle;
+}
+.est-day-date {
+  font-weight: 600;
+}
+.est-day-time,
+.est-day-note {
+  color: var(--muted);
+}
+.est-day-empty td {
+  color: var(--muted);
+}
+/* The owner-only "incl. weekend ×1.5", under the service's name. */
+.est-sur-note {
+  display: block;
+  margin-top: 2px;
+  text-align: left;
+}
+.est-day-disclaimer {
+  margin: 0;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.est-day-disclaimer-k {
+  color: var(--text);
+}
+.sur-total-row .tl,
+.sur-total-row .tv {
+  font-size: 11px;
+  color: var(--muted);
+}
+.cb-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+@media (max-width: 767px) {
+  /* The tables stack below 768 (responsive.css); the day's head row goes with
+     them, as a full-width line rather than an anonymous table cell. */
+  .est-day-head th {
+    display: block;
+    padding: 10px 14px 4px;
+    line-height: 1.9;
+    border-bottom: none; /* the stacked row draws its own rule */
+  }
+}
+
+/* ── Day-built cards and the service menu (production-booking B2-4) ─────────
+   A card is a whole shoot day: its items in groups — Production · Travel ·
+   Crew · Equipment, each shown only with lines — behind one "Add Production
+   Service Items" button that opens the menu. */
+
+/* Not on a day (D79): last, and not a day, so its rail is neutral. */
+.off-day-card {
+  margin-top: 8px;
+}
+.off-day-card::before {
+  background: var(--border);
+}
+.off-day-hint {
+  margin: 4px 0 0;
+}
+/* The card the menu is adding to (the brief's B2 Key Interactions 1). */
+.day-card.is-target {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+/* A day just added or saved (task 6): one terracotta ring that holds, then
+   fades, so the eye finds where it landed. Gone under reduced motion; the
+   focus ring and the live region still say it. */
+.day-card.is-new {
+  animation: day-arrive 1.6s var(--easing-out) 1;
+}
+@keyframes day-arrive {
+  0%,
+  35% {
+    box-shadow: 0 0 0 2px var(--color-accent-mark);
+  }
+  100% {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .day-card.is-new {
+    animation: none;
+  }
+}
+
+.day-menu-btn {
+  min-height: 44px;
+}
+@media (min-width: 768px) and (any-pointer: fine) {
+  .day-menu-btn {
+    min-height: 0;
+  }
+}
+.day-items-empty {
+  padding: 4px 16px 12px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.day-items-empty[hidden],
+.day-group[hidden] {
+  display: none;
+}
+.day-group {
+  border-top: 1px solid var(--border);
+}
+.day-group-label {
+  padding: 8px 16px 2px;
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--muted);
+}
+
+/* ── "On set, by day" (B2-6, D78, D98) ──────────────────────────────────────
+   Its own panel since task 11: four read-only summaries of the day cards, a
+   group per card with its lines and total, plain text like the estimate
+   detail, so they don't read as more fields to fill in. */
+.onset-head-r {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px 14px;
+}
+.onset-empty {
+  padding: 10px 16px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.onset-group {
+  padding: 8px 16px 10px;
+  border-bottom: 1px solid var(--color-border-hairline);
+}
+.onset-group:last-child {
+  border-bottom: none;
+}
+.onset-ghead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 10px;
+  font-size: 12px;
+}
+.onset-gtitle {
+  font-weight: 600;
+  color: var(--text);
+}
+.onset-edit {
+  min-height: 44px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  text-decoration: underline;
+  text-decoration-color: var(--muted2);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.onset-edit:hover {
+  color: var(--text);
+  text-decoration-color: var(--text);
+}
+.onset-gtotal {
+  margin-left: auto;
+  font-family: var(--font-figures);
+}
+.onset-lines {
+  list-style: none;
+  margin-top: 4px;
+}
+.onset-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 110px;
+  gap: 2px 16px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+.onset-name.is-muted {
+  color: var(--muted);
+  font-style: italic;
+}
+/* The surcharge a production line carries, as on its card (owner-only, D8). */
+.onset-note {
+  display: block;
+  font-size: 10px;
+  font-style: normal;
+  color: var(--muted);
+}
+.onset-qty {
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+}
+.onset-amt {
+  text-align: right;
+  font-family: var(--font-figures);
+}
+@media (min-width: 768px) {
+  .onset-edit {
+    min-height: 0;
+  }
+}
+/* A phone: the group's total stays on its title's row, with "Edit on the day"
+   under them, and each line's quantity goes under its name, so the name keeps
+   the width. */
+@media (max-width: 767px) {
+  .onset-ghead {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .onset-ghead .status-chip {
+    justify-self: start;
+  }
+  .onset-gtotal {
+    grid-row: 1;
+    grid-column: 3;
+  }
+  .onset-edit {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    justify-self: start;
+    min-width: 44px; /* Not on a day's is just "Edit ↑" (B2-12) */
+    text-align: left;
+  }
+  .onset-line {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .onset-qty {
+    grid-row: 2;
+    text-align: left;
+  }
+  .onset-amt {
+    grid-row: 1;
+    grid-column: 2;
+  }
+}
+
+/* ── The menu ──────────────────────────────────────────────────────────────
+   At 768 and up it takes the calendar's place in its column; below, it is a
+   bottom sheet. */
+.booking-cal-col.is-menu > :not(.day-menu) {
+  display: none;
+}
+.day-menu {
+  border: 1px solid var(--border);
+  background: var(--color-bg-panel);
+  padding: 10px 14px 12px;
+}
+/* Brought into view under the sticky page header (52px), not behind it: the
+   menu on open, a card on showDay(), a card's group from a summary's "Edit on
+   the day". */
+.day-menu,
+.day-card,
+.day-group {
+  scroll-margin-top: 64px;
+}
+.day-menu-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.day-menu-title {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+.day-menu-title:focus {
+  outline: none;
+}
+.day-menu-title:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
+}
+.day-menu-count {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.day-menu-done {
+  margin-left: auto;
+}
+.day-menu-status {
+  min-height: 1.4em;
+  margin: 4px 0 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.dm-filter {
+  margin-bottom: 8px;
+}
+.dm-group {
+  border-top: 1px solid var(--border);
+}
+.dm-ghead {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 9px 0;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: var(--font-family-body);
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
+  text-align: left;
+  cursor: pointer;
+}
+.dm-ghead:hover {
+  color: var(--text);
+}
+.dm-ghead[aria-expanded='true'] .bb-chevron {
+  transform: rotate(90deg);
+}
+.dm-gbody {
+  padding-bottom: 8px;
+}
+.dm-gbody[hidden],
+.dm-row[hidden],
+.dm-none[hidden] {
+  display: none;
+}
+.dm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--color-border-hairline);
+}
+.dm-row:last-of-type {
+  border-bottom: none;
+}
+.dm-name {
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text);
+}
+.dm-units {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.dm-unit {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  color: var(--text);
+  font-family: var(--font-family-body);
+  font-size: 11px;
+  padding: 4px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dm-unit:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.dm-unit:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
+}
+.dm-unit:disabled {
+  cursor: not-allowed;
+  color: var(--muted);
+}
+.dm-price {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.dm-none {
+  padding: 4px 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* The bottom sheet, below 768: full width, Done kept in reach as the list
+   scrolls, every target 44px. */
+#modal-day-menu {
+  align-items: flex-end;
+}
+#modal-day-menu .dm-sheet {
+  width: 100%;
+  max-width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 0 16px calc(16px + env(safe-area-inset-bottom));
+  border-bottom: none;
+}
+.day-menu.is-sheet {
+  border: none;
+  background: none;
+  padding: 0;
+}
+.day-menu.is-sheet .day-menu-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 14px 0 8px;
+  background: var(--surface);
+}
+.day-menu.is-sheet .day-menu-done,
+.day-menu.is-sheet .dm-ghead,
+.day-menu.is-sheet .dm-unit,
+.day-menu.is-sheet .dm-blank {
+  min-height: 44px;
+}
+
+/* ── Moving lines (production-booking B2-5, D80, D81) ───────────────────────
+   Under each on-set line's name: a drag handle (mouse and pen) and Move to,
+   the menu button every pointer and keyboard can use. */
+.line-ctl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.line-handle {
+  padding: 0 4px;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: grab;
+  touch-action: none;
+}
+.line-handle:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+/* A quiet menu button, as Actions ▾ is (task 18): no box, the shared
+   chevron caret (menu.css). */
+.line-move {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font: var(--font-weight-medium) var(--font-size-sm)/var(--line-height-snug) var(--font-family-body);
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.line-move:hover,
+.line-move[aria-expanded='true'] {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+.line-move:hover .menu-caret,
+.line-move[aria-expanded='true'] .menu-caret,
+.onset-add:hover .menu-caret,
+.onset-add[aria-expanded='true'] .menu-caret {
+  color: currentColor;
+}
+.line-move[aria-expanded='true'] .menu-caret,
+.onset-add[aria-expanded='true'] .menu-caret {
+  transform: translateY(1px) rotate(-135deg);
+}
+.line-handle:focus-visible,
+.line-move:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
+}
+/* No drag on a phone (D80's alternative): Move to is the route, at 44px. */
+@media (max-width: 767px) {
+  .line-handle {
+    display: none;
+  }
+  .line-move {
+    min-height: 44px;
+    padding: 4px 12px 4px 0;
+    font-size: var(--font-size-base);
+  }
+}
+/* A touch screen at 768 and up with no mouse or trackpad (a tablet) can't
+   drag either (bindDrag ignores touch): no handle there, and Move to at a
+   finger's size. A desktop, or a tablet with a trackpad, has a fine pointer
+   and keeps both as they are (B2-12). Prefixed, because a11y.css's 24px
+   floor for .line-move loads last and would otherwise win. */
+@media (min-width: 768px) and (not (any-pointer: fine)) {
+  .line-handle {
+    display: none;
+  }
+  .booking-block .line-move {
+    min-height: 44px;
+    padding: 4px 12px;
+  }
+}
+
+/* The Move to list is a menu (menu.css). */
+
+/* While dragging: the line dims, every card's group of that kind outlines as
+   a drop zone (the drag code unhides empty ones), and a rule marks the
+   insert point. */
+.is-dragging,
+.is-dragging * {
+  cursor: grabbing !important;
+}
+.gt-row.is-dragging {
+  opacity: 0.45;
+}
+.drag-prod .day-group[data-group='prod'] .gt-body,
+.drag-travel .day-group[data-group='travel'] .gt-body,
+.drag-crew .day-group[data-group='crew'] .gt-body,
+.drag-equip .day-group[data-group='equip'] .gt-body {
+  min-height: 30px;
+  outline: 1px dashed color-mix(in srgb, var(--color-accent-primary) 70%, transparent);
+  outline-offset: -1px;
+}
+.drop-rule {
+  height: 2px;
+  background: var(--accent);
+}
+
+/* ── Gear rentals (B2-7, D82) ─────────────────────────────────────────────────
+   An equipment line is Vendor + Item; all the hire from one vendor is one
+   rental, planned in the panel under both columns: when it goes out and comes
+   back, and how. Logistics only — no price here (D83). */
+.equip-names {
+  display: flex;
+  align-self: stretch; /* the name cell (.lab-svc) packs its children to the start */
+  gap: 6px;
+  min-width: 0;
+}
+.equip-names > .typeahead-wrap {
+  flex: 2 1 0;
+  min-width: 0;
+}
+.equip-names > .item-inp {
+  flex: 3 1 0;
+  min-width: 0;
+}
+.rental-hint {
+  display: block;
+  min-height: 44px;
+  margin-top: 2px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10px;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: var(--muted2);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.rental-hint:hover {
+  color: var(--text);
+}
+.rental-hint[hidden] {
+  display: none;
+}
+.est-vendor {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.booking-rentals-slot {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.rentals {
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.rentals-h {
+  margin-bottom: 8px;
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--muted);
+}
+.rentals-empty {
+  font-size: 11px;
+  color: var(--muted);
+}
+.rentals-empty[hidden] {
+  display: none;
+}
+.rentals-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+}
+.rental-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: rgba(240, 237, 232, 0.02);
+}
+.rental-who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.rental-vendor {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.rental-items {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.rental-f {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.rental-f label {
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--muted);
+}
+.rental-pair {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+.rental-pair .text-inp {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.rental-pair .svc-select {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: none;
+}
+.rental-f .text-inp,
+.rental-f .svc-select {
+  min-height: 44px;
+  font-size: 16px; /* under 16px, iOS zooms the page on focus */
+  color-scheme: dark;
+}
+.rental-err {
+  font-size: 11px;
+  color: var(--err-text);
+}
+.rental-err[hidden] {
+  display: none;
+}
+@media (min-width: 768px) {
+  .rental-hint {
+    min-height: 0;
+  }
+  .rental-row {
+    grid-template-columns: minmax(120px, 1fr) minmax(0, 1.4fr) minmax(0, 1.4fr) minmax(0, 1.3fr);
+    align-items: end;
+  }
+  .rental-who {
+    align-self: center;
+  }
+  .rental-err {
+    grid-column: 1 / -1;
+  }
+  .rental-f .text-inp,
+  .rental-f .svc-select {
+    min-height: 30px;
+    font-size: 12px;
+  }
+}
+/* 768–1099: the panel is narrower than the dates need in one row of four, so
+   the Note goes under the dates. */
+@media (min-width: 768px) and (max-width: 1099px) {
+  .rental-row {
+    grid-template-columns: minmax(100px, 0.8fr) minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .rental-note-f {
+    grid-column: 2 / -1;
+  }
+}
+/* On a card, crew and gear rows drop the shared expense grid's empty
+   Price column ("—") and give its width to the names: a hire line has two
+   of them since B2-7. At 768 and up; below, the rows stack anyway. */
+@media (min-width: 768px) {
+  .day-group[data-group='crew'] .expense-grid,
+  .day-group[data-group='equip'] .expense-grid {
+    grid-template-columns: minmax(0, 1fr) 64px 90px 100px 32px;
+  }
+  .day-group[data-group='crew'] .expense-grid > :nth-child(4),
+  .day-group[data-group='equip'] .expense-grid > :nth-child(4) {
+    display: none;
+  }
+}
+/* A phone: Vendor over Item, each full width. */
+@media (max-width: 767px) {
+  .equip-names {
+    flex-direction: column;
+  }
+}
+
+/* ── The owner's own kit (own-kit K5) ───────────────────────────────────────
+   A kit line on a card: the "Own kit" tag (words, not colour: the register's
+   On-Set Kit tag, drawn in --text) before the asset's name, where a hire line
+   has its Vendor and Item inputs. Its day rate is a figure, not a field. */
+.kit-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text);
+}
+.kit-tag {
+  flex: 0 0 auto;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--text);
+  border: 1px solid var(--text);
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+.kit-asset {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.kit-rate {
+  font-family: var(--font-figures);
+  white-space: nowrap;
+  /* The input's 8px padding and 1px border, so a shown rate's figures line
+     up with a typed one's in the same column. */
+  padding-right: 9px;
+}
+/* The estimate detail (K6): the tag sits under the line's printed name,
+   "Kit Hire - <asset>", where a hire line has its vendor. */
+.est-vendor .kit-tag {
+  display: inline-block;
+  margin-top: 2px;
+}
+
+/* The menu's Equipment Hire group: a typed hire line, or the owner's kit. */
+.dm-blanks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ── Add On-Set Equipment ───────────────────────────────────────────────────
+   A bottom sheet on a phone, as the add-day dialog is; a centred box from
+   768px. A checklist: each asset a whole-row target (44px on a phone), its
+   name and category left, its day rate right in figures. A ticked row takes
+   the accent rule on its left edge, beside the tick itself. */
+#modal-own-kit {
+  align-items: flex-end;
+}
+#modal-own-kit .kp-box {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  max-height: 90vh;
+  padding: 20px 16px calc(16px + env(safe-area-inset-bottom));
+  border-bottom: none;
+}
+@media (min-width: 768px) {
+  #modal-own-kit {
+    align-items: center;
+  }
+  #modal-own-kit .kp-box {
+    width: 520px;
+    max-width: 95vw;
+    max-height: 80vh;
+    padding: 26px 30px 22px;
+    border-bottom: 1px solid var(--border);
+  }
+}
+#modal-own-kit .modal-title {
+  margin-bottom: 6px;
+}
+.kp-intro,
+.kp-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.kp-intro {
+  margin-bottom: 14px;
+}
+.kp-note {
+  margin-top: 12px;
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
+  color: var(--accent-text);
+}
+.kp-empty {
+  margin: 10px 0 0;
+  font-size: 14px;
+  color: var(--text);
+}
+.kp-set {
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.kp-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kp-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  border-bottom: 1px solid var(--color-border-hairline);
+  border-left: 2px solid transparent;
+}
+.kp-item:last-child {
+  border-bottom: none;
+}
+.kp-item:has(.kp-check:checked) {
+  border-left-color: var(--accent);
+}
+.kp-check {
+  width: 18px;
+  height: 18px;
+  margin: 0 0 0 10px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.kp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 10px 8px 12px;
+  cursor: pointer;
+}
+.kp-row:hover .kp-name {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.kp-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.kp-name {
+  font-size: 14px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.kp-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.kp-tag {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  border: 1px solid var(--border);
+  padding: 0 5px;
+  white-space: nowrap;
+}
+.kp-rate {
+  flex: 0 0 auto;
+  font-family: var(--font-figures);
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.kp-per {
+  font-family: var(--font-family-body);
+  font-size: 11px;
+  color: var(--muted);
+}
+.kp-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 16px;
+  padding-top: 16px;
+}
+.kp-days {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.kp-days label {
+  font-size: var(--font-size-sm);
+  color: var(--muted);
+}
+.kp-days .num-inp {
+  width: 88px;
+  min-height: 44px; /* a touch target, and level with Cancel / Add beside it */
+  font-size: 16px; /* no zoom on focus in iOS Safari */
+  font-family: var(--font-figures);
+}
+.kp-actions {
+  display: flex;
+  gap: 10px;
+  margin-left: auto;
+}
+@media (max-width: 767px) {
+  .kp-actions {
+    width: 100%;
+  }
+  .kp-actions .btn {
+    flex: 1 1 0;
+    min-height: 44px;
+  }
+}

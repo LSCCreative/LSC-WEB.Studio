@@ -1,0 +1,1162 @@
+/* The month calendar (js/calendar.js): new classes only, so nothing on an
+   existing screen can move.
+
+   A production board, not a scheduling app (brief, Aesthetic Direction):
+   hairline rules between square cells, the date small in each cell's corner,
+   and tiles that are flat, square-cornered slugs of colour carrying a UPID.
+   No rounded blobs and no shadows.
+
+   Written phone first. The calendar is its own size container, and these three
+   layouts follow its width, not the viewport's:
+     - under 400px: dots per date, and a tapped date lists its bookings below (D29);
+     - 400px and up: tiles, UPID only;
+     - 640px and up: taller cells, tiles with the project name under the UPID (Home,
+       and the editor's calendar once expanded).
+   `.is-compact` (the editor's calendar until Expand) halves the tile layouts'
+   cells, one line a tile; under 400px it changes nothing.
+   Touch sizing follows the device, not the space: 44px controls, made smaller
+   from 768px only where there is a mouse or trackpad (any-pointer: fine), so a
+   touch tablet keeps a phone's targets (production-day-booking, Breakpoints). */
+
+:root {
+  /* Status fills: --cal-confirmed, --cal-pencilled, --cal-proposed,
+     --cal-rental and --cal-ink are tokens.css's aliases of --color-status-*
+     and --color-on-status (the ink clears 4.5:1 on every fill). The hatch's
+     second stripe is the pencilled fill darkened toward the ink. */
+  --cal-pencilled-hatch: color-mix(in srgb, var(--color-status-warning) 85%, var(--color-on-status));
+  --cal-rule: var(--color-border-subtle);
+  --cal-hatch: repeating-linear-gradient(135deg, var(--cal-pencilled) 0 5px, var(--cal-pencilled-hatch) 5px 7px);
+  /* "Go to date" washes its date in the accent: a highlight, not a ring, so it
+     never reads as the focus ring (also accent) sitting on another cell. */
+  --cal-target: color-mix(in srgb, var(--color-accent-mark) 20%, transparent);
+  /* Gear rentals (B2-8): the info blue, no booking status's colour and not the
+     accent, because a rental is logistics, not a booking. The cap marks the
+     out and back ends. */
+  --cal-rental-cap: color-mix(in srgb, var(--color-status-info) 60%, var(--color-on-status));
+  --cal-rental-wash: color-mix(in srgb, var(--color-status-info) 10%, transparent);
+}
+
+.cal {
+  container: cal / inline-size;
+  min-width: 0;
+}
+
+/* ── The bar: month, previous / Today / next, Go to date ───────────────────── */
+
+.cal-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  margin-bottom: 12px;
+}
+.cal-title {
+  flex: 1 1 auto;
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  line-height: 1.1;
+}
+.cal-year {
+  color: var(--muted);
+}
+.cal-nav {
+  display: flex;
+  border: 1px solid var(--border);
+}
+.cal-btn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.cal-btn + .cal-btn {
+  border-left: 1px solid var(--border);
+}
+.cal-btn:hover {
+  color: var(--text);
+  background: var(--row-hover);
+}
+.cal-prev span,
+.cal-next span {
+  font-size: 18px;
+  line-height: 1;
+}
+.cal-goto {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  flex: 1 1 100%;
+}
+.cal-goto-label {
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.cal-goto-inp {
+  flex: 1 1 9.5rem;
+  /* A dd/mm/yyyy date and its picker icon at 16px: any narrower and the year is clipped. */
+  min-width: 9.5rem;
+  min-height: 44px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  color: var(--text);
+  color-scheme: dark;
+  font-size: 16px; /* under 16px, iOS zooms the page on focus */
+  padding: 5px 8px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.cal-goto-inp:focus {
+  border-color: var(--accent);
+}
+
+/* Wide enough (Home): one bar, the month left, Go to date and the arrows right. */
+@container cal (min-width: 640px) {
+  .cal-goto {
+    flex: 0 1 auto;
+    order: 1;
+  }
+  .cal-nav {
+    order: 2;
+  }
+  .cal-goto-inp {
+    flex: 0 0 150px;
+  }
+}
+
+@media (min-width: 768px) and (any-pointer: fine) {
+  .cal-btn {
+    min-width: 32px;
+    min-height: 30px;
+    padding: 0 10px;
+  }
+  .cal-goto-inp {
+    min-height: 30px;
+    font-size: 12px;
+  }
+}
+
+/* ── The grid ───────────────────────────────────────────────────────────────── */
+
+.cal-grid {
+  border: 1px solid var(--border);
+}
+.cal-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.cal-head {
+  background: var(--color-bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+.cal-colhead {
+  padding: 6px 0;
+  text-align: center;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--muted);
+}
+.cal-body .cal-row + .cal-row {
+  border-top: 1px solid var(--cal-rule);
+}
+
+.cal-cell {
+  position: relative;
+  min-width: 0;
+  min-height: 48px;
+  padding: 4px 3px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  outline: none;
+  transition: background 0.12s;
+}
+.cal-cell + .cal-cell {
+  border-left: 1px solid var(--cal-rule);
+}
+/* Saturday and Sunday carry the weekend surcharge, so they're marked: barely.
+   A public holiday prices the same way, so it is shaded the same (task 33 DR4). */
+.cal-cell.is-weekend,
+.cal-cell.is-holiday,
+.cal-colhead.is-weekend {
+  background: rgba(240, 237, 232, 0.025);
+}
+.cal-cell:hover {
+  background: var(--row-hover);
+}
+.cal-cell.is-selected {
+  background: rgba(240, 237, 232, 0.06);
+  box-shadow: inset 0 0 0 1px var(--muted);
+}
+.cal-cell.is-target {
+  background: var(--cal-target);
+}
+.cal-cell:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  box-shadow: inset 0 0 0 2px var(--color-border-focus);
+}
+
+.cal-num {
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.cal-cell.is-out .cal-num {
+  color: var(--muted);
+}
+/* A holiday's date and, in the wide layout, its name beside it. */
+.cal-numrow {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+.cal-hol {
+  display: none;
+  min-width: 0;
+  font-size: var(--font-size-sm);
+  line-height: 12px;
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Today: the app's accent underline, under the date. */
+.cal-cell.is-today .cal-num {
+  color: var(--accent-text);
+  font-weight: 700;
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* ── Dots (the narrow layout) ──────────────────────────────────────────────── */
+
+.cal-tiles {
+  display: none;
+}
+.cal-dots {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 3px;
+  min-height: 8px;
+}
+/* Shape as well as colour: confirmed is a solid dot, pencilled a hatched
+   square, proposed a small hollow ring. The words are in the list below. */
+.cal-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cal-confirmed);
+}
+.cal-dot.is-pencilled {
+  border-radius: 0;
+  background: linear-gradient(135deg, var(--cal-pencilled) 0 45%, var(--cal-ink) 45% 55%, var(--cal-pencilled) 55%);
+}
+.cal-dot.is-proposed {
+  width: 6px;
+  height: 6px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--cal-proposed);
+}
+.cal-dot.is-faded {
+  opacity: 0.45;
+}
+.cal-dot-more {
+  font-size: 9px;
+  line-height: 8px;
+  color: var(--muted);
+}
+
+/* ── Tiles (400px and up) ───────────────────────────────────────────────────── */
+
+@container cal (min-width: 400px) {
+  .cal-cell {
+    min-height: 68px;
+    align-items: stretch;
+    padding: 4px;
+    gap: 3px;
+  }
+  .cal-num {
+    font-size: 11px;
+    align-self: flex-start;
+    padding: 0 2px;
+  }
+  .cal-dots {
+    display: none;
+  }
+  .cal-tiles {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+}
+
+.cal-tile {
+  display: block;
+  min-width: 0;
+  padding: 2px 4px;
+  background: var(--cal-confirmed);
+  color: var(--cal-ink);
+  font-size: 10px;
+  line-height: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.cal-tile-upid,
+.cal-tile-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cal-tile-name {
+  display: none;
+  font-weight: 400;
+}
+.cal-tile.is-pencilled {
+  background: var(--cal-hatch);
+}
+/* Proposed is a quarter tile (D63): half the width and half the height of a
+   full one. In the 400px layout that is a grey slug too short for text; the
+   cell's name and the list below carry its UPID and the word "Proposed". */
+.cal-tile.is-proposed {
+  width: 50%;
+  height: 8px;
+  padding: 0;
+  font-size: 0;
+  background: var(--cal-proposed);
+}
+.cal-tile:hover {
+  filter: brightness(1.12);
+}
+/* Another project's day, beside this estimate's (D23): an outline in its
+   status colour, the name in --muted. The colour stays legible as a line, and
+   the fill is kept for the days that are this estimate's. */
+.cal-tile.is-faded {
+  background: transparent;
+  color: var(--muted);
+  font-weight: 400;
+  box-shadow: inset 0 0 0 1px var(--cal-confirmed);
+}
+.cal-tile.is-faded.is-pencilled {
+  background: repeating-linear-gradient(135deg, transparent 0 5px, color-mix(in srgb, var(--color-status-warning) 22%, transparent) 5px 7px);
+  box-shadow: inset 0 0 0 1px var(--cal-pencilled);
+}
+.cal-tile.is-faded.is-proposed {
+  box-shadow: inset 0 0 0 1px var(--cal-proposed);
+}
+.cal-more {
+  font-size: 10px;
+  color: var(--muted);
+  padding: 0 2px;
+}
+
+/* ── Wide tiles (640px and up) ──────────────────────────────────────────────── */
+
+@container cal (min-width: 640px) {
+  .cal-cell {
+    min-height: 104px;
+    padding: 6px;
+  }
+  .cal-num {
+    font-size: 12px;
+  }
+  .cal-tile {
+    padding: 3px 6px;
+  }
+  .cal-tile-name {
+    display: block;
+  }
+  .cal-numrow {
+    align-self: stretch;
+  }
+  .cal-hol {
+    display: block;
+  }
+  /* Sized to its code, never under half the cell (task 33 DR2): a fixed half
+     gave "FLW-002" 29px of the 40 it needs. It may drop the name, never the code. */
+  .cal-tile.is-proposed {
+    width: fit-content;
+    min-width: 50%;
+    max-width: 100%;
+    height: auto;
+    padding: 2px 6px;
+    font-size: 10px;
+  }
+  /* Half the height of a two-line tile is one line: the UPID, no name. */
+  .cal-tile.is-proposed .cal-tile-name {
+    display: none;
+  }
+}
+
+/* ── The month changing ────────────────────────────────────────────────────── */
+
+@keyframes cal-slide-next {
+  from { opacity: 0.35; transform: translateX(10px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes cal-slide-prev {
+  from { opacity: 0.35; transform: translateX(-10px); }
+  to { opacity: 1; transform: none; }
+}
+.cal-body.slide-next {
+  animation: cal-slide-next 0.18s ease-out;
+}
+.cal-body.slide-prev {
+  animation: cal-slide-prev 0.18s ease-out;
+}
+
+/* ── The selected date's bookings ──────────────────────────────────────────── */
+
+.cal-list {
+  border: 1px solid var(--border);
+  border-top: none;
+  padding: 12px 12px 14px;
+  background: var(--color-bg-panel);
+}
+.cal-list-title {
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.cal-empty {
+  font-size: 12px;
+  color: var(--muted);
+}
+.cal-entries {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cal-entry {
+  width: 100%;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 10px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.cal-entry:hover {
+  border-color: var(--accent);
+}
+.cal-entry.is-faded {
+  background: transparent;
+}
+.cal-entry.is-faded .cal-entry-upid {
+  color: var(--muted);
+}
+.cal-entry-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  min-width: 0;
+}
+.cal-entry-upid {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.cal-entry-name {
+  font-size: 12px;
+}
+.cal-entry-client,
+.cal-entry-time,
+.cal-entry-note {
+  font-size: 11px;
+  color: var(--muted);
+}
+.cal-entry-time,
+.cal-entry-note {
+  grid-column: 2;
+  font-variant-numeric: tabular-nums;
+}
+
+/* One width for all three words, so the UPIDs line up down the list. */
+.cal-entry .status-chip {
+  min-width: 84px;
+  text-align: center;
+}
+
+@media (min-width: 768px) and (any-pointer: fine) {
+  .cal-entry {
+    min-height: 0;
+    padding: 6px 10px;
+  }
+}
+
+@container cal (min-width: 400px) {
+  .cal-entry {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .cal-entry-time {
+    grid-column: 3;
+    grid-row: 1;
+    text-align: right;
+  }
+  .cal-entry-note {
+    grid-column: 2 / -1;
+  }
+}
+
+/* ── The status chip (shared: day cards, Coming up, this list) ─────────────── */
+
+/* Mono caps on a status fill (ui-clarity U19): the ink clears 4.5:1 on every
+   fill, and the word, not the colour, carries the meaning. */
+.status-chip {
+  display: inline-block;
+  padding: var(--chip-pad);
+  font: var(--chip-font);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--cal-ink);
+  background: var(--cal-confirmed);
+  border-radius: var(--chip-radius);
+  white-space: nowrap;
+}
+.status-chip.is-pencilled {
+  background: var(--cal-hatch);
+}
+.status-chip.is-proposed {
+  background: var(--cal-proposed);
+}
+
+/* ── Rental bars (B2-8, D84) ───────────────────────────────────────────────────
+   A layer at the foot of each week row, under the tiles. Each cell makes room
+   for the week's lanes (--lanes, set on the row), and a bar is placed by its
+   first and last column (--s, --e) and its lane. A bar that carries on into
+   the next or last week runs to the row's edge with no cap on that side; a
+   real end is inset and capped in a darker blue, so out and back read at a
+   glance. Phone first: in dots mode a lane is a 3px line with no words. */
+
+.cal-row {
+  position: relative;
+  --lanes: 0;
+  --rb-pitch: 5px;
+  --rb-h: 3px;
+  --rb-base: 4px;
+}
+.cal-body .cal-cell {
+  padding-bottom: calc(var(--rb-base) + var(--lanes) * var(--rb-pitch));
+  min-height: calc(48px + var(--lanes) * var(--rb-pitch));
+}
+.cal-rbars {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--rb-base);
+  height: calc(var(--lanes) * var(--rb-pitch));
+  pointer-events: none;
+}
+.cal-rbar,
+.cal-rbar-more {
+  --il: 3px;
+  --ir: 3px;
+  position: absolute;
+  top: calc(var(--lane) * var(--rb-pitch));
+  height: var(--rb-h);
+  left: calc(100% * var(--s) / 7 + var(--il));
+  width: calc(100% * (var(--e) - var(--s) + 1) / 7 - var(--il) - var(--ir));
+}
+.cal-rbar {
+  display: block;
+  overflow: hidden;
+  background: var(--cal-rental);
+  color: var(--cal-ink);
+  border: 0 solid var(--cal-rental-cap);
+  border-left-width: 2px;
+  border-right-width: 2px;
+}
+.cal-rbar.is-cont-l {
+  --il: 0px;
+  border-left-width: 0;
+}
+.cal-rbar.is-cont-r {
+  --ir: 0px;
+  border-right-width: 0;
+}
+.cal-rbar.is-faded {
+  opacity: 0.45;
+}
+.cal-rbar-t,
+.cal-rbar-more {
+  display: none;
+}
+
+@container cal (min-width: 400px) {
+  .cal-row {
+    --rb-pitch: 16px;
+    --rb-h: 14px;
+  }
+  .cal-body .cal-cell {
+    min-height: calc(68px + var(--lanes) * var(--rb-pitch));
+  }
+  .cal-rbar {
+    pointer-events: auto;
+    cursor: pointer;
+  }
+  .cal-rbar:hover {
+    filter: brightness(1.12);
+  }
+  /* Another project's rental, beside this estimate's (D84, as D23 for days):
+     outlined in the blue, its words muted, the fill kept for this one's. */
+  .cal-rbar.is-faded {
+    opacity: 1;
+    background: var(--cal-rental-wash);
+    color: var(--muted);
+    border-color: var(--cal-rental);
+    border-top-width: 1px;
+    border-bottom-width: 1px;
+  }
+  .cal-rbar-t {
+    display: block;
+    padding: 0 4px;
+    font-size: 9px;
+    line-height: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cal-rbar.is-faded .cal-rbar-t {
+    font-weight: 400;
+    line-height: 12px;
+  }
+  .cal-rbar-more {
+    display: block;
+    pointer-events: auto;
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: 9px;
+    line-height: var(--rb-h);
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .cal-rbar-more:hover {
+    color: var(--text);
+  }
+}
+
+@container cal (min-width: 640px) {
+  .cal-row {
+    --rb-pitch: 19px;
+    --rb-h: 16px;
+    --rb-base: 6px;
+  }
+  .cal-body .cal-cell {
+    min-height: calc(104px + var(--lanes) * var(--rb-pitch));
+  }
+  .cal-rbar-t {
+    font-size: 10px;
+    line-height: 14px;
+    padding: 0 6px;
+  }
+  .cal-rbar.is-faded .cal-rbar-t {
+    line-height: 14px;
+  }
+}
+
+/* ── Compact (the editor's calendar until Expand) ──────────────────────────────
+   Half the wide layout's 104px: a date, then two one-line tiles or one and
+   "+N more" (calendar.js MAX_TILES_COMPACT), which is exactly 52px. A week's
+   rental lanes still add their pitch, so a bar never sits on a tile. Under
+   400px the dots layout is already the 48px touch minimum, so nothing here
+   applies and the button is hidden. */
+
+@container cal (min-width: 400px) {
+  .cal.is-compact .cal-row {
+    --rb-base: 3px;
+  }
+  .cal.is-compact .cal-body .cal-cell {
+    min-height: calc(52px + var(--lanes) * var(--rb-pitch));
+    padding-top: 3px;
+    gap: 2px;
+  }
+  .cal.is-compact .cal-num {
+    line-height: 14px;
+  }
+  .cal.is-compact .cal-tile {
+    padding: 1px 5px;
+    line-height: 12px;
+  }
+  .cal.is-compact .cal-more {
+    line-height: 12px;
+  }
+  .cal.is-compact .cal-gbands {
+    margin-bottom: 0;
+  }
+  .cal.is-compact .cal-gband {
+    height: 13px;
+    font-size: 9px;
+    line-height: 13px;
+  }
+}
+
+/* Wide enough for words: the name follows the UPID on the same line. A
+   proposed day keeps its quarter tile's one word (D63). */
+@container cal (min-width: 640px) {
+  /* Top-aligned: two weights on one baseline grow the line box past 12px. */
+  .cal.is-compact .cal-tile-upid {
+    display: inline;
+    vertical-align: top;
+  }
+  .cal.is-compact .cal-tile-name {
+    display: inline;
+    vertical-align: top;
+    margin-left: 5px;
+  }
+  .cal.is-compact .cal-tile.is-proposed .cal-tile-name {
+    display: none;
+  }
+}
+
+/* Expand / Collapse, bordered like Calendars ▾ and grouped with it
+   (.cal-acts), pushed right. While the bar wraps, the pair goes down beside
+   Go to date together; Expand on its own instead ends the month's row (or
+   starts the next, Go to date after it). Either way nothing sits on a row
+   alone. Last in the bar once it is one line. Go to date gives up its full
+   row, as it does for Calendars ▾ alone. */
+.cal-acts {
+  display: flex;
+  gap: 10px 12px;
+  margin-left: auto;
+  order: 4;
+}
+/* In the group, Calendars ▾ then Expand: not the bar's order for tools. */
+.cal-acts > .cal-tools {
+  order: 0;
+}
+.cal-size {
+  display: none;
+}
+@container cal (min-width: 400px) {
+  .cal-size {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--border);
+  }
+  .cal-bar:has(.cal-size) .cal-goto {
+    flex: 1 1 0;
+    min-width: 160px;
+    order: 3;
+  }
+  .cal-acts:has(.cal-tools:empty) {
+    order: 1;
+  }
+}
+@container cal (min-width: 640px) {
+  .cal-acts,
+  .cal-acts:has(.cal-tools:empty) {
+    order: 3;
+  }
+  .cal-bar:has(.cal-size) .cal-goto {
+    flex: 0 1 auto;
+    min-width: 0;
+    order: 1;
+  }
+}
+.cal-size svg {
+  flex: none;
+}
+
+/* The selected date's gear, under its bookings. */
+.cal-entries + .cal-gear {
+  margin-top: 6px;
+}
+/* Gear only out on hire that day (quietGear, DR5): one muted line, not a card each. */
+.cal-onhire {
+  margin-top: 6px;
+  padding-left: 9px;
+  border-left: 2px solid var(--cal-rental);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--muted);
+}
+.cal-entries + .cal-onhire,
+.cal-empty + .cal-onhire {
+  margin-top: 8px;
+}
+div.cal-rentry {
+  cursor: default;
+}
+div.cal-rentry:hover {
+  border-color: var(--border);
+}
+.cal-rentry:focus-visible,
+div.cal-rentry:focus {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
+}
+.status-chip.is-rental {
+  background: var(--cal-rental);
+}
+
+/* ── Google Calendar events (trip-planner task 13, G2, G3) ───────────────────
+   The owner's own diary showing through the board: never as loud as a
+   booking. A Google tile is a faint wash with its calendar's colour as a dot
+   and its words in --muted; an all-day (or multi-day) event is a thin band at
+   the top of each date it covers, tinted in the calendar's colour, with a cap
+   on its real ends (as a rental bar's, but at the top, and per calendar).
+   --g is the calendar's colour; the neutral grey stands in when Google gives
+   none. In dots mode an event is a short dash, a shape no booking uses. */
+
+.cal-gdot {
+  flex: 0 0 auto;
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--g, var(--color-status-neutral));
+}
+
+.cal-dot.cal-gdash {
+  width: 9px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--g, var(--color-status-neutral));
+  opacity: 0.85;
+}
+
+.cal-tile.cal-gtile {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: color-mix(in srgb, var(--color-text-primary) 5%, transparent);
+  color: var(--muted);
+  font-weight: 400;
+}
+.cal-gtile .cal-gdot {
+  width: 6px;
+  height: 6px;
+}
+.cal-gtile .cal-tile-upid {
+  min-width: 0;
+}
+
+.cal-gbands {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* Bleeds to the cell's edges, so a band carrying on reads as one strip. */
+  margin: 0 -4px 1px;
+}
+.cal-gband {
+  display: block;
+  min-width: 0;
+  height: 13px;
+  padding: 0 5px;
+  background: color-mix(in srgb, var(--g, var(--color-status-neutral)) 24%, transparent);
+  border: 0 solid var(--g, var(--color-status-neutral));
+  border-left-width: 2px;
+  color: var(--color-text-primary);
+  font-size: 9px;
+  line-height: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.cal-gband.is-cont-l {
+  border-left-width: 0;
+}
+.cal-gband.is-cont-r {
+  border-right-width: 0;
+}
+.cal-gband:hover,
+.cal-gtile:hover {
+  filter: brightness(1.25);
+}
+.cal-gband-t {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cal-gband-more {
+  padding: 0 5px;
+  font-size: 9px;
+  line-height: 12px;
+  color: var(--muted);
+}
+
+@container cal (min-width: 640px) {
+  .cal-gbands {
+    margin: 0 -6px 2px;
+  }
+  .cal-gband {
+    height: 16px;
+    padding: 0 6px;
+    font-size: 10px;
+    line-height: 16px;
+  }
+}
+
+/* In the selected date's list: read, not pressed. */
+.cal-entries + .cal-glist,
+.cal-empty + .cal-glist,
+.cal-onhire + .cal-glist {
+  margin-top: 8px;
+}
+div.cal-gentry {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--color-border-hairline);
+  cursor: default;
+}
+div.cal-gentry:hover {
+  border-color: var(--color-border-hairline);
+}
+.cal-entry-gtitle {
+  font-size: 12px;
+  color: var(--text);
+}
+.cal-gchip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 84px;
+  padding: var(--chip-pad);
+  font: var(--chip-font);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--muted);
+  border: 1px solid var(--color-border-hairline);
+  border-radius: var(--chip-radius);
+  white-space: nowrap;
+}
+
+/* ── Calendars ▾ and its quiet line ───────────────────────────────────────── */
+
+.cal-tools:empty {
+  display: none;
+}
+.cal-tools {
+  display: flex;
+}
+.cal-cals {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.cal-cals[aria-expanded='true'] {
+  color: var(--text);
+  background: var(--row-hover);
+}
+.cal-cals[aria-expanded='true'] .menu-caret {
+  transform: translateY(1px) rotate(-135deg);
+}
+.cal-cals .menu-caret {
+  margin: 0 0 0 2px;
+}
+.cal-cals.is-busy {
+  cursor: progress;
+}
+.cal-cals.is-busy .cal-cals-dots {
+  animation: cal-cals-pulse 1s ease-in-out infinite alternate;
+}
+@keyframes cal-cals-pulse {
+  to { opacity: 0.3; }
+}
+/* The calendars on show, overlapped like a stack of swatches. */
+.cal-cals-dots {
+  display: inline-flex;
+}
+.cal-cals-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--g, var(--color-status-neutral));
+  box-shadow: 0 0 0 1.5px var(--color-bg-page);
+}
+.cal-cals-dot + .cal-cals-dot {
+  margin-left: -3px;
+}
+
+/* Phone first: the month and arrows on the first row; Go to date and
+   Calendars ▾ share the second. */
+.cal-bar:has(.cal-tools:not(:empty)) .cal-goto {
+  flex: 1 1 0;
+  min-width: 160px;
+  order: 3;
+}
+.cal-tools {
+  order: 4;
+}
+@container cal (min-width: 640px) {
+  .cal-bar:has(.cal-tools:not(:empty)) .cal-goto {
+    flex: 0 1 auto;
+    min-width: 0;
+    order: 1;
+  }
+  .cal-tools {
+    order: 3;
+  }
+}
+
+.cal-gnote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: -4px 0 10px;
+  padding-left: 10px;
+  border-left: 2px solid var(--color-status-warning);
+  font-size: var(--font-size-sm);
+  line-height: 18px;
+  color: var(--muted);
+}
+.cal-gnote[hidden] {
+  display: none;
+}
+.cal-gnote-act {
+  padding: 0;
+  min-height: 0;
+  background: none;
+  border: none;
+  color: var(--accent-text);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.cal-gnote-act:hover {
+  color: var(--text);
+}
+@media (max-width: 767px), (not (any-pointer: fine)) {
+  .cal-gnote-act {
+    min-height: 44px;
+  }
+}
+
+/* ── The read-only pop-up ─────────────────────────────────────────────────── */
+
+.cal-gpop {
+  position: absolute;
+  z-index: 9300;
+  width: min(300px, calc(100vw - 16px));
+  padding: var(--space-5) 44px var(--space-5) var(--space-5);
+  background: var(--menu-bg);
+  color: var(--color-text-primary);
+  border-radius: var(--menu-radius);
+  box-shadow: var(--menu-shadow);
+  animation: menu-fade-in var(--duration-normal) var(--easing-out);
+}
+.cal-gpop-from {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+  font: var(--eyebrow-font);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.cal-gpop-from span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cal-gpop-title {
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.cal-gpop-when {
+  margin-top: 4px;
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.cal-gpop-note {
+  margin-top: 10px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+}
+.cal-gpop-x {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 36px;
+  height: 36px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.cal-gpop-x:hover {
+  color: var(--text);
+  background: var(--row-hover);
+}
+.cal-gpop-x:focus-visible {
+  outline: 2px solid transparent;
+  box-shadow: var(--shadow-focus);
+}
+@media (max-width: 767px), (not (any-pointer: fine)) {
+  .cal-gpop-x {
+    width: 44px;
+    height: 44px;
+    top: 2px;
+    right: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cal-body.slide-next,
+  .cal-body.slide-prev {
+    animation: none;
+  }
+  .cal-cell,
+  .cal-btn,
+  .cal-entry,
+  .cal-goto-inp {
+    transition: none;
+  }
+  .cal-gpop,
+  .cal-cals.is-busy .cal-cals-dots {
+    animation: none;
+  }
+}

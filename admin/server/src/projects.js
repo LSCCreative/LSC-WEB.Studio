@@ -1,0 +1,250 @@
+'use strict';
+
+const { newId } = require('./db');
+
+/**
+ * Projects (v13, production-booking task 15; D31, D60, D61). One project per
+ * UPID, holding its estimate (or, for a pair the fix-up kept together, its
+ * estimates) and, from task 19, its invoices.
+ *
+ * THE UPID LIVES ON THE PROJECT. `estimates.upid` is a copy, kept in step on
+ * every write for the PDF and anything older that reads it. The one time they
+ * differ is a project still waiting for the fix-up screen (needs_upid): its
+ * upid is NULL, and each estimate keeps the old shared or blank UPID that the
+ * fix-up groups it by.
+ *
+ * UNIQUE, ignoring case and the spaces round it (D60). A UPID is taken when
+ * another project holds it, or when an estimate in another project still
+ * carries it while waiting for the fix-up — so a typed UPID can't collide with
+ * a group the owner hasn't sorted yet either.
+ */
+
+const normUpid = (value) => String(value == null ? '' : value).trim();
+
+/**
+ * The project already using `upid`, other than `own` (a project id, or a list
+ * of them: the fix-up screen settles a whole group at once, and the group's
+ * own estimates still carry the UPID it is sorting out); or null.
+ */
+function upidTakenBy(db, upid, own) {
+  if (!upid) return null;
+  const owned = JSON.stringify((Array.isArray(own) ? own : [own]).filter(Boolean));
+  const row = db.prepare(`
+    SELECT id AS project_id FROM projects
+     WHERE upid = @upid AND id NOT IN (SELECT value FROM json_each(@owned))
+     UNION ALL
+    SELECT project_id FROM estimates
+     WHERE lower(trim(upid)) = lower(@upid) AND project_id IS NOT NULL
+       AND project_id NOT IN (SELECT value FROM json_each(@owned))
+     LIMIT 1
+  `).get({ upid, owned });
+  return row ? row.project_id : null;
+}
+
+/**
+ * The 409 for a UPID another project uses. Names that project's estimate, so
+ * the owner can tell which job already has it.
+ */
+function upidTakenReply(db, upid, projectId) {
+  const holder = db.prepare(`
+    SELECT name FROM estimates WHERE project_id = ? ORDER BY created_at, id LIMIT 1
+  `).get(projectId);
+  const name = holder && holder.name ? holder.name.trim() : '';
+  return {
+    status: 409,
+    body: {
+      error: 'upid_taken',
+      upid,
+      projectId,
+      projectName: name,
+      message: `${upid} is already used by ${name ? `“${name}”` : 'another project'}. ` +
+        'Each project needs its own UPID.',
+    },
+  };
+}
+
+/**
+ * THE UPID LOCK (D36, task 19). Invoice numbers carry the UPID
+ * (`INV-<UPID>-D` …) and are fixed when the invoice is made, so from the first
+ * invoice the app makes for a project its UPID can't change. A void invoice
+ * still counts: it keeps its printed number. A made-the-old-way invoice
+ * doesn't: it was numbered by hand, before the UPID meant anything to it.
+ */
+function upidLocked(db, projectId) {
+  if (!projectId) return false;
+  return Boolean(db.prepare(`
+    SELECT 1 FROM invoices WHERE project_id = ? AND kind <> 'legacy' LIMIT 1
+  `).get(projectId));
+}
+
+function upidLockedReply(upid) {
+  return {
+    status: 409,
+    body: {
+      error: 'upid_locked',
+      upid,
+      message: `The UPID is fixed at ${upid}: this project’s invoice numbers carry it.`,
+    },
+  };
+}
+
+/**
+ * The project an estimate write lands in, and the UPID to store on the
+ * estimate; or a refusal. `existing` is the estimate row (null for a new one).
+ *
+ * - A new estimate gets a new project, with the UPID if one was typed.
+ * - A project waiting for the fix-up that is saved with the UPID it already
+ *   carries stays waiting: saving the editor is not "keep together", and the
+ *   UPID is still shared. Any other UPID, if free, settles it.
+ * - A UPID another project uses is refused, `upid_taken`.
+ * - Once the project has an invoice the app made, any change is refused,
+ *   `upid_locked` (D36).
+ *
+ * @returns {{status:number, body:object}|{project:object|null, upid:string}}
+ */
+function planProjectWrite(db, body, existing) {
+  const upid = normUpid(body.upid);
+  const project = existing && existing.project_id
+    ? db.prepare('SELECT * FROM projects WHERE id = ?').get(existing.project_id)
+    : null;
+  if (project && project.needs_upid === 1 && upid.toLowerCase() === normUpid(existing.upid).toLowerCase()) {
+    return { project, upid: existing.upid, unchanged: true };
+  }
+  if (project && upid !== normUpid(project.upid) && upidLocked(db, project.id)) {
+    return upidLockedReply(project.upid);
+  }
+  const taken = upidTakenBy(db, upid, project && project.id);
+  if (taken) return upidTakenReply(db, upid, taken);
+  return { project, upid };
+}
+
+/**
+ * Applies a plan from planProjectWrite, inside the write's transaction.
+ * Returns the project id the estimate belongs to.
+ */
+function applyProjectWrite(db, plan, clientId, now) {
+  if (!plan.project) {
+    const id = newId('prj');
+    db.prepare(`
+      INSERT INTO projects (id, upid, client_id, needs_upid, created_at, updated_at)
+      VALUES (?, ?, ?, 0, ?, ?)
+    `).run(id, plan.upid || null, clientId || null, now, now);
+    return id;
+  }
+  const p = plan.project;
+  if (plan.unchanged) {
+    db.prepare('UPDATE projects SET client_id = ?, updated_at = ? WHERE id = ?').run(clientId || null, now, p.id);
+    return p.id;
+  }
+  // Clearing the UPID of a project still waiting for the fix-up leaves it
+  // waiting; any real UPID settles it.
+  db.prepare('UPDATE projects SET upid = ?, needs_upid = ?, client_id = ?, updated_at = ? WHERE id = ?')
+    .run(plan.upid || null, plan.upid ? 0 : p.needs_upid, clientId || null, now, p.id);
+  db.prepare('UPDATE estimates SET upid = ? WHERE project_id = ? AND upid <> ?').run(plan.upid, p.id, plan.upid);
+  return p.id;
+}
+
+/** After an estimate is deleted: a project with no estimate left goes too. */
+function dropEmptyProject(db, projectId) {
+  if (!projectId) return;
+  const left = db.prepare('SELECT COUNT(*) AS n FROM estimates WHERE project_id = ?').get(projectId).n;
+  if (left === 0) db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
+}
+
+/**
+ * WHERE A PROJECT IS (task 17): its stage, the filter chips' key, and the
+ * step inside it, which the web's one stage-line function (web/js/project-card.js
+ * stageLine) words. The server decides where a project is, so the list's
+ * filter, its counts and every screen that shows a stage agree; the web says
+ * it, because "valid until", "due" and "overdue" are read against the
+ * browser's today, as every other date in the app is.
+ *
+ * Stages, in the order a job moves through them (IA, Content Hierarchy):
+ * draft · sent · accepted · invoiced · paid · declined.
+ *
+ * - DECLINED wins: the owner said no-go (D22). Reopen clears declined_at.
+ * - With invoices (void ones ignored), the first unpaid one in the order
+ *   deposit, final, single, legacy is where the job is. All paid is PAID.
+ *   A deposit or single invoice not yet sent leaves the job ACCEPTED; once
+ *   one has gone out, or the deposit is paid, it is INVOICED.
+ * - A LEGACY invoice (v13, D62) was made the old way and nothing recorded
+ *   whether it went out: no screen ever set a status. It reads as invoiced
+ *   until it is marked paid, never as "not sent".
+ * - With none: accepted (the project's accepted_at, or an accepted estimate),
+ *   then sent (an estimate marked sent, task 18), then draft.
+ *
+ * `sent` is the latest send's record, when there is one: { at, version,
+ * validUntil }. Task 18's Mark sent writes it as an `activity` row of kind
+ * `sent`; Stage E's versions take over.
+ *
+ * @returns {{stage:string, step:string, at?:string|null, number?:string|null,
+ *   dueAt?:string|null, version?:number|null, validUntil?:string|null}}
+ */
+const STAGES = ['draft', 'sent', 'accepted', 'invoiced', 'paid', 'declined'];
+const INVOICE_ORDER = ['deposit', 'final', 'single', 'legacy'];
+
+function projectStage(project, estimates, invoices, sent) {
+  if (project.declined_at) return { stage: 'declined', step: 'declined', at: project.declined_at };
+
+  const live = (invoices || []).filter((i) => i.status !== 'void');
+  if (live.length) {
+    const unpaid = live
+      .filter((i) => i.status !== 'paid')
+      .sort((a, b) => INVOICE_ORDER.indexOf(a.kind) - INVOICE_ORDER.indexOf(b.kind));
+    if (!unpaid.length) {
+      const paidAt = live.map((i) => i.paid_at).filter(Boolean).sort().pop() || null;
+      return { stage: 'paid', step: 'paid', at: paidAt };
+    }
+    const now = unpaid[0];
+    const number = now.number || null;
+    if (now.kind === 'legacy') return { stage: 'invoiced', step: 'legacy', number };
+    // A final waits on a paid deposit: before that, the deposit is first.
+    const afterDeposit = now.kind === 'final' && live.some((i) => i.kind === 'deposit' && i.status === 'paid');
+    if (now.status === 'draft') {
+      return afterDeposit
+        ? { stage: 'invoiced', step: 'deposit_paid' }
+        : { stage: 'accepted', step: now.kind + '_draft' };
+    }
+    if (now.status === 'scheduled') {
+      return { stage: afterDeposit ? 'invoiced' : 'accepted', step: now.kind + '_scheduled' };
+    }
+    return { stage: 'invoiced', step: now.kind + '_sent', number, dueAt: now.due_at || null };
+  }
+
+  const statuses = (estimates || []).map((e) => e.status);
+  if (project.accepted_at || statuses.includes('accepted')) {
+    return { stage: 'accepted', step: 'accepted', at: project.accepted_at || null };
+  }
+  if (statuses.includes('sent')) {
+    return {
+      stage: 'sent',
+      step: 'sent',
+      at: (sent && sent.at) || null,
+      version: (sent && Number.isInteger(sent.version) && sent.version) || null,
+      validUntil: (sent && sent.validUntil) || null,
+    };
+  }
+  return { stage: 'draft', step: 'draft' };
+}
+
+/**
+ * When a paid or declined project got there, for the list's Active view,
+ * which leaves out ones settled more than 90 days ago (IA, Content Growth
+ * Plan). A legacy invoice was never given a paid date, so its last change
+ * stands in; null for any other stage.
+ */
+function settledAt(project, invoices, stage) {
+  if (stage === 'declined') return project.declined_at;
+  if (stage !== 'paid') return null;
+  return (invoices || [])
+    .filter((i) => i.status === 'paid')
+    .map((i) => i.paid_at || i.updated_at)
+    .filter(Boolean)
+    .sort()
+    .pop() || project.updated_at;
+}
+
+module.exports = {
+  normUpid, upidTakenBy, upidTakenReply, upidLocked, planProjectWrite, applyProjectWrite, dropEmptyProject,
+  STAGES, projectStage, settledAt,
+};

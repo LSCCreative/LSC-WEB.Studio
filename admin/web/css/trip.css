@@ -1,0 +1,1072 @@
+/* The travel view (js/views/trip-planner.js) and the day menu's Define travel
+   foot (Project build archive/tracks/trip-planner/, T8; task 2).
+
+   No new visual language (brief, Aesthetic Direction): the panel system
+   holding a map. tokens.css names only. Terracotta is kept off the shell:
+   it marks the pins (task 3) and the route line (task 4), and the one
+   action a pending pin asks for, Use this location.
+
+   Written phone first: header, map, stops, stacked. From 768px the map and
+   the stops sit side by side; from 1100px at 55/45, with the map sticky
+   while the stops scroll past it. */
+
+/* ── The booking panel's body while it shows the view ─────────────────────── */
+
+.booking-body.is-trip {
+  grid-template-columns: minmax(0, 1fr);
+}
+.booking-body.is-trip > .booking-cal-col,
+.booking-body.is-trip > .booking-days-col,
+.booking-body.is-trip > .booking-rentals-slot {
+  display: none;
+}
+
+/* ── The view ──────────────────────────────────────────────────────────────── */
+
+.trip-view {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'head'
+    'map'
+    'stops';
+  gap: var(--space-6);
+  /* Opened with its head just under the page header (52px). */
+  scroll-margin-top: 64px;
+  animation: trip-in var(--duration-fast) var(--easing-out);
+}
+@keyframes trip-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.trip-head {
+  grid-area: head;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--color-border-hairline);
+}
+/* The label's edge lines up with the content below it, not the button's. */
+.trip-back {
+  flex: none;
+  margin-left: calc(-1 * var(--space-4));
+}
+.trip-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-4);
+  min-width: 0;
+  margin: 0;
+  font: var(--font-weight-bold) var(--font-size-lg) / var(--line-height-tight) var(--font-family-display);
+  letter-spacing: var(--letter-spacing-tight);
+  color: var(--color-text-primary);
+}
+.trip-title:focus {
+  outline: none;
+}
+.trip-title:focus-visible {
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-focus);
+}
+.trip-kicker {
+  font: var(--eyebrow-font);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+/* The map: an inset well until Google has drawn into it. */
+.trip-map-pane {
+  grid-area: map;
+  min-width: 0;
+}
+.trip-map {
+  position: relative;
+  height: 45vh;
+  min-height: 260px;
+  max-height: 440px;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-inset);
+  box-shadow: inset 0 0 0 1px var(--color-border-subtle);
+}
+.trip-map-canvas {
+  position: absolute;
+  inset: 0;
+}
+/* Skip the map: out of sight until it has focus, then over the map's corner.
+   Clipped rather than moved, so a focus inside the map's overflow never scrolls
+   it. Only while there is a map to skip. */
+.trip-skip {
+  position: absolute;
+  top: var(--space-4);
+  left: var(--space-4);
+  z-index: 4;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.trip-skip:focus,
+.trip-skip:focus-visible {
+  width: auto;
+  height: auto;
+  padding: 0 var(--space-5);
+  overflow: visible;
+  clip-path: none;
+  background: var(--color-bg-float);
+}
+.trip-map:not(.is-ready) .trip-skip {
+  display: none;
+}
+.trip-map-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+  padding: var(--space-7);
+  background: var(--color-bg-inset);
+  text-align: center;
+}
+.trip-map-state[hidden],
+.trip-map-retry[hidden] {
+  display: none;
+}
+.trip-map-msg {
+  max-width: 44ch;
+  margin: 0;
+  font: var(--font-weight-normal) var(--font-size-sm) / var(--line-height-normal) var(--font-family-body);
+  color: var(--color-text-secondary);
+}
+
+/* The stops. */
+.trip-stops {
+  grid-area: stops;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-5);
+  min-width: 0;
+}
+.trip-stops-h {
+  margin: 0;
+  font: var(--eyebrow-font);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+.trip-empty {
+  max-width: 46ch;
+  margin: 0;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+}
+
+/* ── Placing stops (task 3) ───────────────────────────────────────────────── */
+
+/* The search bar, above the map while a cell waits for a location. */
+.trip-search {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+.trip-search[hidden] {
+  display: none;
+}
+.trip-search-label {
+  font: var(--eyebrow-font);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+.trip-search-for {
+  color: var(--color-text-primary);
+}
+.trip-search-row {
+  display: flex;
+  gap: var(--space-4);
+}
+.trip-combo {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.trip-q {
+  width: 100%;
+  min-height: var(--control-h);
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--input-border);
+  border-radius: var(--input-radius);
+  background: var(--input-bg);
+  color: var(--color-text-primary);
+  font: var(--font-weight-normal) var(--font-size-md) / var(--line-height-snug) var(--font-family-body);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--easing-default);
+}
+.trip-q::placeholder {
+  color: var(--color-text-tertiary);
+}
+.trip-q:focus {
+  border-color: var(--color-border-focus);
+}
+.trip-q:focus-visible {
+  box-shadow: var(--shadow-focus);
+}
+.trip-q-msg {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+}
+.trip-q-msg:empty {
+  margin-top: calc(-1 * var(--space-3));
+}
+
+/* Its suggestions: over the map, like any menu. */
+.trip-suggest {
+  scroll-margin-bottom: calc(var(--ed-bar-h, 0px) + var(--space-5));
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  right: 0;
+  z-index: 5;
+  max-height: 300px;
+  margin: 0;
+  padding: var(--space-2) 0;
+  overflow-y: auto;
+  list-style: none;
+  border-radius: var(--menu-radius);
+  background: var(--color-bg-float);
+  box-shadow: var(--menu-shadow);
+}
+.trip-suggest[hidden] {
+  display: none;
+}
+.trip-suggest li {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: var(--touch-min);
+  padding: var(--space-3) var(--space-5);
+  cursor: pointer;
+}
+.trip-suggest li:hover {
+  background: var(--color-bg-hover);
+}
+.trip-suggest li[aria-selected='true'] {
+  background: var(--color-bg-selected);
+}
+.trip-suggest li.is-home {
+  border-bottom: 1px solid var(--color-border-hairline);
+}
+.trip-sug-main {
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-primary);
+}
+.trip-sug-sub {
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-secondary);
+}
+
+/* The pending pin's card, along the map's foot (the pin is centred above
+   it). It stands clear of what Google needs left visible: its logo and
+   attribution along the bottom edge, and the zoom buttons on the right. */
+.trip-pending {
+  /* scrollIntoView on a phone stops above the editor's sticky bar, not under it. */
+  scroll-margin-bottom: calc(var(--ed-bar-h, 0px) + var(--space-5));
+  position: absolute;
+  left: var(--space-5);
+  right: 60px;
+  bottom: var(--space-8);
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-5);
+  padding: var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-float);
+  box-shadow: var(--shadow-md);
+}
+.trip-pending[hidden] {
+  display: none;
+}
+.trip-pending-addr {
+  flex: 1 1 16em;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+.trip-pending-acts {
+  display: flex;
+  gap: var(--space-3);
+}
+
+/* The pins: the stop's chip as a terracotta drop, its tail on the spot.
+   White on --color-accent-primary is 4.98:1; the white rim keeps it clear
+   of any map colour under it. */
+.trip-pin {
+  position: relative;
+  padding-bottom: 7px;
+  cursor: default;
+}
+.trip-pin::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 0;
+  height: 0;
+  margin-left: -6px;
+  border: 6px solid transparent;
+  border-bottom: 0;
+  border-top: 8px solid var(--color-text-on-accent);
+}
+.trip-pin-face {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 var(--space-3);
+  border: 2px solid var(--color-text-on-accent);
+  border-radius: var(--radius-full);
+  background: var(--color-accent-primary);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-text-on-accent);
+  font: var(--font-weight-normal) var(--font-size-sm) / 1 var(--font-family-mono);
+}
+/* The pending pin: hollow until it's used. */
+.trip-pin.is-pending {
+  cursor: pointer;
+}
+.trip-pin.is-pending .trip-pin-face {
+  width: 30px;
+  min-width: 0;
+  height: 30px;
+  padding: 0;
+  border: 4px solid var(--color-accent-primary);
+  background: var(--color-text-on-accent);
+  box-shadow: 0 0 0 2px var(--color-text-on-accent), var(--shadow-sm);
+}
+.trip-pin.is-pending::after {
+  border-top-color: var(--color-accent-primary);
+}
+
+/* The stops, in order. */
+/* The list is a size container: a cell lays itself out by the column's
+   width, not the window's (the stops column is ~340px at 375 and at 800). */
+.trip-cells {
+  position: relative; /* sortable.js's drop line is placed inside it */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-self: stretch;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  container: trip-stops / inline-size;
+}
+.trip-cells[hidden] {
+  display: none;
+}
+/* Narrow (the default): the chip and the actions on one row, the address
+   full width under them, then a destination's details. Wide: one row, as
+   task 3 drew it. The handle's column is there for every cell, empty on
+   START and RETURN, so the chips line up. */
+.trip-cell {
+  display: grid;
+  grid-template-columns: 24px auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'handle chip . acts'
+    '. body body body'
+    '. more more more';
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  min-height: 52px;
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-inset);
+}
+.trip-cell > .trip-handle,
+.trip-cell > .trip-handle-none {
+  grid-area: handle;
+}
+.trip-cell > .trip-chip {
+  grid-area: chip;
+}
+.trip-cell > .trip-cell-body {
+  grid-area: body;
+}
+.trip-cell > .trip-cell-acts {
+  grid-area: acts;
+  justify-self: end;
+}
+.trip-cell > .trip-cell-more-area {
+  grid-area: more;
+}
+@container trip-stops (min-width: 440px) {
+  .trip-cell {
+    grid-template-columns: 24px 64px minmax(0, 1fr) auto;
+    grid-template-areas:
+      'handle chip body acts'
+      '. more more more';
+  }
+}
+/* Not placed yet: an outline to fill. Waiting: the outline the search is filling. */
+.trip-cell.is-empty {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--color-border-subtle);
+}
+.trip-cell.is-waiting {
+  box-shadow: inset 0 0 0 1px var(--color-border-strong);
+}
+.trip-chip {
+  justify-self: start;
+  padding: var(--chip-pad);
+  border-radius: var(--chip-radius);
+  background: var(--color-bg-float);
+  color: var(--color-text-secondary);
+  font: var(--chip-font);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+}
+.trip-cell.is-empty .trip-chip {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--color-border-subtle);
+}
+.trip-cell-body {
+  min-width: 0;
+}
+.trip-addr {
+  margin: 0;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+.trip-cell.is-empty .trip-addr {
+  color: var(--color-text-secondary);
+}
+.trip-cell-note {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-secondary);
+}
+.trip-cell-acts {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.trip-x {
+  min-width: var(--control-h-sm);
+  padding-left: 0;
+  padding-right: 0;
+  font-size: var(--font-size-lg);
+  line-height: 1;
+}
+
+/* ── Reordering, details and time on location (task 5) ─────────────────── */
+
+/* The drag handle: two columns of dots (settings.css .clause-grip), a 44px
+   target on a phone (it overhangs its 24px column; 24 × 32 from 768),
+   touch-action none so a finger on it drags rather than scrolls. */
+.trip-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  width: var(--touch-min);
+  height: var(--touch-min);
+  margin: 0 -10px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: grab;
+  touch-action: none;
+}
+.trip-handle:hover {
+  color: var(--color-text-primary);
+}
+.trip-handle:focus-visible {
+  outline: 2px solid transparent;
+  box-shadow: var(--shadow-focus);
+}
+.trip-grip {
+  width: 8px;
+  height: 14px;
+  background: radial-gradient(circle, currentColor 1.25px, transparent 1.5px) 0 0 / 4px 5px;
+}
+.trip-cell.is-dragging {
+  position: relative;
+  z-index: 2;
+  background: var(--color-bg-float);
+  box-shadow: var(--shadow-lg);
+  cursor: grabbing;
+}
+.trip-cell-more,
+.trip-detail-more {
+  min-width: var(--control-h-sm);
+  padding-left: 0;
+  padding-right: 0;
+  font-size: var(--font-size-lg);
+  line-height: 1;
+}
+
+/* Under a placed destination: its detail blocks, then Time on location and + Add details. */
+.trip-cell-more-area {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-top: var(--space-2);
+}
+.trip-detail {
+  border-top: 1px solid var(--color-border-hairline);
+}
+.trip-detail-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* The block's title row is its disclosure: closed, it shows the text's first line. */
+.trip-detail-toggle {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: var(--control-h-sm);
+  padding: var(--space-2) 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-secondary);
+  font: var(--font-weight-normal) var(--font-size-sm) / var(--line-height-snug) var(--font-family-body);
+  text-align: left;
+  cursor: pointer;
+}
+.trip-detail-toggle:hover .trip-detail-title {
+  color: var(--color-text-primary);
+}
+.trip-detail-toggle:focus-visible {
+  outline: 2px solid transparent;
+  box-shadow: var(--shadow-focus);
+}
+.trip-detail-chev {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin: 0 var(--space-1);
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform var(--duration-fast) var(--easing-default);
+}
+.trip-detail.is-open .trip-detail-chev {
+  transform: rotate(45deg);
+}
+.trip-detail-title {
+  flex: none;
+}
+.trip-detail-excerpt {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trip-detail-excerpt i {
+  font-style: normal;
+  color: var(--color-text-tertiary);
+}
+.trip-detail-body {
+  padding: 0 0 var(--space-3);
+}
+.trip-detail-body[hidden] {
+  display: none;
+}
+.trip-detail-text,
+.trip-onsite-in {
+  width: 100%;
+  border: 1px solid var(--input-border);
+  border-radius: var(--input-radius);
+  background: var(--input-bg);
+  color: var(--color-text-primary);
+  font: var(--font-weight-normal) var(--font-size-md) / var(--line-height-normal) var(--font-family-body);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--easing-default);
+}
+.trip-detail-text {
+  display: block;
+  min-height: 72px;
+  padding: var(--space-3) var(--space-4);
+  resize: vertical;
+}
+.trip-detail-text:focus,
+.trip-onsite-in:focus {
+  border-color: var(--color-border-focus);
+}
+.trip-detail-text:focus-visible,
+.trip-onsite-in:focus-visible {
+  box-shadow: var(--shadow-focus);
+}
+.trip-cell-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border-hairline);
+}
+.trip-detail + .trip-cell-foot {
+  border-top: 0;
+}
+.trip-onsite {
+  display: grid;
+  grid-template-columns: auto 7.5em;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+.trip-onsite-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+/* A figure: mono, like the legs it moves. */
+.trip-onsite-in {
+  min-height: var(--control-h-sm);
+  padding: var(--space-1) var(--space-3);
+  font-family: var(--font-family-mono);
+}
+.trip-onsite-in::placeholder {
+  color: var(--color-text-tertiary);
+}
+.trip-onsite-in[aria-invalid='true'] {
+  border-color: var(--color-status-error);
+}
+.trip-onsite-msg {
+  grid-column: 1 / -1;
+  max-width: 40ch;
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+  color: var(--color-status-error-text);
+}
+.trip-onsite-msg:empty {
+  display: none;
+}
+.trip-add-details {
+  margin-right: calc(-1 * var(--space-3));
+}
+
+/* + Add start location, + Destination, Return trip: translucent ghosts.
+   The dashed edge (--color-border-strong) holds 3:1 on the panel, and the
+   label is secondary text (well over 4.5:1). */
+.trip-adds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+.trip-adds[hidden] {
+  display: none;
+}
+.btn.trip-add {
+  border: 1px dashed var(--color-border-strong);
+  background: color-mix(in srgb, var(--color-bg-inset) 45%, transparent);
+  box-shadow: none;
+}
+.trip-cap {
+  max-width: 46ch;
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.trip-cap[hidden],
+.trip-empty[hidden] {
+  display: none;
+}
+
+/* ── The route (task 4) ─────────────────────────────────────────────────────
+   Figures are set like figures (brief, Aesthetic Direction): mono for the
+   leg lines, the chip and the lines' quantities, Delight for the totals. */
+
+/* The view's ⋯, at the head's far end. */
+.trip-more {
+  flex: none;
+  margin-left: auto;
+  margin-right: calc(-1 * var(--space-3));
+  font-size: var(--font-size-lg);
+  line-height: 1;
+}
+.trip-more[hidden] {
+  display: none;
+}
+
+/* Destinations, and Show trip details beside it. */
+.trip-stops-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+  align-self: stretch;
+  min-height: var(--control-h-sm);
+}
+.trip-details-btn {
+  gap: var(--space-3);
+  margin-right: calc(-1 * var(--space-3));
+}
+.trip-details-btn[hidden] {
+  display: none;
+}
+/* A small switch: its knob moves right and the track fills when pressed.
+   The track's edge is --color-border-strong (3:1 on the panel). */
+.trip-switch {
+  position: relative;
+  flex: none;
+  width: 26px;
+  height: 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  transition: background-color var(--duration-fast) var(--easing-default);
+}
+.trip-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-text-secondary);
+  transition: transform var(--duration-fast) var(--easing-default);
+}
+.trip-details-btn[aria-pressed='true'] .trip-switch {
+  border-color: var(--color-text-primary);
+  background: var(--color-text-primary);
+}
+.trip-details-btn[aria-pressed='true'] .trip-switch::after {
+  background: var(--color-bg-panel);
+  transform: translateX(12px);
+}
+
+/* A leg, between the cells it joins: "— 42 km · 48 min —", then its clock. */
+.trip-leg {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-1) var(--space-5);
+  padding: var(--space-1) 0;
+  font: var(--font-weight-normal) var(--font-size-sm) / var(--line-height-snug) var(--font-family-mono);
+  color: var(--color-text-secondary);
+  text-align: center;
+  transition: opacity var(--duration-fast) var(--easing-default);
+}
+.trip-leg-clock {
+  color: var(--color-text-tertiary);
+}
+.trip-leg.is-stale,
+.trip-figures.is-stale,
+.trip-line.is-stale {
+  opacity: 0.45;
+}
+
+/* Trip totals: the outcome, under the stops. */
+.trip-totals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  align-self: stretch;
+  margin-top: var(--space-3);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border-hairline);
+}
+.trip-totals[hidden],
+.trip-route-msg[hidden],
+.trip-figures[hidden],
+.trip-traffic[hidden],
+.trip-lines[hidden],
+.trip-also[hidden],
+.trip-recalc[hidden] {
+  display: none;
+}
+.trip-stops-h:focus {
+  outline: none;
+}
+.trip-stops-h:focus-visible {
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-focus);
+}
+/* Working out / out of date / failed: one line and, where it helps, its button. */
+.trip-route-msg {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-5);
+}
+.trip-route-text {
+  flex: 1 1 18em;
+  margin: 0;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-primary);
+}
+.trip-route-msg.is-error .trip-route-text {
+  color: var(--color-status-error-text);
+}
+.trip-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-8);
+  margin: 0;
+  transition: opacity var(--duration-fast) var(--easing-default);
+}
+.trip-figure dt {
+  font: var(--eyebrow-font);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+.trip-figure dd {
+  margin: var(--space-2) 0 0;
+  font: var(--font-weight-bold) var(--font-size-xl) / var(--line-height-tight) var(--font-family-display);
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.trip-traffic,
+.trip-also {
+  max-width: 52ch;
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+}
+.trip-also {
+  color: var(--color-status-warning-text);
+}
+/* The lines the trip bills: name, quantity, price, as the editor prices them. */
+.trip-lines {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--color-border-hairline);
+}
+.trip-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: var(--space-5);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border-hairline);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-primary);
+}
+.trip-line-qty {
+  font: var(--font-weight-normal) var(--font-size-sm) / 1 var(--font-family-mono);
+  color: var(--color-text-secondary);
+  text-align: right;
+}
+.trip-line-bill {
+  min-width: 6em;
+  font-family: var(--font-figures);
+  text-align: right;
+}
+/* An unlinked line (task 6): under its figures, why the trip doesn't set them. */
+.trip-line-note {
+  grid-column: 1 / -1;
+  margin-top: calc(-1 * var(--space-2));
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.trip-line.is-missing {
+  display: block;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+}
+
+/* ── A travel line the trip writes (the editor's Travel rows, T4) ─────────── */
+.from-trip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-2);
+}
+.from-trip-chip {
+  padding: var(--chip-pad);
+  border-radius: var(--chip-radius);
+  background: var(--color-bg-inset); /* filled like a chip, no ring (task 18) */
+  color: var(--color-text-secondary);
+  font: var(--chip-font);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+}
+.from-trip-edit {
+  margin-left: calc(-1 * var(--space-2));
+}
+/* Its quantity reads as a figure, not a field (the #f-upid[readonly] look). */
+.gt-row[data-from-trip] .qty-inp {
+  background: transparent;
+  border-style: dashed;
+  cursor: default;
+}
+.gt-row[data-from-trip] .qty-inp:focus {
+  border-color: var(--input-border);
+}
+
+@media (min-width: 768px) {
+  .trip-view {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      'head head'
+      'map stops';
+    column-gap: var(--space-7);
+    align-items: start;
+  }
+  .trip-map {
+    height: clamp(360px, 55vh, 520px);
+    max-height: none;
+  }
+  .trip-stops {
+    align-items: flex-start;
+  }
+  .trip-q,
+  .trip-detail-text,
+  .trip-onsite-in {
+    font-size: var(--font-size-base);
+  }
+  .trip-handle {
+    width: 24px;
+    height: 32px;
+    margin: 0;
+  }
+}
+
+
+@media (min-width: 1100px) {
+  .trip-view {
+    grid-template-columns: minmax(0, 11fr) minmax(0, 9fr);
+  }
+  /* Sticky under the page header (52px) and clear of the editor's bar. */
+  .trip-map-pane {
+    position: sticky;
+    top: 64px;
+  }
+  /* Whole on screen as the view opens (its head under the page header,
+     ~76px of head and gap above the map, the bar below), and so whole while
+     it sticks. */
+  .trip-map {
+    height: clamp(360px, calc(100vh - 64px - 76px - var(--ed-bar-h, 88px) - var(--space-5)), 620px);
+  }
+  /* The search bar takes its height (~90px) from the map, so both stay on screen. */
+  .trip-map-pane:has(> .trip-search:not([hidden])) .trip-map {
+    height: clamp(300px, calc(100vh - 64px - 76px - var(--ed-bar-h, 88px) - var(--space-5) - 90px), 620px);
+  }
+}
+
+/* ── Around the day (task 6) ────────────────────────────────────────────────── */
+
+/* The day card's trip: one line under the fields, opening the travel view. */
+.day-trip {
+  justify-content: flex-start;
+  gap: var(--space-3);
+  max-width: 100%;
+  margin-top: var(--space-3);
+  margin-left: calc(-1 * var(--space-3));
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  letter-spacing: 0;
+  text-align: left;
+  white-space: normal;
+}
+.day-trip[hidden] {
+  display: none;
+}
+.day-trip-go {
+  color: var(--color-text-secondary);
+}
+
+/* A linked line's ⋯ (Unlink from trip), and an ordinary line's Link to trip. */
+.from-trip-more {
+  min-width: var(--control-h-sm);
+  padding-left: 0;
+  padding-right: 0;
+  font-size: var(--font-size-lg);
+  line-height: 1;
+}
+.btn.trip-link {
+  margin-top: var(--space-2);
+  margin-left: calc(-1 * var(--space-3));
+}
+.btn.trip-link[hidden] {
+  display: none;
+}
+
+/* Unlink and Clear trip's dialog. Three buttons wrap on a phone, Cancel first. */
+.trip-dialog {
+  max-width: 460px;
+}
+.tripd-desc {
+  margin: var(--space-4) 0 0;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+}
+.trip-dialog .modal-actions {
+  flex-wrap: wrap;
+}
+
+/* ── The day menu's foot: Define travel (T8) ─────────────────────────────────
+   Fixed at the menu's foot: in the column it sticks above the editor's bar
+   (--ed-bar-h, set by the editor) while the menu is taller than the screen;
+   in the phone sheet, at the sheet's bottom edge. Out to the menu's edges. */
+.dm-foot {
+  position: sticky;
+  bottom: var(--ed-bar-h, 0px);
+  z-index: 1;
+  margin: var(--space-4) -14px -12px;
+  padding: var(--space-4) 14px 12px;
+  border-top: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-panel);
+}
+.dm-travel {
+  justify-content: space-between;
+  width: 100%;
+}
+.dm-travel-go {
+  color: var(--color-text-secondary);
+}
+.day-menu.is-sheet .dm-foot {
+  bottom: 0;
+  margin: var(--space-4) 0 0;
+  padding: var(--space-4) 0 0;
+  background: var(--surface);
+}

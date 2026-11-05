@@ -1,0 +1,226 @@
+'use strict';
+
+const path = require('path');
+const express = require('express');
+const { config, appUrlOf } = require('./config');
+const { registerAuthRoutes, requireAuth } = require('./auth');
+const { preWriteBackup } = require('./backup');
+const { registerEstimateRoutes } = require('./routes/estimates');
+const { registerClientRoutes } = require('./routes/clients');
+const { registerPricingRoutes } = require('./routes/pricing');
+const { registerSettingsRoutes } = require('./routes/settings');
+const { registerPdfRoutes } = require('./routes/pdf');
+const { registerOverheadRoutes } = require('./routes/overhead');
+const { registerGoalsRoutes } = require('./routes/goals');
+const { registerDepreciationRoutes } = require('./routes/depreciation');
+const { registerTaxYearRoutes } = require('./routes/tax-years');
+const { registerCalendarRoutes } = require('./routes/calendar');
+const { registerHolidayRoutes } = require('./routes/holidays');
+const { registerSetupRoutes } = require('./routes/setup');
+const { registerProjectRoutes } = require('./routes/projects');
+const { registerInvoiceRoutes } = require('./routes/invoices');
+const { registerPublicRoutes } = require('./routes/public');
+const { registerEmailRoutes, registerSendRoutes } = require('./routes/email');
+const { registerRecoveryRoutes, registerAccountRoutes } = require('./routes/account');
+const { registerGoogleOAuthRoutes, registerGoogleRoutes } = require('./routes/google');
+const { createGoogleSync } = require('./google-sync');
+const { createMailer } = require('./mail');
+const { createOutbox } = require('./sends');
+const { createHnry } = require('./hnry');
+const { createHnryPusher } = require('./hnry-push');
+
+const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+
+/**
+ * The UI is served from GitHub Pages, a different origin than this API, so the
+ * browser needs an explicit CORS allow-list with credentials — otherwise the
+ * session cookie never gets sent. `CORS_ORIGINS` is empty by default (same-
+ * origin only); set it once the Pages URL is known.
+ */
+function corsMiddleware(req, res, next) {
+  // The client's routes answer CORS themselves, without credentials
+  // (routes/public.js): a client page must never be offered the session.
+  if (req.path === '/public' || req.path.startsWith('/public/')) return next();
+  const origin = req.headers.origin;
+  if (origin && config.corsOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    // The editor's autosave headers (trip-planner task 7) need a preflight pass.
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-LSC-Autosave, X-LSC-Session');
+    // Not CORS-safelisted, so without this the page can't read the PDF's filename.
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+  }
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+  next();
+}
+
+/**
+ * Builds the Express app. Takes an open database handle so tests can pass a
+ * throwaway one instead of the real billing.db. `opts.holidaySource` swaps the
+ * public-holiday fetch for a stub. `opts.mailer` swaps the email transport
+ * (mail.js createMailer) and `opts.renderPdf` the PDF renderer; the send
+ * queue's worker is `app.locals.outbox`, started by index.js.
+ */
+function createApp(db, opts = {}) {
+  const app = express();
+
+  /* One hop: the tunnel. `true` would believe the leftmost X-Forwarded-For
+     entry, which the client writes, and let a script reset its login throttle. */
+  if (config.trustProxy) app.set('trust proxy', 1);
+  app.disable('x-powered-by');
+
+  app.use(corsMiddleware);
+  app.use(express.json({ limit: '2mb' }));
+
+  // The send queue (task 28): signing queues email and kicks the worker, the
+  // owner's routes edit the queue. Built here so a test passes its own mailer.
+  // A test never reaches a real SMTP server, whatever the developer's .env holds.
+  const mailer = opts.mailer || createMailer(config.isTest ? {} : config);
+  const outbox = createOutbox(db, mailer, {
+    now: opts.now,
+    appUrl: opts.appUrl !== undefined ? opts.appUrl : config.appUrl,
+    render: opts.renderPdf,
+  });
+  app.locals.outbox = outbox;
+  app.locals.mailer = mailer;
+
+  // Hnry (hnry-invoicing): an accepted project's deposit or single invoice is
+  // pushed there as a draft, after the accept commits and in the background.
+  // A test never reaches Zapier, whatever the developer's .env holds, unless it
+  // passes its own `hnry` (a fake transport). Not set up = nothing is pushed.
+  const hnry = opts.hnry || createHnry(config.isTest ? {} : config);
+  const hnryPush = createHnryPusher(db, hnry, { now: opts.now });
+  app.locals.hnry = hnry;
+  app.locals.hnryPush = hnryPush;
+
+  // ── /health — the only route besides /login that never requires a session.
+  // Deliberately says nothing about the data; it is a liveness probe for
+  // Container Manager, not a status page.
+  app.get('/health', (_req, res) => {
+    try {
+      db.prepare('SELECT 1').get();
+      res.type('text/plain').status(200).send('ok');
+    } catch (err) {
+      res.type('text/plain').status(503).send('db unavailable');
+    }
+  });
+
+  // The call sheet's route images (trip-planner task 9). A test never reaches
+  // Google, whatever the developer's .env holds, unless it passes its own key
+  // and a stub fetch.
+  const maps = {
+    key: opts.mapsKey !== undefined ? opts.mapsKey : (config.isTest ? '' : config.googleMapsServerKey),
+    fetchImpl: opts.mapsFetch,
+  };
+
+  // ── The client's pages (stage E): no session, by unguessable link, and
+  // outside /api so no owner route can be reached through them.
+  registerPublicRoutes(app, db, { ...opts, outbox, hnryPush, ownerEmail: mailer.replyTo, maps });
+
+  // ── Auth. /api/login, /api/logout, /api/session and /api/password/* handle
+  // their own session state and must be registered before the gate below.
+  registerAuthRoutes(app, db);
+  // "Forgot password" and the reset link: no session, by definition.
+  registerRecoveryRoutes(app, db, {
+    mailer,
+    appUrl: opts.appUrl !== undefined ? opts.appUrl : config.appUrl,
+  });
+
+  // The Google Calendar connection (trip-planner task 12). A test never
+  // reaches Google, whatever the developer's .env holds, unless it passes its
+  // own client and a stub fetch. Start and the callback are browser
+  // navigations that check the session themselves and answer with redirects.
+  const oauth = {
+    ...(opts.googleOAuth !== undefined ? opts.googleOAuth : (config.isTest ? {} : config.googleOAuth)),
+    fetchImpl: opts.googleFetch,
+    now: opts.googleNow,
+  };
+  const appOrigin = opts.appOrigin !== undefined ? opts.appOrigin : config.appOrigin;
+
+  // Writing bookings to the calendar (task 14). The routes that change a
+  // booking say which estimate they changed (`app.locals.googleSync.touch`);
+  // the gate below also tells it about every other write, so an event can't
+  // be left stale by a route that forgot. Nothing here fails a save.
+  const googleSync = createGoogleSync(db, {
+    oauth,
+    appUrl: appUrlOf(opts.appUrl !== undefined ? opts.appUrl : config.appUrl),
+    now: opts.googleNow,
+    debounceMs: opts.googleSyncDebounceMs,
+    enabled: opts.googleCalendarWrite !== undefined ? opts.googleCalendarWrite : config.googleCalendarWrite,
+  });
+  app.locals.googleSync = googleSync;
+  registerGoogleOAuthRoutes(app, db, { oauth, appOrigin, sync: googleSync });
+
+  // ── Everything under /api from here down requires a valid session. New API
+  // routes mount after this line and inherit the gate for free.
+  app.use('/api', requireAuth(db));
+  app.use('/api', (req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS' && !req.path.startsWith('/google/')) {
+      res.on('finish', () => {
+        if (res.statusCode < 400) googleSync.noteWrite();
+      });
+    }
+    next();
+  });
+
+  // PDF export is a POST but never writes the database. Mounted ahead of the
+  // pre-write snapshot so exporting doesn't rotate real recovery points out
+  // of the 10 kept.
+  registerPdfRoutes(app, db);
+  registerEmailRoutes(app, db, { mailer, appUrl: opts.appUrl !== undefined ? opts.appUrl : config.appUrl });
+
+  app.use('/api', preWriteBackup(db, config.backupDir));
+
+  registerAccountRoutes(app, db);
+  registerEstimateRoutes(app, db, {
+    maps,
+    render: opts.renderPdf,
+    appUrl: opts.appUrl !== undefined ? opts.appUrl : config.appUrl,
+  });
+  registerClientRoutes(app, db);
+  registerPricingRoutes(app, db);
+  registerSettingsRoutes(app, db);
+  registerOverheadRoutes(app, db);
+  registerGoalsRoutes(app, db);
+  registerDepreciationRoutes(app, db);
+  registerTaxYearRoutes(app, db);
+  registerCalendarRoutes(app, db, { oauth });
+  registerHolidayRoutes(app, db, opts);
+  registerSetupRoutes(app, db);
+  // Stage D's Mark sent routes (POST …/sent) are for the tests alone (C13):
+  // the app sends through …/send, whose checks they don't share.
+  const stageD = { markSent: opts.markSentRoutes !== undefined ? opts.markSentRoutes : config.isTest };
+  registerProjectRoutes(app, db, { ...stageD, hnryPush });
+  registerInvoiceRoutes(app, db, { ...stageD, hnryPush });
+  registerSendRoutes(app, db, { outbox });
+  registerGoogleRoutes(app, db, { oauth, sync: googleSync });
+  googleSync.start();
+
+  // ── Static app shell. Empty until the UI is ported off the Electron build.
+  app.use(express.static(PUBLIC_DIR, { index: 'index.html', extensions: ['html'] }));
+
+  // ── Fallbacks. API 404s stay JSON so the client's fetch wrapper can tell a
+  // missing route from a missing page.
+  app.use('/api', (_req, res) => {
+    res.status(404).json({ error: 'not_found' });
+  });
+
+  // eslint-disable-next-line no-unused-vars -- Express identifies error
+  // handlers by arity; `next` must stay in the signature.
+  app.use((err, req, res, next) => {
+    const status = err.status || 500;
+    if (status >= 500) console.error('[error]', req.method, req.path, err);
+    const body = { error: err.code || 'server_error' };
+    if (err.expose && err.message) body.message = err.message;
+    res.status(status).json(body);
+  });
+
+  return app;
+}
+
+module.exports = { createApp, PUBLIC_DIR };
