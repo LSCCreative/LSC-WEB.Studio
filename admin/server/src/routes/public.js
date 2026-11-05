@@ -47,10 +47,9 @@ function publicCors(req, res, next) {
 
 /**
  * Who a request is from, for the rate limit. Behind the Cloudflare tunnel
- * (TRUST_PROXY on), `req.ip` is the leftmost X-Forwarded-For entry, which a
- * client can write themselves; CF-Connecting-IP is set by Cloudflare over
- * anything the client sent. The API is reachable only through the tunnel, so
- * the header can't be forged from outside it.
+ * (TRUST_PROXY on), CF-Connecting-IP is set by Cloudflare over anything the
+ * client sent. The API is reachable only through the tunnel, so the header
+ * can't be forged from outside it.
  */
 function clientIp(req) {
   const cf = config.trustProxy ? req.headers['cf-connecting-ip'] : '';

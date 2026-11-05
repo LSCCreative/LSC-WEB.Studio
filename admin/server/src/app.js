@@ -69,7 +69,9 @@ function corsMiddleware(req, res, next) {
 function createApp(db, opts = {}) {
   const app = express();
 
-  if (config.trustProxy) app.set('trust proxy', true);
+  /* One hop: the tunnel. `true` would believe the leftmost X-Forwarded-For
+     entry, which the client writes, and let a script reset its login throttle. */
+  if (config.trustProxy) app.set('trust proxy', 1);
   app.disable('x-powered-by');
 
   app.use(corsMiddleware);
