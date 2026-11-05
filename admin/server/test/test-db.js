@@ -817,8 +817,8 @@ test('the v9 steps leave their inputs alone', () => {
   assert.equal(neg.notes.length, 1);
 });
 
-test('the schema knows it is at v20', () => {
-  assert.equal(LATEST_VERSION, 20);
+test('the schema knows it is at v21', () => {
+  assert.equal(LATEST_VERSION, 21);
 });
 
 /**
@@ -1598,9 +1598,8 @@ test('v20 adds the Hnry columns unset and changes no row of any table', () => {
   assert.ok(before.invoices.length > 0 && before.clients.length > 0, 'the fixture has invoices and a client');
   assert.ok(!db.prepare('PRAGMA table_info(invoices)').all().some((c) => c.name === 'hnry_number'), 'v19 has no Hnry column');
 
-  const result = migrate(db);
+  const result = migrate(db, { to: 20 });
   assert.deepEqual([result.from, result.to, result.applied], [19, 20, 1]);
-  assert.equal(LATEST_VERSION, 20);
 
   const inv = dump(db, 'invoices');
   assert.equal(inv.length, before.invoices.length);
@@ -1617,8 +1616,30 @@ test('v20 adds the Hnry columns unset and changes no row of any table', () => {
   db.prepare("UPDATE clients SET hnry_client_id = 'c1' WHERE id = 'cl_acme'").run();
   const edited = [dump(db, 'invoices'), dump(db, 'clients')];
   db.prepare('DELETE FROM schema_version WHERE version >= 20').run();
-  assert.equal(migrate(db).applied, 1);
+  assert.equal(migrate(db, { to: 20 }).applied, 1);
   assert.deepEqual([dump(db, 'invoices'), dump(db, 'clients')], edited);
+  db.close();
+});
+
+/**
+ * MIGRATION v21 — the Client Hub's tables (merge task M2, safeguard S15). New,
+ * empty tables only: every billing row reads exactly as it did.
+ */
+test('v21 adds the hub tables empty and changes no row of any table', () => {
+  const db = v18WithTypes();
+  migrate(db, { to: 20 });
+  const tables = everyTableBut(db, ['schema_version']);
+  const before = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+  const hubTables = ['records', 'private_auth', 'admin_sessions', 'deliverable_tokens',
+    'agreement_evidence', 'bunny_assets', 'bunny_collections'];
+  for (const t of hubTables) assert.ok(!tables.includes(t), `v20 has no ${t}`);
+
+  const result = migrate(db);
+  assert.deepEqual([result.from, result.to, result.applied], [20, 21, 1]);
+  for (const t of tables) assert.deepEqual(dump(db, t), before[t], t);
+  for (const t of hubTables) assert.deepEqual(dump(db, t), [], `${t} starts empty`);
+  assert.equal(everyTableBut(db, []).includes('meta'), false);
+  assert.deepEqual(db.pragma('foreign_key_check'), []);
   db.close();
 });
 

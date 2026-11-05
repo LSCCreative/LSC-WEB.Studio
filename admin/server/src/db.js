@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const Database = require('better-sqlite3');
+const { snapshotSync } = require('./backup');
 
 /**
  * Schema migrations, applied in order. Each entry's `version` becomes the value
@@ -1035,6 +1036,13 @@ const MIGRATIONS = [
       console.log('[db] v20: invoices and clients can now record their Hnry ids; nothing existing changes');
     },
   },
+  {
+    version: 21,
+    name: 'client hub tables',
+    up(db) {
+      require('./migrations/v21-hub').migrateV21(db);
+    },
+  },
 ];
 
 /**
@@ -1177,9 +1185,39 @@ function openDatabase(file, options = {}) {
     );
   }
 
-  if (options.migrate !== false) migrate(db);
+  if (options.migrate !== false) {
+    if (options.backupDir) backupBeforeMigrating(db, options.backupDir);
+    migrate(db);
+  }
 
   return db;
 }
 
-module.exports = { openDatabase, migrate, newId, nowIso, LATEST_VERSION };
+/**
+ * Copies an existing database before any migration touches it (merge safeguard
+ * S15), so an upgrade that goes wrong is one file away from undone. A fresh
+ * file or one already up to date takes no copy. If the copy can't be made the
+ * server refuses to start, with nothing changed: migrating without it is the
+ * risk the copy is there to cover.
+ */
+function backupBeforeMigrating(db, backupDir) {
+  const tracked = db.prepare(
+    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'"
+  ).get();
+  if (!tracked) return null;
+  const from = currentVersion(db);
+  if (from === 0 || from >= LATEST_VERSION) return null;
+  try {
+    const file = snapshotSync(db, backupDir, 'premigrate');
+    console.log(`[db] copied v${from} to ${file} before migrating to v${LATEST_VERSION}`);
+    return file;
+  } catch (err) {
+    db.close();
+    throw new Error(
+      `Couldn't back up billing.db before migrating it from v${from} (${err.message}). ` +
+      'Nothing was changed. Check the backups directory has space and can be written, then start again.'
+    );
+  }
+}
+
+module.exports = { openDatabase, migrate, backupBeforeMigrating, newId, nowIso, LATEST_VERSION };

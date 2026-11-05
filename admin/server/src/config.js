@@ -98,6 +98,30 @@ const config = {
   // (Pages), with the trailing slash. APP_URL unless APP_ORIGIN says otherwise.
   appOrigin: appUrlOf(process.env.APP_ORIGIN) || appUrlOf(process.env.APP_URL),
   isTest: process.env.NODE_ENV === 'test',
+  // The Client Portal's /hub/* routes (merge task M2), moved from the hub's own
+  // server. Its env names gained HUB_ where billing's would be ambiguous: the
+  // hub's SIGNING_SECRET, ADMIN_EMAIL, ADMIN_PIN_HASH, CORS_ORIGIN and
+  // PUBLIC_BASE_URL. The secrets are read here and passed in; the hub code
+  // reads nothing from the environment itself.
+  hub: {
+    signingSecret: (process.env.HUB_SIGNING_SECRET || '').trim(),
+    adminEmail: (process.env.HUB_ADMIN_EMAIL || 'lachlan@creativelsc.com').trim(),
+    adminPinHash: (process.env.HUB_ADMIN_PIN_HASH || '').trim(),
+    corsOrigins: (process.env.HUB_CORS_ORIGINS || 'https://lsccreative.studio')
+      .split(',').map((s) => s.trim()).filter(Boolean),
+    publicBaseUrl: (process.env.HUB_PUBLIC_BASE_URL || 'https://hub-api.lsccreative.studio').trim(),
+    deliverablesDir: process.env.DELIVERABLES_DIR || '/srv/deliverables',
+    bunny: {
+      libraryId: (process.env.BUNNY_STREAM_LIBRARY_ID || '').trim(),
+      streamApiKey: (process.env.BUNNY_STREAM_API_KEY || '').trim(),
+      streamReadKey: (process.env.BUNNY_STREAM_READ_KEY || '').trim(),
+      streamCdnHost: (process.env.BUNNY_STREAM_CDN_HOST || '').trim(),
+      storageZone: (process.env.BUNNY_STORAGE_ZONE || '').trim(),
+      storagePassword: (process.env.BUNNY_STORAGE_PASSWORD || '').trim(),
+      storageHost: (process.env.BUNNY_STORAGE_HOST || '').trim(),
+      storageCdnHost: (process.env.BUNNY_STORAGE_CDN_HOST || '').trim(),
+    },
+  },
 };
 
 // The data directory is the whole point of this app — if it can't be created,

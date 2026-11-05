@@ -18,7 +18,7 @@ function main() {
     process.exit(1);
   }
 
-  const db = openDatabase(config.dbFile);
+  const db = openDatabase(config.dbFile, { backupDir: config.backupDir });
   const app = createApp(db);
   const backupSchedule = scheduleNightlyBackups(db, config.backupDir);
 

@@ -201,12 +201,17 @@ test('a wrong, short or malformed link is the same 404, with nothing to tell the
 
   // No timing tell: a malformed token isn't turned away early. Each is looked
   // up as given, so short and well-formed wrong ones take the same path.
-  const time = async (t) => {
+  // The two take turns and the medians are compared, so a busy machine slows
+  // both alike: timed one after the other, load alone could fail this.
+  const once = async (t) => {
     const s = process.hrtime.bigint();
-    for (let i = 0; i < 40; i += 1) await fetch(`${base}/public/estimates/${t}`).then((r) => r.text());
-    return Number(process.hrtime.bigint() - s) / 40;
+    await fetch(`${base}/public/estimates/${t}`).then((r) => r.text());
+    return Number(process.hrtime.bigint() - s);
   };
-  const [a, b] = [await time(wrong), await time('x')];
+  const median = (xs) => xs.sort((p, q) => p - q)[xs.length >> 1];
+  const [ta, tb] = [[], []];
+  for (let i = 0; i < 40; i += 1) { ta.push(await once(wrong)); tb.push(await once('x')); }
+  const [a, b] = [median(ta), median(tb)];
   assert.ok(Math.max(a, b) / Math.min(a, b) < 3, `wrong ${a}ns vs short ${b}ns`);
 });
 

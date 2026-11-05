@@ -34,6 +34,9 @@ Code comments that cite `.design/<track>/` point into that archive.
   in `server/` after any change; it is the acceptance gate.
 - **`web/`**: the static frontend, no build step. `server/src/calc.js` and `web/js/calc.js` must stay
   byte-identical (also `documents.js`, `call-sheet.js`); a drift test fails otherwise.
+- **`server/src/hub/`**: the Client Portal's `/hub/*` routes, moved from the hub's own server (merge
+  task M2). `createHubRouter(db, opts)` takes the database and every secret as arguments: nothing in
+  `hub/` opens a file or reads `process.env`. Its settings are `config.hub`; tests in `test-hub.js`.
 - `index.html` / `main.js` / `preload.js` at the repo root are the retired Electron app (git-ignored).
   Don't touch them.
 

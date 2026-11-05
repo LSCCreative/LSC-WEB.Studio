@@ -8,7 +8,7 @@ const path = require('path');
 // before each mutating request, so a single bad write is always one file
 // away from undone. Kept short since pre-write snapshots pile up fast under
 // normal use — the point is a recent recovery point, not a full history.
-const RETENTION = { nightly: 14, prewrite: 10 };
+const RETENTION = { nightly: 14, prewrite: 10, premigrate: 10 };
 const AUTOSAVE_WINDOW_MS = 10 * 60 * 1000;
 const NIGHTLY_HOUR = 2; // low-traffic window for a single-user app
 
@@ -40,6 +40,18 @@ async function createBackup(db, backupDir, kind) {
   fs.mkdirSync(backupDir, { recursive: true });
   const file = uniquePath(backupDir, kind, new Date());
   await db.backup(file);
+  pruneBackups(backupDir, kind);
+  return file;
+}
+
+/**
+ * The same copy, taken synchronously with VACUUM INTO, for the one moment the
+ * server can't wait on the async backup: just before a migration, at boot.
+ */
+function snapshotSync(db, backupDir, kind) {
+  fs.mkdirSync(backupDir, { recursive: true });
+  const file = uniquePath(backupDir, kind, new Date());
+  db.prepare('VACUUM INTO ?').run(file);
   pruneBackups(backupDir, kind);
   return file;
 }
@@ -126,4 +138,4 @@ function scheduleNightlyBackups(db, backupDir, { hour = NIGHTLY_HOUR } = {}) {
   return { stop: () => clearTimeout(timer) };
 }
 
-module.exports = { createBackup, pruneBackups, preWriteBackup, scheduleNightlyBackups, RETENTION, AUTOSAVE_WINDOW_MS };
+module.exports = { createBackup, snapshotSync, pruneBackups, preWriteBackup, scheduleNightlyBackups, RETENTION, AUTOSAVE_WINDOW_MS };
