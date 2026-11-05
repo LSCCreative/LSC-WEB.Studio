@@ -221,13 +221,15 @@ test('a re-send keeps the link: v2 replaces v1, which is kept and marked superse
   assert.equal(refused.body.error, 'resend_required');
   assert.equal((await pub(one.token)).body.estimate.name, est.name);
 
-  const edited = await revise({ by: 'link', validUntil: '2026-11-20' });
+  // A re-send checks valid-until against the real clock, so this can't be a fixed date.
+  const newUntil = new Date(Date.now() + 30 * 86400e3).toISOString().slice(0, 10);
+  const edited = await revise({ by: 'link', validUntil: newUntil });
   assert.equal(edited.status, 200, JSON.stringify(edited.body));
   assert.equal(edited.body.resent.token, one.token, 'the same link');
   assert.deepEqual(edited.body.estimate.versions.map((v) => [v.n, v.validUntil, Boolean(v.supersededAt)]),
-    [[1, '2026-11-03', true], [2, '2026-11-20', false]]);
+    [[1, '2026-11-03', true], [2, newUntil, false]]);
   const e = (await pub(one.token)).body.estimate;
-  assert.deepEqual([e.version, e.name, e.validUntil, e.state], [2, 'Harbour, revised', '2026-11-20', 'open']);
+  assert.deepEqual([e.version, e.name, e.validUntil, e.state], [2, 'Harbour, revised', newUntil, 'open']);
   const folder = await api(`/api/projects/${est.projectId}`).then(json);
   assert.equal(folder.body.activity[0].detail.version, 2);
   assert.equal(folder.body.project.stageDetail.version, 2);
@@ -1000,7 +1002,9 @@ test('Settings → Email: status never shows the key; the test email goes to the
 test('the owner’s send routes: list, edit, cancel and retry', async () => {
   const sends = require('../src/sends');
   const est = await shoot();
-  await sent(est);
+  /* Retry reads the real clock, so this quote must still be valid on the day
+     the suite runs: a fixed date here started failing the day after it passed. */
+  await sent(est, sends.sydneyDate(new Date(Date.now() + 30 * 86400e3).toISOString()));
   const soon = new Date(Date.now() + 3600e3).toISOString();
   const row = sends.addSend(db, { docKind: 'estimate', docId: est.id, toEmail: 'priya@salt.example', message: 'hi', scheduledFor: soon });
   const listed = await api(`/api/sends?docKind=estimate&docId=${est.id}`).then(json);

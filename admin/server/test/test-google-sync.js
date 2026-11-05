@@ -443,7 +443,9 @@ test('the client’s accept on their page confirms the days and writes them (no 
   const est = await create([day('d_s', '2026-11-20'), day('d_t', '2026-11-21', 'proposed')]);
   await sync.flush();
   assert.equal(only().status, 'tentative');
-  const sent = await api(`/api/projects/${est.projectId}/sent`, { method: 'POST', body: JSON.stringify({ validUntil: '2026-11-30' }) });
+  // Accepting reads the real clock, so the quote must still be valid on the day the suite runs.
+  const validUntil = new Date(Date.now() + 30 * 86400e3).toISOString().slice(0, 10);
+  const sent = await api(`/api/projects/${est.projectId}/sent`, { method: 'POST', body: JSON.stringify({ validUntil }) });
   assert.equal(sent.status, 200, JSON.stringify(sent.body));
   const token = sent.body.estimates.find((e) => e.id === est.id).publicToken;
   const page = (await (await fetch(`${base}/public/estimates/${token}`)).json()).estimate;

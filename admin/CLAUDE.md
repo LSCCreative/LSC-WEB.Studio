@@ -1,5 +1,11 @@
 # LSC Billing App
 
+> **Merged copy, not yet live.** This folder is the billing app inside `LSC-WEB.Studio`, on the way to
+> becoming Scope & Sales. Until the cutover (task M6 in the merge plan), the live app still deploys from
+> `LSCCreative/lsc-billing-app`, last brought across at `f04efb7`, and nothing here reaches the NAS or
+> `app.lsccreative.studio`. Here, pushing `main` deploys the marketing site, not this app. A fix made to
+> the live repo before then has to be brought across too. "Repo root" below means this `admin/` folder.
+
 Quoting/invoicing tool for LSC Creative: a static site on GitHub Pages (`web/`) plus a Node/Express/
 SQLite API on the user's NAS (`server/`). **Live and fully built**; only the open work in the roadmap
 remains.

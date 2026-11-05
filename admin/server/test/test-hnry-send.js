@@ -210,10 +210,13 @@ test('where the test-only Mark sent route is off, only an invoice in Hnry can be
 
 /* ── Invoices the app sent before Hnry keep working ──────────────────── */
 
+/* Sending checks the due date against the real clock, not the app's test day. */
+const futureDay = () => new Date(Date.now() + 30 * 86400e3).toISOString().slice(0, 10);
+
 test('an invoice the app already sent keeps its link, page and sending; it is never made again in Hnry', async () => {
   fake.fail('findOrCreateClient', 1);
   const { deposit } = await accepted({ pct: 40 }); // not in Hnry
-  const sent = await inv(deposit.id, 'send', { by: 'link', dueAt: '2026-12-01' });
+  const sent = await inv(deposit.id, 'send', { by: 'link', dueAt: futureDay() });
   assert.equal(sent.status, 200, JSON.stringify(sent.body));
   const sentRow = row(deposit.id);
   assert.equal(sentRow.status, 'sent');
@@ -238,7 +241,7 @@ test('an invoice the app already sent keeps its link, page and sending; it is ne
 test('an invoice made before Hnry, still a draft, is sent by the app as before', async () => {
   fake.fail('findOrCreateClient', 1);
   const { deposit } = await accepted({ pct: 40 });
-  const r = await inv(deposit.id, 'send', { by: 'link', dueAt: '2026-12-01' });
+  const r = await inv(deposit.id, 'send', { by: 'link', dueAt: futureDay() });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(row(deposit.id).status, 'sent');
   assert.equal((await rawStatus(deposit.id, 'pdf')).status, 200, 'its PDF is the app\'s, as before');

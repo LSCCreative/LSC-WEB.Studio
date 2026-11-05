@@ -241,3 +241,5 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
 - Settings → Hnry checks only once its section is on screen: a background tab never starts it.
 - The fake Hnry only proves what it mirrors: read real Zapier shapes with the SDK (`listActions`,
   `listActionInputFields`, read-only searches) before trusting a new action; the guessed ones were wrong.
+
+- **Tests and the clock:** public accept, re-send and retry read the real clock, not the app's injected `today`. A test that passes through them needs a date worked out from `Date.now()`, because a fixed one starts failing the day after it passes.
