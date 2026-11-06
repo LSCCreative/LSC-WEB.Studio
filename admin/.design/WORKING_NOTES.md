@@ -243,5 +243,6 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   `listActionInputFields`, read-only searches) before trusting a new action; the guessed ones were wrong.
 
 - **Tests and the clock:** public accept, re-send and retry read the real clock, not the app's injected `today`. A test that passes through them needs a date worked out from `Date.now()`, because a fixed one starts failing the day after it passes.
-- **Migrations copy first:** `openDatabase(file, { backupDir })` takes a `premigrate-*.db` copy before migrating an existing database, and refuses to start if it can't. Tests that build old versions pass no `backupDir`.
+- **Migrations copy first:** `openDatabase` takes a `premigrate-*.db` copy before migrating an existing database, into the `backups/` folder beside it unless `backupDir` says otherwise, and refuses to start if it can't. The scripts get it too; `backupDir: false` opts out.
+- **Hub routes:** they answer 503 unless the app's `trust proxy` is exactly 1 (the PIN throttle and the agreement's IP read `req.ip`). Their writes take the same pre-write copy as `/api`, after the request is checked.
 - **Running the suite in the Drive folder** can stall: test files sit idle at 0% CPU while Google Drive holds a file. Rerun, or run from a copy on local disk, before suspecting the code.

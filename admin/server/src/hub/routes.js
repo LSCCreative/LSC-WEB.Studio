@@ -7,10 +7,13 @@
    throwaway database (merge safeguard S14).
 
    createHubRouter returns an Express router. It isn't mounted yet: merge task
-   M3 mounts it, with its own CORS, the hub hostname and one /health. */
+   M3 mounts it, with its own CORS, the hub hostname and one /health. It parses
+   its own JSON and answers its own 404s and errors in JSON, as the hub's server
+   did, so mount it before billing's body parser. */
 
 const { basename, extname, posix } = require('path');
 const express = require('express');
+const { createBackup } = require('../backup');
 const { sha256Hex, randomToken } = require('./tokens');
 const { createUrlSigner } = require('./url-signing');
 const { createHubCors } = require('./cors');
@@ -36,17 +39,23 @@ function publishTag(seed) {
 }
 
 /**
- * opts (config.hub, see config.js):
+ * opts (config.hub, see config.js; its defaults live there, not here):
  *   signingSecret, adminEmail, adminPinHash  required; the router won't build without the secrets
+ *   publicBaseUrl   required: this API's public address, used in the links it hands out
+ *   deliverablesDir required: the read-only NAS deliverables folder
+ *   backupDir       required: where the copy before each write goes (billing's backups)
  *   corsOrigins     origins allowed to send credentials
- *   publicBaseUrl   this API's public address, used in the links it hands out
- *   deliverablesDir the read-only NAS deliverables folder
  *   bunny           Bunny settings; with any missing, publishing answers 503
+ * The app must trust exactly one proxy hop (safeguard S7): the PIN throttle and
+ * the agreement's IP evidence both read req.ip. Otherwise every route answers 503.
  * Tests only: bunnyFetch swaps fetch for Bunny calls, videoLookupGapMs the wait
  * between looking for a fetched video.
  */
 function createHubRouter(db, opts = {}) {
-  const publicBaseUrl = opts.publicBaseUrl || 'https://hub-api.lsccreative.studio';
+  for (const [key, name] of [['publicBaseUrl', 'HUB_PUBLIC_BASE_URL'], ['deliverablesDir', 'DELIVERABLES_DIR'], ['backupDir', 'the backups folder']]) {
+    if (!opts[key]) throw new Error(`The hub router needs ${key} (${name}); config.hub carries it.`);
+  }
+  const { publicBaseUrl, backupDir } = opts;
   const lookupGapMs = opts.videoLookupGapMs ?? 1000;
   const signer = createUrlSigner(opts.signingSecret);
   const { credentialedCors, openCors } = createHubCors(opts.corsOrigins || []);
@@ -259,7 +268,33 @@ function createHubRouter(db, opts = {}) {
     next();
   }
 
+  /* The copy before a write, as billing's /api writes get (backup.js). Taken
+     after a request is checked, so a stranger's bad request can't push real
+     recovery points out of the ten kept. A failed copy is logged, not fatal,
+     as for /api. */
+  async function backupBeforeWrite() {
+    try {
+      await createBackup(db, backupDir, 'prewrite');
+    } catch (err) {
+      console.error('[hub] pre-write snapshot failed:', err.message);
+    }
+  }
+
   const router = express.Router();
+
+  /* Every /hub route reads req.ip (the throttle, the agreement), so the app
+     must trust exactly the one proxy in front of it: with none trusted every
+     visitor is the tunnel, and with more a client can forge its address. */
+  let proxyWarned = false;
+  router.use('/hub', (req, res, next) => {
+    if (req.app.get('trust proxy') === 1) return next();
+    if (!proxyWarned) {
+      proxyWarned = true;
+      console.error('[hub] refusing /hub requests: the app must set trust proxy to exactly 1 (safeguard S7)');
+    }
+    res.status(503).json({ error: 'proxy not set up' });
+  });
+  router.use('/hub', express.json({ limit: '2mb' }));
 
   // ── POST /hub/admin-auth: email + PIN → HttpOnly session cookie
   router.use('/hub/admin-auth', credentialedCors);
@@ -274,9 +309,10 @@ function createHubRouter(db, opts = {}) {
 
   // ── POST /hub/publish (admin): { record, priv }
   router.use('/hub/publish', credentialedCors);
-  router.post('/hub/publish', requireAdmin, (req, res) => {
+  router.post('/hub/publish', requireAdmin, async (req, res) => {
     const { record, priv } = req.body || {};
     if (!record || !record.id || !priv) return res.status(400).json({ error: 'bad payload' });
+    await backupBeforeWrite();
 
     const now = new Date().toISOString();
     const clientEmail = String(priv.clientEmail || '').trim();
@@ -331,7 +367,7 @@ function createHubRouter(db, opts = {}) {
   // ── POST /hub/agreement (client): the signed deliverables agreement and its
   // evidence, kept private. The address is read here, never taken from the client.
   router.use('/hub/agreement', credentialedCors);
-  router.post('/hub/agreement', (req, res) => {
+  router.post('/hub/agreement', async (req, res) => {
     const body = req.body || {};
     const projectId = String(body.projectId || '').trim();
     const signerName = String(body.signerName || '').trim();
@@ -345,6 +381,7 @@ function createHubRouter(db, opts = {}) {
     if (body.consentChecked !== true) return res.status(400).json({ error: 'consent required' });
     if (!getRecord.get(projectId)) return res.status(404).json({ error: 'not found' });
 
+    await backupBeforeWrite();
     upsertAgreementEvidence.run({
       project_id: projectId,
       signer_name: signerName,
@@ -394,16 +431,17 @@ function createHubRouter(db, opts = {}) {
   // A stable link for a file already in the deliverables folder. Asking again
   // for the same file returns the same link.
   router.use('/hub/deliverable-url', credentialedCors);
-  router.post('/hub/deliverable-url', requireAdmin, (req, res) => {
+  router.post('/hub/deliverable-url', requireAdmin, async (req, res) => {
     const path = String(req.body?.path || '').trim();
     const downloadable = req.body?.downloadable ? 1 : 0;
     if (!deliverables.resolveDeliverablePath(path)) return res.status(404).json({ error: 'file not found' });
+    await backupBeforeWrite();
     res.json({ url: `${publicBaseUrl}/hub/files/${tokenFor(path, downloadable)}` });
   });
 
   // ── POST /hub/deliverable-folder (admin): a photo library, one link pair per image
   router.use('/hub/deliverable-folder', credentialedCors);
-  router.post('/hub/deliverable-folder', requireAdmin, (req, res) => {
+  router.post('/hub/deliverable-folder', requireAdmin, async (req, res) => {
     const path = String(req.body?.path || '').trim();
     const names = deliverables.listDeliverableFolderImages(path);
     if (!names) return res.status(404).json({ error: 'folder not found' });
@@ -413,6 +451,7 @@ function createHubRouter(db, opts = {}) {
         error: `folder has ${names.length} images (limit ${MAX_PHOTOS_PER_FOLDER}) — point at a single delivery folder`,
       });
     }
+    await backupBeforeWrite();
     const photos = names.map((name) => {
       // `path` is checked to be inside the folder and `name` comes from
       // readdir, never the request, so this can't escape it.
@@ -450,6 +489,11 @@ function createHubRouter(db, opts = {}) {
 
     let pending = publishesInFlight.get(path);
     if (!pending) {
+      await backupBeforeWrite();
+      // Checked again: another request may have started it while the copy ran.
+      pending = publishesInFlight.get(path);
+    }
+    if (!pending) {
       pending = publishVideo(path, resolved, req.body?.force === true)
         .finally(() => publishesInFlight.delete(path));
       publishesInFlight.set(path, pending);
@@ -482,6 +526,17 @@ function createHubRouter(db, opts = {}) {
     const payload = req.body || {};
     console.log('[hub/notify]', JSON.stringify(payload));
     res.json({ ok: true, dispatched: payload.kind || 'unknown' });
+  });
+
+  /* The hub's server answered everything in JSON, and the portal reads every
+     reply as JSON: an unknown /hub path or a bad body mustn't get HTML. */
+  router.use('/hub', (req, res) => res.status(404).json({ error: 'not found' }));
+  // eslint-disable-next-line no-unused-vars -- Express spots error handlers by their four arguments.
+  router.use('/hub', (err, req, res, next) => {
+    if (res.headersSent) return next(err);
+    const status = err.status || err.statusCode || 500;
+    if (status >= 500) console.error('[hub] unhandled error:', req.method, req.path, err);
+    res.status(status).json({ error: status >= 500 ? 'server error' : 'bad request' });
   });
 
   router.deliverablesHealth = deliverables.health;

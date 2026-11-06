@@ -24,6 +24,7 @@ const { openDatabase, migrate, LATEST_VERSION } = require('../src/db');
 const { createHubRouter, normalizeDeliverablePath } = require('../src/hub/routes');
 const { createBunny, missingBunnySettings, statusFromVideo } = require('../src/hub/bunny');
 const { createUrlSigner } = require('../src/hub/url-signing');
+const { createAdminAuth } = require('../src/hub/admin-auth');
 
 const PIN = '4821';
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
@@ -52,10 +53,15 @@ test('loading the hub code opens no database and reads no secret', () => {
   assert.equal(fs.existsSync(path.join(__dirname, '..', 'data', 'client-hub.db')), false);
 });
 
-test('the router won’t build without its secrets, and says which', () => {
+test('the router won’t build without its secrets and settings, and says which', () => {
   const db = openDatabase(path.join(TMP, 'secrets.db'));
-  assert.throws(() => createHubRouter(db, { adminPinHash: sha(PIN) }), /HUB_SIGNING_SECRET/);
-  assert.throws(() => createHubRouter(db, { signingSecret: 's' }), /HUB_ADMIN_PIN_HASH/);
+  const base = { publicBaseUrl: BASE, deliverablesDir: TMP, backupDir: path.join(TMP, 'secrets-backups') };
+  assert.throws(() => createHubRouter(db, { ...base, adminPinHash: sha(PIN) }), /HUB_SIGNING_SECRET/);
+  assert.throws(() => createHubRouter(db, { ...base, signingSecret: 's' }), /HUB_ADMIN_PIN_HASH/);
+  const secrets = { signingSecret: 's', adminPinHash: sha(PIN) };
+  assert.throws(() => createHubRouter(db, { ...secrets, ...base, publicBaseUrl: '' }), /HUB_PUBLIC_BASE_URL/);
+  assert.throws(() => createHubRouter(db, { ...secrets, ...base, deliverablesDir: '' }), /DELIVERABLES_DIR/);
+  assert.throws(() => createHubRouter(db, { ...secrets, ...base, backupDir: undefined }), /backupDir/);
   db.close();
 });
 
@@ -122,6 +128,25 @@ test('upgrading a v20 database copies it first, then adds the tables and keeps i
   // Opening it again: nothing to migrate, so no second copy.
   openDatabase(file, { backupDir: backups }).close();
   assert.equal(fs.readdirSync(backups).filter((f) => f.startsWith('premigrate-')).length, 1);
+});
+
+test('opening an old file takes the copy by default, so scripts get it too', () => {
+  const dir = path.join(TMP, 'by-default');
+  fs.mkdirSync(dir);
+  const file = path.join(dir, 'billing.db');
+  const old = openDatabase(file, { migrate: false });
+  migrate(old, { to: 20 });
+  old.close();
+  openDatabase(file).close();
+  const copies = fs.readdirSync(path.join(dir, 'backups')).filter((f) => f.startsWith('premigrate-'));
+  assert.equal(copies.length, 1, 'a copy beside the file, as config.backupDir is beside billing.db');
+
+  const optOut = path.join(TMP, 'opt-out.db');
+  const older = openDatabase(optOut, { migrate: false });
+  migrate(older, { to: 20 });
+  older.close();
+  openDatabase(optOut, { backupDir: false }).close();
+  assert.equal(fs.existsSync(path.join(TMP, 'backups')), false, 'backupDir: false takes none');
 });
 
 test('a fresh database takes no copy', () => {
@@ -201,8 +226,9 @@ function fakeBunny() {
   return { fetchImpl, calls, state };
 }
 
-async function startHub(overrides = {}) {
+async function startHub(overrides = {}, { trustProxy = 1 } = {}) {
   const db = openDatabase(path.join(TMP, `hub-${crypto.randomBytes(4).toString('hex')}.db`));
+  const backupDir = path.join(TMP, `hub-backups-${crypto.randomBytes(4).toString('hex')}`);
   const bunny = fakeBunny();
   const router = createHubRouter(db, {
     signingSecret: 'test-signing-secret',
@@ -214,11 +240,14 @@ async function startHub(overrides = {}) {
     bunny: BUNNY,
     bunnyFetch: bunny.fetchImpl,
     videoLookupGapMs: 1,
+    backupDir,
     ...overrides,
   });
   const app = express();
-  app.use(express.json({ limit: '2mb' }));
+  if (trustProxy !== null) app.set('trust proxy', trustProxy);
+  // The router parses its own JSON, so it is mounted here with no parser before it.
   app.use(router);
+  app.get('/elsewhere', (_req, res) => res.send('billing'));
   app.use((err, _req, res, _next) => res.status(500).json({ error: err.message }));
   const server = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
   const url = `http://127.0.0.1:${server.address().port}`;
@@ -238,7 +267,8 @@ async function startHub(overrides = {}) {
     assert.equal(r.status, 200);
     return r.headers.get('set-cookie').split(';')[0];
   };
-  return { db, bunny, router, url, call, signIn, close: () => new Promise((r) => server.close(r)) };
+  const prewrites = () => (fs.existsSync(backupDir) ? fs.readdirSync(backupDir).filter((f) => f.startsWith('prewrite-')).length : 0);
+  return { db, bunny, router, url, call, signIn, prewrites, close: () => new Promise((r) => server.close(r)) };
 }
 
 let hub;
@@ -438,6 +468,106 @@ test('notify logs and answers, as on the hub; health reads the deliverables fold
   try {
     assert.deepEqual(missing.router.deliverablesHealth(), { ok: false, error: 'ENOENT' });
   } finally { await missing.close(); missing.db.close(); }
+});
+
+/* ── Fixes from the M1 and M2 review ───────────────────────────────────── */
+
+test('without trust proxy at exactly 1, every /hub route refuses, and nothing else is touched', async () => {
+  for (const trustProxy of [null, true, 2]) {
+    const bad = await startHub({}, { trustProxy });
+    try {
+      const r = await bad.call('/hub/admin-auth', { method: 'POST', body: { email: ADMIN, pin: PIN } });
+      assert.deepEqual([r.status, r.body], [503, { error: 'proxy not set up' }], String(trustProxy));
+      assert.equal(r.headers.get('set-cookie'), null);
+      assert.equal((await bad.call('/elsewhere')).text, 'billing', 'only /hub is refused');
+    } finally { await bad.close(); bad.db.close(); }
+  }
+});
+
+test('a forged forwarding address can’t change the address recorded or dodge the throttle', async () => {
+  const fresh = await startHub();
+  try {
+    // The tunnel appends the address it saw; a client can only add entries before it.
+    const hop = (forged) => ({ 'x-forwarded-for': `${forged}, 203.0.113.9` });
+    for (let i = 0; i < 5; i += 1) {
+      await fresh.call('/hub/admin-auth', { method: 'POST', body: { email: ADMIN, pin: '0000' }, headers: hop(`10.0.0.${i}`) });
+    }
+    const r = await fresh.call('/hub/admin-auth', { method: 'POST', body: { email: ADMIN, pin: PIN }, headers: hop('10.0.0.99') });
+    assert.equal(r.status, 429, 'a new forged address is still the same visitor');
+
+    const c = startHubSignIn(fresh);
+    await fresh.call('/hub/publish', { method: 'POST', cookie: c, body: { record: { id: 'p_ip' }, priv: {} } });
+    await fresh.call('/hub/agreement', { method: 'POST', headers: hop('6.6.6.6'), body: {
+      projectId: 'p_ip', signerName: 'P', signedAt: 'x', signatureDataUrl: 'data:,', consentText: 'ok', consentChecked: true,
+    } });
+    const got = await fresh.call('/hub/agreement/p_ip', { cookie: c });
+    assert.equal(got.body.ipAddress, '203.0.113.9');
+  } finally { await fresh.close(); fresh.db.close(); }
+});
+
+/* Signs in on a hub whose throttle is already spent, by going round it. */
+function startHubSignIn(h) {
+  const token = crypto.randomBytes(32).toString('hex');
+  h.db.prepare("INSERT INTO admin_sessions (token, created_at, expires_at) VALUES (?, 'x', '2999-01-01T00:00:00.000Z')").run(token);
+  return `hub_admin_session=${token}`;
+}
+
+test('the hub’s writes take a copy first; refused requests and reads don’t', async () => {
+  const fresh = await startHub();
+  try {
+    const c = await fresh.signIn();
+    assert.equal(fresh.prewrites(), 0, 'signing in takes no copy');
+    assert.equal((await fresh.call('/hub/publish', { method: 'POST', cookie: c, body: { record: {} } })).status, 400);
+    assert.equal((await fresh.call('/hub/publish', { method: 'POST', body: { record: { id: 'p' }, priv: {} } })).status, 401);
+    assert.equal((await fresh.call('/hub/agreement', { method: 'POST', body: { projectId: 'nope' } })).status, 400);
+    assert.equal(fresh.prewrites(), 0, 'nothing refused took a copy');
+
+    await fresh.call('/hub/publish', { method: 'POST', cookie: c, body: { record: { id: 'p_w' }, priv: {} } });
+    assert.equal(fresh.prewrites(), 1, 'publishing');
+    await fresh.call('/hub/agreement', { method: 'POST', body: {
+      projectId: 'p_w', signerName: 'P', signedAt: 'x', signatureDataUrl: 'data:,', consentText: 'ok', consentChecked: true,
+    } });
+    assert.equal(fresh.prewrites(), 2, 'the agreement');
+    await fresh.call('/hub/deliverable-url', { method: 'POST', cookie: c, body: { path: 'Acme/Hero.mp4' } });
+    await fresh.call('/hub/deliverable-folder', { method: 'POST', cookie: c, body: { path: 'Acme/Stills' } });
+    await fresh.call('/hub/publish-asset', { method: 'POST', cookie: c, body: { path: 'Acme/Hero.mp4' } });
+    assert.equal(fresh.prewrites(), 5, 'a link, a folder and a video publish');
+    await fresh.call('/hub/auth', { method: 'POST', body: { email: 'a@b.example', code: '1234' } });
+    await fresh.call('/hub/publish-status?path=Acme/Hero.mp4', { cookie: c });
+    assert.equal(fresh.prewrites(), 5, 'a client signing in and a status read take none');
+  } finally { await fresh.close(); fresh.db.close(); }
+});
+
+test('unknown /hub paths and bad bodies answer in JSON, as the hub’s server did', async () => {
+  const missing = await hub.call('/hub/no-such-route');
+  assert.deepEqual([missing.status, missing.body], [404, { error: 'not found' }]);
+  assert.equal((await hub.call('/hub/publish')).status, 404, 'a GET to a POST route');
+  const res = await fetch(`${hub.url}/hub/auth`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{not json' });
+  assert.deepEqual([res.status, await res.json()], [400, { error: 'bad request' }]);
+});
+
+test('a malformed cookie from another site is a 401, not a server error', async () => {
+  const r = await hub.call('/hub/notify', { method: 'POST', body: {}, cookie: 'other=%E0%A4%A; hub_admin_session=nope' });
+  assert.equal(r.status, 401);
+  const ok = await hub.call('/hub/notify', { method: 'POST', body: {}, cookie: `other=%E0%A4%A; ${cookie}` });
+  assert.equal(ok.status, 200, 'the real session still reads past it');
+});
+
+test('the throttle lets go of addresses that have stopped trying', () => {
+  const db = openDatabase(path.join(TMP, 'throttle.db'));
+  let t = 1_000_000_000_000;
+  const auth = createAdminAuth(db, { adminEmail: ADMIN, adminPinHash: sha(PIN), now: () => t });
+  for (let i = 0; i < 600; i += 1) auth.recordAttempt(`10.1.${i >> 8}.${i & 255}`);
+  assert.equal(auth.trackedAddresses(), 600);
+  t += 16 * 60 * 1000;
+  auth.recordAttempt('10.9.9.9');
+  assert.equal(auth.trackedAddresses(), 1, 'the stale ones are swept on the next attempt');
+  for (let i = 0; i < 5; i += 1) auth.recordAttempt('10.9.9.9');
+  assert.equal(auth.isRateLimited('10.9.9.9'), true, 'sweeping never frees a live address');
+  t += 16 * 60 * 1000;
+  assert.equal(auth.isRateLimited('10.9.9.9'), false);
+  assert.equal(auth.trackedAddresses(), 0);
+  db.close();
 });
 
 test('the real data folder was never touched', () => {

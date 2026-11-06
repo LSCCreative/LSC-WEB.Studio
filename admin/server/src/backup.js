@@ -3,10 +3,11 @@
 const fs = require('fs');
 const path = require('path');
 
-// Two kinds of backup share one directory, told apart by filename prefix.
+// Three kinds of backup share one directory, told apart by filename prefix.
 // 'nightly' is the daily safety net; 'prewrite' is the snapshot taken just
 // before each mutating request, so a single bad write is always one file
-// away from undone. Kept short since pre-write snapshots pile up fast under
+// away from undone; 'premigrate' is the copy taken before a migration
+// (db.js), the one to restore if an upgrade goes wrong. Kept short since pre-write snapshots pile up fast under
 // normal use — the point is a recent recovery point, not a full history.
 const RETENTION = { nightly: 14, prewrite: 10, premigrate: 10 };
 const AUTOSAVE_WINDOW_MS = 10 * 60 * 1000;

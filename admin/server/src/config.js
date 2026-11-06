@@ -110,7 +110,9 @@ const config = {
     corsOrigins: (process.env.HUB_CORS_ORIGINS || 'https://lsccreative.studio')
       .split(',').map((s) => s.trim()).filter(Boolean),
     publicBaseUrl: (process.env.HUB_PUBLIC_BASE_URL || 'https://hub-api.lsccreative.studio').trim(),
-    deliverablesDir: process.env.DELIVERABLES_DIR || '/srv/deliverables',
+    deliverablesDir: (process.env.DELIVERABLES_DIR || '/srv/deliverables').trim(),
+    // The hub's writes get the same copy before writing as /api's (backup.js).
+    backupDir: path.join(DATA_DIR, 'backups'),
     bunny: {
       libraryId: (process.env.BUNNY_STREAM_LIBRARY_ID || '').trim(),
       streamApiKey: (process.env.BUNNY_STREAM_API_KEY || '').trim(),

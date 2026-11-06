@@ -33,7 +33,8 @@ function contentTypeFor(absolutePath) {
 }
 
 function createDeliverables(dir) {
-  const root = resolve(dir || '/srv/deliverables');
+  if (!dir) throw new Error('createDeliverables needs the deliverables folder (DELIVERABLES_DIR, set in config.hub).');
+  const root = resolve(dir);
 
   /* Absolute path under the folder, or null for anything that escapes it
      (absolute paths, `..`, null bytes). */

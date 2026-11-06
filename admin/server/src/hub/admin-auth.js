@@ -22,7 +22,11 @@ function parseCookies(header) {
   for (const part of header.split(';')) {
     const idx = part.indexOf('=');
     if (idx === -1) continue;
-    out[part.slice(0, idx).trim()] = decodeURIComponent(part.slice(idx + 1).trim());
+    const raw = part.slice(idx + 1).trim();
+    // Another site's malformed cookie (a stray %) mustn't throw: keep it as sent.
+    let value = raw;
+    try { value = decodeURIComponent(raw); } catch { /* not percent-encoded */ }
+    out[part.slice(0, idx).trim()] = value;
   }
   return out;
 }
@@ -70,17 +74,30 @@ function createAdminAuth(db, { adminEmail, adminPinHash, now = Date.now } = {}) 
   function isRateLimited(ip) {
     const t = now();
     const recent = (attemptsByIp.get(ip) || []).filter((at) => t - at < ATTEMPT_WINDOW_MS);
-    attemptsByIp.set(ip, recent);
+    if (recent.length) attemptsByIp.set(ip, recent);
+    else attemptsByIp.delete(ip);
     return recent.length >= ATTEMPT_LIMIT;
   }
 
+  /* This runs inside the admin's long-lived process, so addresses that tried
+     once and left are swept out rather than kept until a restart. */
+  const SWEEP_AT = 500;
   function recordAttempt(ip) {
+    const t = now();
+    if (attemptsByIp.size >= SWEEP_AT) {
+      for (const [key, times] of attemptsByIp) {
+        if (t - times[times.length - 1] >= ATTEMPT_WINDOW_MS) attemptsByIp.delete(key);
+      }
+    }
     const recent = attemptsByIp.get(ip) || [];
-    recent.push(now());
+    recent.push(t);
     attemptsByIp.set(ip, recent);
   }
 
-  return { verifyAdminPin, createAdminSession, setAdminSessionCookie, requireAdmin, isRateLimited, recordAttempt };
+  /** How many addresses the throttle is holding, for the tests. */
+  const trackedAddresses = () => attemptsByIp.size;
+
+  return { verifyAdminPin, createAdminSession, setAdminSessionCookie, requireAdmin, isRateLimited, recordAttempt, trackedAddresses };
 }
 
 module.exports = { createAdminAuth, ADMIN_SESSION_COOKIE, ATTEMPT_LIMIT };

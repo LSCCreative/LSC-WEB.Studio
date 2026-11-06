@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const path = require('path');
 const Database = require('better-sqlite3');
 const { snapshotSync } = require('./backup');
 
@@ -1164,6 +1165,10 @@ function migrate(db, options = {}) {
  * A file that fails its integrity check is left exactly as it is: the server
  * refuses to start rather than writing over damaged data that a backup could
  * still be recovered from.
+ *
+ * options.migrate   false opens without migrating.
+ * options.backupDir where the copy before migrating goes; defaults to the
+ *                   backups folder beside the file, false skips it.
  */
 function openDatabase(file, options = {}) {
   const db = new Database(file, { fileMustExist: false });
@@ -1186,11 +1191,22 @@ function openDatabase(file, options = {}) {
   }
 
   if (options.migrate !== false) {
-    if (options.backupDir) backupBeforeMigrating(db, options.backupDir);
+    const backupDir = options.backupDir === undefined ? defaultBackupDir(file) : options.backupDir;
+    if (backupDir) backupBeforeMigrating(db, backupDir);
     migrate(db);
   }
 
   return db;
+}
+
+/**
+ * The backups folder beside the database (config.backupDir for billing.db), so
+ * every caller that opens a file gets the copy before migrating: the server,
+ * and the scripts run by hand on the NAS. `backupDir: false` opts out.
+ */
+function defaultBackupDir(file) {
+  if (!file || file === ':memory:') return null;
+  return path.join(path.dirname(path.resolve(file)), 'backups');
 }
 
 /**
