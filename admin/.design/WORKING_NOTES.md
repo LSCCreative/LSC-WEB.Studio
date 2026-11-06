@@ -232,9 +232,10 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   load from must be added there (and to `admin/.dockerignore`'s allow-list if it isn't under `web/`).
   `js/config.js` is generated, never read from disk. The server won't start without `web/index.html` or with
   a `web/js/` mirror (calc, documents, call-sheet) that differs from `server/src/`: re-copy, then restart.
-- Hub data import (M5): `scripts/import-hub.js --hub <copy>`; never overwrites, re-runs change nothing. Copy a
-  live SQLite file with `sqlite3 -readonly <db> ".backup <dest>"`, not `cp`: a WAL database can hold all its
-  data in `-wal` (the live hub did).
+- Hub data import (M5): `scripts/import-hub.js --hub <copy>`, run with the server stopped (it refuses otherwise);
+  never overwrites, re-runs change nothing, `--dry-run` only reads billing.db. Copy a live SQLite file with
+  `sqlite3 -readonly <db> ".backup <dest>"`, not `cp`: a WAL database can hold all its data in `-wal` (the live
+  hub did), and a WAL file in a read-only folder can't be read at all. Never open one `immutable=1`: it skips the `-wal`.
 - Every `/api` reply carries `X-LSC-Version` (the stamped admin page's hash); `js/update.js` shows a Reload
   banner when it differs from the page's `lsc-version` meta. Files are rechecked against disk at most once a
   second, so a dev edit shows up within a second. `docker-compose.yml` lives in `admin/` (context `.`).

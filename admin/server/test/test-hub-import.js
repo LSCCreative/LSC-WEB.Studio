@@ -11,7 +11,8 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawnSync, spawn } = require('node:child_process');
+const http = require('node:http');
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'lsc-hub-import-'));
 process.env.DATA_DIR = TMP;
@@ -21,7 +22,7 @@ const Database = require('better-sqlite3');
 const { openDatabase } = require('../src/db');
 const { createBackup, snapshotSync } = require('../src/backup');
 const { migrateV21 } = require('../src/migrations/v21-hub');
-const { importHub, verifyImport } = require('../src/hub/import');
+const { importHub, verifyImport, checkTokens } = require('../src/hub/import');
 
 const SCRIPT = path.join(__dirname, '..', 'scripts', 'import-hub.js');
 const BASE = 'https://hub-api.lsccreative.studio';
@@ -111,9 +112,10 @@ test('every file link stored in a record keeps its token, on the address it was 
   const { hub } = makeHub();
   const billing = openDatabase(file('billing'));
   const report = importHub(hub, billing);
-  assert.deepEqual(report.links, { total: 2, missing: [], hosts: ['hub-api.lsccreative.studio'] });
+  assert.deepEqual(report.links, { total: 2, missing: [], dead: [], hosts: ['hub-api.lsccreative.studio'] });
 
-  // A record pointing at a token the hub never had is reported, not hidden.
+  // A record pointing at a token the hub never had was already dead there: a
+  // warning, kept apart from links the import lost.
   const { f } = makeHub();
   const broken = new Database(f);
   broken.prepare("UPDATE records SET data = ? WHERE project_id = 'p2'").run(JSON.stringify({ url: `${BASE}/hub/files/tokGONE` }));
@@ -121,7 +123,9 @@ test('every file link stored in a record keeps its token, on the address it was 
   const hub2 = new Database(f, { readonly: true });
   const billing2 = openDatabase(file('billing'));
   const r2 = importHub(hub2, billing2);
-  assert.deepEqual(r2.links.missing, [{ projectId: 'p2', token: 'tokGONE' }]);
+  assert.deepEqual(r2.links.dead, [{ projectId: 'p2', token: 'tokGONE' }]);
+  assert.deepEqual(r2.links.missing, []);
+  assert.equal(r2.written, true, 'and it doesn’t stop the import');
   hub.close(); billing.close(); hub2.close(); billing2.close();
 });
 
@@ -211,7 +215,7 @@ test('backups hold every table, the portal’s too, row for row (S16)', async ()
 
 function cli(args, env = {}) {
   const r = spawnSync(process.execPath, [SCRIPT, ...args], {
-    encoding: 'utf8', env: { ...process.env, DATA_DIR: TMP, NODE_ENV: 'test', ...env },
+    encoding: 'utf8', env: { ...process.env, DATA_DIR: TMP, NODE_ENV: 'test', PORT: '1', ...env },
   });
   return { code: r.status, out: r.stdout + r.stderr };
 }
@@ -225,6 +229,8 @@ test('the command imports, copies billing.db first, and run again adds nothing',
   const dry = cli(['--hub', f, '--billing', billingFile, '--dry-run']);
   assert.equal(dry.code, 0, dry.out);
   assert.match(dry.out, /Dry run clean\./);
+  assert.match(dry.out, /records\s+2\s+2\s+0/, 'it reports what the real run will add');
+  assert.match(dry.out, /Checked: every hub row is in billing\.db, unchanged\./, 'and checks it, on its copy');
   const backups = path.join(path.dirname(billingFile), 'backups');
   const preimports = () => (fs.existsSync(backups) ? fs.readdirSync(backups).filter((x) => x.startsWith('preimport-')) : []);
   assert.equal(preimports().length, 0, 'a dry run copies nothing');
@@ -233,7 +239,8 @@ test('the command imports, copies billing.db first, and run again adds nothing',
   assert.equal(first.code, 0, first.out);
   assert.match(first.out, /records\s+2\s+2\s+0/);
   assert.match(first.out, /Checked: every hub row is in billing\.db, unchanged\./);
-  assert.match(first.out, /File links stored in records: 2, on hub-api\.lsccreative\.studio; tokens missing: 0/);
+  assert.match(first.out, /File links stored in records: 2, on hub-api\.lsccreative\.studio\n/);
+  assert.doesNotMatch(first.out, /warning|lost its token/);
   assert.match(first.out, /TZ is set \(America\/New_York\)/);
   assert.equal(preimports().length, 1, 'billing.db is copied before writing');
 
@@ -250,11 +257,157 @@ test('the command imports, copies billing.db first, and run again adds nothing',
   fs.writeFileSync(path.join(share, 'Acme', 'Final.mp4'), 'x');
   const checked = cli(['--hub', f, '--billing', billingFile, '--dry-run', '--deliverables', share]);
   assert.equal(checked.code, 0, checked.out);
-  assert.match(checked.out, /1 of 1 there/);
+  assert.match(checked.out, /File tokens servable from .*: 2 of 2/, 'both tokens for the file, play and download');
+
+  // A folder where the file was is no file, as GET /hub/files sees it: with
+  // nothing servable at all, the share is the likelier mistake.
   fs.unlinkSync(path.join(share, 'Acme', 'Final.mp4'));
-  const gone = cli(['--hub', f, '--billing', billingFile, '--dry-run', '--deliverables', share]);
-  assert.equal(gone.code, 1);
-  assert.match(gone.out, /not found: Acme\/Final\.mp4/);
+  fs.mkdirSync(path.join(share, 'Acme', 'Final.mp4'));
+  const none = cli(['--hub', f, '--billing', billingFile, '--dry-run', '--deliverables', share]);
+  assert.equal(none.code, 1, none.out);
+  assert.match(none.out, /none of the 2 tokens' files are in .*: is --deliverables the deliverables share\?/);
+});
+
+test('a file already gone from the share is a warning: the import is done, and says so', () => {
+  const { f, hub } = makeHub();
+  hub.close();
+  const w = new Database(f);
+  const old = 'a1b2c3d4'.repeat(6); // a real token's length: 48 hex characters
+  w.prepare("INSERT INTO deliverable_tokens VALUES (?, 'Test Folder/Test Media.mp4', 0, '2026-09-16T04:14:29.907Z')").run(old);
+  w.close();
+  const share = path.join(TMP, `share-${(n += 1)}`);
+  fs.mkdirSync(path.join(share, 'Acme'), { recursive: true });
+  fs.writeFileSync(path.join(share, 'Acme', 'Final.mp4'), 'x');
+  const billingFile = file('billing');
+  openDatabase(billingFile).close();
+  for (const run of [1, 2]) {
+    const r = cli(['--hub', f, '--billing', billingFile, '--deliverables', share]);
+    assert.equal(r.code, 0, `run ${run}: ${r.out}`);
+    assert.match(r.out, /File tokens servable from .*: 2 of 3/);
+    assert.match(r.out, /1 warning\(s\), already so on the hub[^]*no file for token a1b2c3d4…: Test Folder\/Test Media\.mp4/);
+    assert.match(r.out, /\nDone\.\n$/, `run ${run} says it is done`);
+    assert.doesNotMatch(r.out, /tokA|tokB/, 'tokens that work are never printed');
+    assert.ok(!r.out.includes(old), 'and a dead one only by its start');
+  }
+});
+
+/** A billing.db one migration behind, as live billing is before the cutover: opening it for writing would change it. */
+function billingBehind() {
+  const billingFile = file('billing');
+  const b = openDatabase(billingFile, { backupDir: false });
+  b.exec(`DROP TABLE agreement_evidence; DROP TABLE private_auth; DROP TABLE records; DROP TABLE admin_sessions;
+    DROP TABLE deliverable_tokens; DROP TABLE bunny_assets; DROP TABLE bunny_collections;
+    DELETE FROM schema_version WHERE version = 21;`);
+  b.pragma('wal_checkpoint(TRUNCATE)');
+  b.close();
+  return billingFile;
+}
+
+test('a dry run only reads billing.db: no upgrade, no backup, not a byte changed', () => {
+  const { f, hub } = makeHub();
+  hub.close();
+  const billingFile = billingBehind();
+  const md5 = () => crypto.createHash('md5').update(fs.readFileSync(billingFile)).digest('hex');
+  const before = md5();
+  const backups = path.join(path.dirname(billingFile), 'backups');
+  const listBackups = () => (fs.existsSync(backups) ? fs.readdirSync(backups) : []);
+  const had = listBackups();
+
+  const dry = cli(['--hub', f, '--billing', billingFile, '--dry-run']);
+  assert.equal(dry.code, 0, dry.out);
+  assert.match(dry.out, /dry run: on a throwaway copy/);
+  assert.equal(md5(), before, 'the file is exactly as it was');
+  assert.deepEqual(listBackups(), had, 'and no premigrate or preimport copy was made');
+  const after = new Database(billingFile, { readonly: true });
+  assert.equal(after.prepare('SELECT MAX(version) FROM schema_version').pluck().get(), 20, 'still v20');
+  after.close();
+  const left = fs.readdirSync(os.tmpdir()).filter((x) => x.startsWith('lsc-import-dry-'));
+  assert.deepEqual(left, [], 'the throwaway copy is gone');
+});
+
+test('a real import refuses while a server answers on PORT; a dry run doesn’t mind', async () => {
+  const { f, hub } = makeHub();
+  hub.close();
+  const billingFile = file('billing');
+  openDatabase(billingFile).close();
+  const server = http.createServer((_q, r) => r.end('ok'));
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const PORT = String(server.address().port);
+  const run = (args) => new Promise((resolve) => {
+    const child = spawn(process.execPath, [SCRIPT, ...args], { env: { ...process.env, DATA_DIR: TMP, NODE_ENV: 'test', PORT } });
+    let out = '';
+    child.stdout.on('data', (c) => { out += c; });
+    child.stderr.on('data', (c) => { out += c; });
+    child.on('close', (code) => resolve({ code, out }));
+  });
+  try {
+    const real = await run(['--hub', f, '--billing', billingFile]);
+    assert.equal(real.code, 2, real.out);
+    assert.match(real.out, new RegExp(`A server is answering on port ${PORT}[^]*docker compose run --rm`));
+    const db = new Database(billingFile, { readonly: true });
+    assert.equal(db.prepare('SELECT COUNT(*) FROM deliverable_tokens').pluck().get(), 0, 'nothing imported');
+    db.close();
+    assert.equal((await run(['--hub', f, '--billing', billingFile, '--dry-run'])).code, 0);
+  } finally {
+    await new Promise((r) => server.close(r));
+  }
+});
+
+test('the command takes only its own arguments, each with its value', () => {
+  const { f, hub } = makeHub();
+  hub.close();
+  for (const args of [['--hub', f, '--deliverables', '--dry-run'], ['--hub', f, '--billing'], ['--hub', '--dry-run'], ['--hub', f, '--bogus']]) {
+    const r = cli(args);
+    assert.equal(r.code, 2, args.join(' '));
+    assert.match(r.out, /needs a value|Unknown argument|Usage/, args.join(' '));
+  }
+});
+
+test('a file that isn’t the hub’s, or one it can’t read where it is, stops it before billing.db is opened', () => {
+  const billingFile = billingBehind();
+  const md5 = () => crypto.createHash('md5').update(fs.readFileSync(billingFile)).digest('hex');
+  const before = md5();
+  const backups = path.join(path.dirname(billingFile), 'backups');
+  const had = fs.existsSync(backups) ? fs.readdirSync(backups) : [];
+  const other = file('other-billing');
+  openDatabase(other, { backupDir: false }).close();
+  const wrong = cli(['--hub', other, '--billing', billingFile]);
+  assert.equal(wrong.code, 2, wrong.out);
+  assert.match(wrong.out, /^The hub database has tables this import doesn't know/, 'said plainly, before anything else');
+  assert.equal(md5(), before, 'billing.db wasn’t opened: not migrated');
+  assert.deepEqual(fs.existsSync(backups) ? fs.readdirSync(backups) : [], had, 'and not copied');
+
+  const notHub = file('empty');
+  new Database(notHub).exec('CREATE TABLE meta (key TEXT, value TEXT)');
+  const empty = cli(['--hub', notHub, '--billing', billingFile]);
+  assert.equal(empty.code, 2);
+  assert.match(empty.out, /isn't the Client Hub's database/);
+
+  // A WAL file in a read-only folder can't be read at all: say what to do.
+  const { f, hub } = makeHub();
+  hub.close();
+  const ro = fs.mkdtempSync(path.join(TMP, 'ro-'));
+  fs.copyFileSync(f, path.join(ro, 'client-hub.db'));
+  fs.chmodSync(ro, 0o555);
+  try {
+    const r = cli(['--hub', path.join(ro, 'client-hub.db'), '--billing', billingFile]);
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /can't be read in a read-only folder[^]*\.backup/);
+  } finally {
+    fs.chmodSync(ro, 0o755);
+  }
+});
+
+test('checkTokens answers each token the way the file route would', () => {
+  const { hub } = makeHub();
+  const billing = openDatabase(file('billing'));
+  importHub(hub, billing);
+  billing.prepare("DELETE FROM deliverable_tokens WHERE token = 'tokB'").run();
+  const seen = [];
+  const resolve = (p) => { seen.push(p); return p === 'Acme/Final.mp4' ? { absolute: '/x', stat: {} } : null; };
+  assert.deepEqual(checkTokens(billing, hub, resolve), { total: 2, servable: 1, lost: ['tokB'], noFile: [] });
+  assert.deepEqual(seen, ['Acme/Final.mp4']);
+  hub.close(); billing.close();
 });
 
 test('the command exits 1 on a conflict and 2 when it can’t start', () => {

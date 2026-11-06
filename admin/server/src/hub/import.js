@@ -21,8 +21,11 @@
      is written, rather than losing it. A column billing has and the hub
      doesn't (an older hub's deliverable_tokens.downloadable) takes billing's
      default.
-   - Afterwards every hub row is checked as present in billing.db, and every
-     file link stored in a record (…/hub/files/<token>) as having its token.
+   - Afterwards every hub row is checked as present in billing.db, every file
+     link stored in a record (…/hub/files/<token>) as having its token, and,
+     given the share, every token as servable the way GET /hub/files decides.
+     A link or file that was already dead on the hub is a warning, not a
+     failed import: the import can't mend it, and rerunning won't either.
 
    Takes open handles (the hub's read-only); the CLI is scripts/import-hub.js. */
 
@@ -44,13 +47,31 @@ const quote = (name) => `"${name.replace(/"/g, '""')}"`;
 const columnsOf = (db, table) => db.prepare(`PRAGMA table_info(${quote(table)})`).all().map((c) => c.name);
 const tablesOf = (db) => new Set(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((t) => t.name));
 
-/** The columns to copy for each table the hub has, or an error naming what billing lacks. */
-function plan(hub, billing) {
+/**
+ * Throws unless `hub` looks like the Client Hub's database: some of its tables
+ * and nothing else. Needs only the hub, so it runs before billing.db is opened.
+ */
+function checkHub(hub) {
   const hubTables = tablesOf(hub);
-  const billingTables = tablesOf(billing);
   const known = new Set([...TABLES.map((t) => t.name), ...NOT_COPIED]);
   const unknown = [...hubTables].filter((t) => !known.has(t) && !t.startsWith('sqlite_'));
   if (unknown.length) throw new Error(`The hub database has tables this import doesn't know: ${unknown.join(', ')}. Nothing was copied.`);
+  if (!TABLES.some((t) => hubTables.has(t.name))) {
+    throw new Error('That isn\'t the Client Hub\'s database: it has none of the hub\'s tables. Nothing was copied.');
+  }
+  return hubTables;
+}
+
+/** The hub's own schema version, or null when it has no meta table. */
+function hubVersion(hub) {
+  if (!tablesOf(hub).has('meta')) return null;
+  return hub.prepare("SELECT value FROM meta WHERE key = 'schema_version'").pluck().get() || null;
+}
+
+/** The columns to copy for each table the hub has, or an error naming what billing lacks. */
+function plan(hub, billing) {
+  const hubTables = checkHub(hub);
+  const billingTables = tablesOf(billing);
 
   const steps = [];
   for (const table of TABLES) {
@@ -76,6 +97,25 @@ const sameRow = (a, b, columns) => columns.every((c) => a[c] === b[c]);
 const keyOf = (row, key) => key.map((c) => row[c]).join(' / ');
 
 /**
+ * One table's hub rows, and how each stands in billing.db: 'missing', 'same'
+ * or 'differs'. The one definition of "this hub row is in billing.db
+ * unchanged", for the import and the check after it alike.
+ */
+function compare(hub, billing, step) {
+  const cols = step.columns.map(quote).join(', ');
+  const rows = hub.prepare(`SELECT ${cols} FROM ${quote(step.name)}`).all();
+  const find = billing.prepare(`SELECT ${cols} FROM ${quote(step.name)} WHERE ${step.key.map((c) => `${quote(c)} = ?`).join(' AND ')}`);
+  return {
+    rows,
+    statusOf(row) {
+      const there = find.get(...step.key.map((c) => row[c]));
+      if (!there) return 'missing';
+      return sameRow(row, there, step.columns) ? 'same' : 'differs';
+    },
+  };
+}
+
+/**
  * Copies the hub's rows into billing.db in one transaction.
  * opts.dryRun: work it all out, then undo it.
  * Returns { tables: [{ name, absent, hub, added, same }], conflicts, links, skipped, written }.
@@ -91,16 +131,17 @@ function importHub(hub, billing, { dryRun = false } = {}) {
         report.tables.push({ name: step.name, absent: true, hub: 0, added: 0, same: 0 });
         continue;
       }
-      const cols = step.columns.map(quote).join(', ');
-      const rows = hub.prepare(`SELECT ${cols} FROM ${quote(step.name)}`).all();
-      const find = billing.prepare(`SELECT ${cols} FROM ${quote(step.name)} WHERE ${step.key.map((c) => `${quote(c)} = ?`).join(' AND ')}`);
-      const insert = billing.prepare(`INSERT INTO ${quote(step.name)} (${cols}) VALUES (${step.columns.map(() => '?').join(', ')})`);
+      const { rows, statusOf } = compare(hub, billing, step);
+      const insert = billing.prepare(`INSERT INTO ${quote(step.name)} (${step.columns.map(quote).join(', ')}) VALUES (${step.columns.map(() => '?').join(', ')})`);
       const counts = { name: step.name, hub: rows.length, added: 0, same: 0 };
       for (const row of rows) {
-        const there = find.get(...step.key.map((c) => row[c]));
-        if (there) {
-          if (sameRow(row, there, step.columns)) counts.same += 1;
-          else report.conflicts.push({ table: step.name, key: keyOf(row, step.key), reason: 'already in billing.db with different values' });
+        const status = statusOf(row);
+        if (status === 'same') {
+          counts.same += 1;
+          continue;
+        }
+        if (status === 'differs') {
+          report.conflicts.push({ table: step.name, key: keyOf(row, step.key), reason: 'already in billing.db with different values' });
           continue;
         }
         try {
@@ -113,7 +154,7 @@ function importHub(hub, billing, { dryRun = false } = {}) {
       }
       report.tables.push(counts);
     }
-    report.links = checkLinks(billing);
+    report.links = checkLinks(billing, hub);
     if (report.conflicts.length || dryRun) throw new Undo();
   });
 
@@ -128,14 +169,23 @@ function importHub(hub, billing, { dryRun = false } = {}) {
 
 class Undo extends Error {}
 
-/** Every file link stored in a record, and whether billing.db has its token. */
-function checkLinks(billing) {
-  const tokens = new Set(billing.prepare('SELECT token FROM deliverable_tokens').all().map((r) => r.token));
-  const links = { total: 0, missing: [], hosts: new Set() };
+const tokensIn = (db) => (tablesOf(db).has('deliverable_tokens')
+  ? new Set(db.prepare('SELECT token FROM deliverable_tokens').pluck().all())
+  : new Set());
+
+/**
+ * Every file link stored in a record, and whether billing.db has its token.
+ * `missing` are links the import lost (an error); `dead` were already dead on
+ * the hub, whose own tokens didn't include them (a warning).
+ */
+function checkLinks(billing, hub) {
+  const tokens = tokensIn(billing);
+  const hubTokens = hub ? tokensIn(hub) : new Set();
+  const links = { total: 0, missing: [], dead: [], hosts: new Set() };
   for (const { project_id: id, data } of billing.prepare('SELECT project_id, data FROM records').all()) {
     for (const [, host, token] of data.matchAll(FILE_LINK)) {
       links.total += 1;
-      if (!tokens.has(token)) links.missing.push({ projectId: id, token });
+      if (!tokens.has(token)) (hubTokens.has(token) || !hub ? links.missing : links.dead).push({ projectId: id, token });
       if (host) links.hosts.add(host);
     }
   }
@@ -143,19 +193,32 @@ function checkLinks(billing) {
   return links;
 }
 
+/**
+ * Every file token, as GET /hub/files/:token would answer it: billing.db must
+ * hold it, and `resolve` (deliverables.js resolveDeliverablePath over the
+ * share) must find a real file inside the share for its path.
+ * Returns { total, servable, lost: [tokens billing lacks], noFile: [{ token, path }] }.
+ */
+function checkTokens(billing, hub, resolve) {
+  const held = tokensIn(billing);
+  const source = tablesOf(hub).has('deliverable_tokens') ? hub : billing;
+  const rows = source.prepare('SELECT token, relative_path FROM deliverable_tokens ORDER BY relative_path, token').all();
+  const result = { total: rows.length, servable: 0, lost: [], noFile: [] };
+  for (const { token, relative_path: rel } of rows) {
+    if (!held.has(token)) result.lost.push(token);
+    else if (!resolve(rel)) result.noFile.push({ token, path: rel });
+    else result.servable += 1;
+  }
+  return result;
+}
+
 /** After an import: every hub row in billing.db, unchanged. Returns the tables that fall short. */
 function verifyImport(hub, billing) {
   const short = [];
   for (const step of plan(hub, billing)) {
     if (step.absent) continue;
-    const cols = step.columns.map(quote).join(', ');
-    const find = billing.prepare(`SELECT ${cols} FROM ${quote(step.name)} WHERE ${step.key.map((c) => `${quote(c)} = ?`).join(' AND ')}`);
-    let missing = 0;
-    const rows = hub.prepare(`SELECT ${cols} FROM ${quote(step.name)}`).all();
-    for (const row of rows) {
-      const there = find.get(...step.key.map((c) => row[c]));
-      if (!there || !sameRow(row, there, step.columns)) missing += 1;
-    }
+    const { rows, statusOf } = compare(hub, billing, step);
+    const missing = rows.filter((row) => statusOf(row) !== 'same').length;
     if (missing) short.push({ table: step.name, hub: rows.length, missing });
   }
   return short;
@@ -164,4 +227,4 @@ function verifyImport(hub, billing) {
 /** The relative paths behind the file tokens, to check against the deliverables share. */
 const tokenPaths = (billing) => billing.prepare('SELECT DISTINCT relative_path FROM deliverable_tokens ORDER BY relative_path').all().map((r) => r.relative_path);
 
-module.exports = { importHub, verifyImport, checkLinks, tokenPaths, TABLES, NOT_COPIED };
+module.exports = { importHub, verifyImport, checkHub, hubVersion, checkLinks, checkTokens, tokenPaths, TABLES, NOT_COPIED };
