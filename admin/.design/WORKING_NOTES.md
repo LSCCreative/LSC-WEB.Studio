@@ -230,7 +230,11 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   the older two-origin setup (`python3 -m http.server`) still needs web JS cache-busted by hand.
 - `server/src/web.js` serves only `SERVED`'s top-level names under `web/`: a new top-level folder the pages
   load from must be added there (and to `admin/.dockerignore`'s allow-list if it isn't under `web/`).
-  `js/config.js` is generated, never read from disk.
+  `js/config.js` is generated, never read from disk. The server won't start without `web/index.html` or with
+  a `web/js/` mirror (calc, documents, call-sheet) that differs from `server/src/`: re-copy, then restart.
+- Every `/api` reply carries `X-LSC-Version` (the stamped admin page's hash); `js/update.js` shows a Reload
+  banner when it differs from the page's `lsc-version` meta. Files are rechecked against disk at most once a
+  second, so a dev edit shows up within a second. `docker-compose.yml` lives in `admin/` (context `.`).
 - Headless screenshots: `server/node_modules/puppeteer-core` + local Chrome, in-page login,
   `page.on('dialog', d => d.accept())`, wait for `#ed-bar` not networkidle, `captureBeyondViewport:
   false` and no clip for menu shots. The browser pane is often hidden and freezes screenshots.

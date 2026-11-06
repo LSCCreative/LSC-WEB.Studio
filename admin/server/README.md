@@ -18,11 +18,12 @@ npm start                     # http://localhost:8080
 Or the way it will actually run in production:
 
 ```bash
-docker compose up --build
+cd .. && docker compose up --build    # from admin/, which holds docker-compose.yml
 ```
 
-Both write to the same place: `./data` on the host, mounted at `/data` inside
-the container. Stopping one and starting the other picks up exactly where it
+The image is built from `admin/` so it carries the admin's pages (`web/`) too.
+Both write to the same place: `server/data` on the host, mounted at `/data`
+inside the container. Stopping one and starting the other picks up exactly where it
 left off.
 
 ## Layout

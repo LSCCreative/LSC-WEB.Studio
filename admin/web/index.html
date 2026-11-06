@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <title>LSC Billing</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The server writes this page's version here (server/src/web.js); js/update.js
+     compares it with the one each /api reply carries. Empty when the page is
+     served some other way, which switches the check off. -->
+<meta name="lsc-version" content="">
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="apple-touch-icon" href="favicon.png">
 <!-- First: the design tokens (ui-clarity). Every stylesheet below reads them. -->
@@ -78,6 +82,14 @@
     <button type="button" class="btn btn-sm" id="connection-banner-retry">Try Again</button>
   </div>
 
+  <!-- Raised by js/update.js when the server has a newer version of the app
+       than this tab is running. role="status", like the banner above. -->
+  <div id="update-banner" role="status">
+    <span class="cb-dot" aria-hidden="true"></span>
+    <span id="update-banner-message">The app has been updated. Reload to use the new version.</span>
+    <button type="button" class="btn btn-sm" id="update-banner-reload">Reload</button>
+  </div>
+
   <!-- <main> so there is a main landmark once signed in: #login-view is the
        only other one and it is hidden by then. Every screen mounts here. -->
   <main id="main"></main>
@@ -118,6 +130,7 @@
 <script src="js/data.js"></script>
 <script src="js/toast.js"></script>
 <script src="js/connection.js"></script>
+<script src="js/update.js"></script>
 <script src="js/unsaved.js"></script>
 <script src="js/modal.js"></script>
 <script src="js/menu.js"></script>

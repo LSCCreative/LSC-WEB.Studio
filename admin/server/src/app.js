@@ -155,6 +155,22 @@ function createApp(db, opts = {}) {
 
   app.use(express.json({ limit: '2mb' }));
 
+  // The admin's pages (merge task M4), built here so a missing web/ or a copy
+  // of calc.js that differs from the server's stops the server at start (web.js).
+  // Every /api reply says the admin's current version, so a tab left open
+  // across a change can offer a reload (js/update.js).
+  const web = createWebRouter({
+    dir: opts.webDir || WEB_DIR,
+    maps: opts.webMaps !== undefined ? opts.webMaps : (config.isTest ? {} : config.mapsBrowser),
+    mirrors: opts.webMirrors,
+    recheckMs: opts.webRecheckMs,
+  });
+  app.use('/api', (_req, res, next) => {
+    const version = web.version();
+    if (version) res.setHeader('X-LSC-Version', version);
+    next();
+  });
+
   // The send queue (task 28): signing queues email and kicks the worker, the
   // owner's routes edit the queue. Built here so a test passes its own mailer.
   // A test never reaches a real SMTP server, whatever the developer's .env holds.
@@ -284,10 +300,7 @@ function createApp(db, opts = {}) {
   // ── The admin's own pages, web/ (merge task M4): same origin as /api, with
   // config.js written here and every script stamped (web.js, safeguard S17).
   // A test never reads the developer's Maps key, unless it passes its own.
-  app.use(createWebRouter({
-    dir: opts.webDir || WEB_DIR,
-    maps: opts.webMaps !== undefined ? opts.webMaps : (config.isTest ? {} : config.mapsBrowser),
-  }));
+  app.use(web);
 
   // ── Fallbacks. API 404s stay JSON so the client's fetch wrapper can tell a
   // missing route from a missing page.

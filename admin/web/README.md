@@ -49,6 +49,9 @@ js/data.js               rate card, settings, overhead and goals, cached for
                          the session and preloaded together
 js/toast.js              the corner toast
 js/connection.js         the connection-lost banner; subscribes to api.js
+js/update.js             the "app has been updated" banner: compares the page's
+                         lsc-version meta with each /api reply's X-LSC-Version
+                         (merge task M4) and offers a reload
 js/modal.js              the shared modal focus trap (LSCModal.trapTab)
 js/unsaved.js            unsaved-edit warnings — confirm() on the way out of a
                          screen, beforeunload on the way out of the page
@@ -105,7 +108,9 @@ on each changed file, then reload.
 Served by the server this can't happen: the page is sent `no-cache`, and a
 changed file gets a new `?v=` address the browser has never cached
 (`test-web.js` checks it; so did a real browser holding the old file). Only an
-address carrying the file's current stamp is cached for long.
+address carrying the file's current stamp is cached for long. A tab left open
+across a change is told by `js/update.js`, and the server refuses to start if
+`web/js/calc.js`, `documents.js` or `call-sheet.js` differs from its own copy.
 
 If live totals ever look impossible, check what the page is actually
 running — `LSCCalc.computeTotals.length` is 4 as of the GST-free change — and see

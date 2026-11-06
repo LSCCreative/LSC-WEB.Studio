@@ -22,7 +22,8 @@ process.env.LSC_MAPS_KEY = 'the-developers-real-key';
 
 const { openDatabase } = require('../src/db');
 const { createApp } = require('../src/app');
-const { WEB_DIR } = require('../src/web');
+const express = require('express');
+const { createWebRouter, WEB_DIR, MIRRORS } = require('../src/web');
 
 const HUB_HOST = 'hub.example';
 const WEB = path.join(TMP, 'web');
@@ -34,7 +35,7 @@ function write(rel, text) {
 }
 
 write('index.html', [
-  '<!doctype html><title>Admin</title>',
+  '<!doctype html><meta name="lsc-version" content=""><title>Admin</title>',
   '<link rel="stylesheet" href="css/app.css">',
   '<link rel="icon" type="image/png" href="favicon.png">',
   '<script src="https://maps.example/api.js"></script>',
@@ -55,7 +56,9 @@ write('.env', 'SECRET=1');
 
 async function start(opts = {}) {
   const db = openDatabase(path.join(TMP, `app-${crypto.randomBytes(4).toString('hex')}.db`));
-  const app = createApp(db, { webDir: WEB, ...opts });
+  // The fixture has no copies of the server's files to check, and is edited
+  // under the running server, so it is read afresh on every request.
+  const app = createApp(db, { webDir: WEB, webMirrors: [], webRecheckMs: 0, ...opts });
   const server = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
   const { port } = server.address();
   const call = (p, { method = 'GET', host = `127.0.0.1:${port}`, headers = {} } = {}) => new Promise((resolve, reject) => {
@@ -120,6 +123,7 @@ test('a browser holding the old version loads the new calc.js (S17)', async () =
     assert.notEqual(after, before, 'and the page names an address it has never cached');
     const fresh = await s.call(`/${after}`);
     assert.equal(fresh.text, 'window.LSCCalc = { version: 2 };');
+    assert.equal(`js/calc.js?v=${sha(fresh.text)}`, after, 'a long-kept address holds the bytes its stamp names');
     assert.equal(fresh.headers['cache-control'], 'public, max-age=31536000, immutable');
     const old = await s.call(`/${before}`);
     assert.equal(old.headers['cache-control'], 'no-cache', 'an out-of-date stamp is never kept for long');
@@ -197,7 +201,7 @@ test('the portal’s hostname serves none of the admin (S4)', async () => {
 });
 
 test('every script and stylesheet the real pages name exists, and is stamped', async () => {
-  const real = await start({ webDir: WEB_DIR });
+  const real = await start({ webDir: WEB_DIR, webMirrors: undefined });
   try {
     for (const [p, dir] of [['/', ''], ['/c/', 'c/']]) {
       const html = (await real.call(p)).text;
@@ -215,4 +219,87 @@ test('every script and stylesheet the real pages name exists, and is stamped', a
     assert.ok(calc, 'calc.js, the file S17 exists for, is among them');
     assert.equal(calc[1], sha(fs.readFileSync(path.join(WEB_DIR, 'js', 'calc.js'))));
   } finally { await real.close(); }
+});
+
+test('an unchanged file answers 304 to the ETag it was sent with', async () => {
+  const first = await s.call('/js/calc.js');
+  const again = await s.call('/js/calc.js', { headers: { 'if-none-match': first.headers.etag } });
+  assert.deepEqual([again.status, again.text], [304, '']);
+});
+
+test('config.js is the generated one however its address is spelt', async () => {
+  for (const p of ['/js/./config.js', '/js//config.js', '/js/%2e/config.js', '/c/../js/config.js', '/js/CONFIG.js']) {
+    const r = await s.call(p);
+    assert.equal(r.status, 200, p);
+    assert.match(r.text, /window\.location\.origin/, p);
+    assert.doesNotMatch(r.text, /left-on-disk/, p);
+    assert.equal(r.headers['cache-control'], 'no-store', p);
+  }
+});
+
+test('the page carries its version, and every /api reply the current one', async () => {
+  const page = await s.call('/');
+  const mine = /<meta name="lsc-version" content="([0-9a-f]{12})">/.exec(page.text);
+  assert.ok(mine, 'the server fills the page’s version in');
+  for (const p of ['/api/session', '/api/nope']) {
+    assert.equal((await s.call(p)).headers['x-lsc-version'], mine[1], `${p}, signed in or not`);
+  }
+  assert.equal((await s.call('/health')).headers['x-lsc-version'], undefined, 'only /api says it');
+
+  write('js/calc.js', 'window.LSCCalc = { version: 3 };');
+  try {
+    const now = (await s.call('/api/session')).headers['x-lsc-version'];
+    assert.notEqual(now, mine[1], 'a changed script is a new version, so an open tab hears of it');
+    assert.match((await s.call('/')).text, new RegExp(`content="${now}"`), 'and a reload carries it');
+  } finally {
+    write('js/calc.js', 'window.LSCCalc = { version: 1 };');
+  }
+  assert.doesNotMatch((await s.call('/c/')).text, /lsc-version/, 'the client page has none');
+});
+
+test('files are trusted for a second, not read on every request', async () => {
+  let t = 1000;
+  const router = createWebRouter({ dir: WEB, mirrors: [], now: () => t });
+  const app = express().use(router);
+  const server = await new Promise((resolve) => { const x = app.listen(0, '127.0.0.1', () => resolve(x)); });
+  const get = (p) => fetch(`http://127.0.0.1:${server.address().port}${p}`).then((r) => r.text());
+  try {
+    const v1 = router.version();
+    assert.equal(await get('/c/c.css'), 'body{}');
+    write('c/c.css', 'body{color:blue}');
+    write('js/calc.js', 'window.LSCCalc = { version: 9 };');
+    assert.equal(router.version(), v1, 'within the second, the file as last read');
+    assert.equal(await get('/c/c.css'), 'body{}');
+    t += 1000;
+    assert.notEqual(router.version(), v1, 'after it, the change');
+    assert.equal(await get('/c/c.css'), 'body{color:blue}');
+  } finally {
+    write('c/c.css', 'body{}');
+    write('js/calc.js', 'window.LSCCalc = { version: 1 };');
+    await new Promise((r) => server.close(r));
+  }
+});
+
+test('it won’t start without the pages, or with a copy that differs from the server’s', () => {
+  const empty = fs.mkdtempSync(path.join(TMP, 'empty-'));
+  assert.throws(() => createWebRouter({ dir: empty, mirrors: [] }), /index\.html is missing/);
+
+  const mirror = fs.mkdtempSync(path.join(TMP, 'mirror-'));
+  fs.writeFileSync(path.join(mirror, 'index.html'), '<!doctype html>');
+  fs.mkdirSync(path.join(mirror, 'js'));
+  const server = path.join(mirror, 'server-calc.js');
+  fs.writeFileSync(server, 'calc v2');
+  fs.writeFileSync(path.join(mirror, 'js', 'calc.js'), 'calc v1');
+  const mirrors = [{ web: 'js/calc.js', server }];
+  assert.throws(() => createWebRouter({ dir: mirror, mirrors }), /web\/js\/calc\.js doesn.t match/);
+  fs.unlinkSync(path.join(mirror, 'js', 'calc.js'));
+  assert.throws(() => createWebRouter({ dir: mirror, mirrors }), /doesn.t match/, 'a missing copy is a mismatch too');
+  fs.writeFileSync(path.join(mirror, 'js', 'calc.js'), 'calc v2');
+  assert.doesNotThrow(() => createWebRouter({ dir: mirror, mirrors }));
+
+  const db = openDatabase(path.join(TMP, 'refuse.db'));
+  assert.throws(() => createApp(db, { webDir: empty }), /index\.html is missing/, 'createApp refuses too');
+  db.close();
+  assert.deepEqual(MIRRORS.map((m) => m.web), ['js/calc.js', 'js/documents.js', 'js/call-sheet.js']);
+  assert.doesNotThrow(() => createWebRouter({ dir: WEB_DIR }), 'the real web/ matches the real server');
 });

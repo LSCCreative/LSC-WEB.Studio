@@ -200,7 +200,8 @@
   }
   /* The banner is a full-bleed bar under the header; its inset matches #main's
      so its text lines up with the page content. */
-  #connection-banner {
+  #connection-banner,
+  #update-banner {
     padding: 10px 24px;
   }
 
@@ -400,7 +401,8 @@
   #main {
     padding: 26px 16px;
   }
-  #connection-banner {
+  #connection-banner,
+  #update-banner {
     padding: 10px 16px;
   }
   #app-header {

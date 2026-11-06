@@ -25,6 +25,7 @@
 
 const LSCApi = (() => {
   const listeners = new Set();
+  const versionListeners = new Set();
 
   function announce(event) {
     for (const listener of listeners) {
@@ -98,6 +99,19 @@ const LSCApi = (() => {
       throw new ApiError('network', 'Could not reach the server.', { cause: err });
     }
 
+    // The app's current version, on every reply from a server that serves the
+    // admin itself (js/update.js). Absent, or unreadable cross-origin: ignored.
+    const version = res.headers.get('X-LSC-Version');
+    if (version) {
+      for (const listener of versionListeners) {
+        try {
+          listener(version);
+        } catch (err) {
+          console.error('[api] version listener threw', err);
+        }
+      }
+    }
+
     if (res.ok && FILE_TYPES[expect]) {
       if (!FILE_TYPES[expect].test(res.headers.get('Content-Type') || '')) {
         throw new ApiError('server', 'The server sent a reply this app could not read.');
@@ -166,6 +180,11 @@ const LSCApi = (() => {
     subscribe: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+    /* Called with the server's X-LSC-Version after every reply that has one. */
+    onVersion: (listener) => {
+      versionListeners.add(listener);
+      return () => versionListeners.delete(listener);
     },
     get: (path) => request('GET', path),
     /* `options.headers`: extra request headers. The API must list each in

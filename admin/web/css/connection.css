@@ -48,3 +48,40 @@ body[data-connection="lost"] [data-write] {
   opacity: .4;
   cursor: not-allowed;
 }
+
+/* The "app has been updated" banner (js/update.js, merge task M4): the same
+   strip as the connection banner, in the same place. While the connection is
+   lost that one says more, so this one waits underneath it. */
+#update-banner {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 40px;
+  font-size: 12px;
+  color: var(--text);
+  border-bottom: 1px solid var(--accent);
+  position: sticky;
+  top: 52px;
+  z-index: 99;
+  background: color-mix(in srgb, var(--color-accent-primary) 12%, var(--color-bg-page));
+}
+#update-banner.show { display: flex; }
+body[data-connection="lost"] #update-banner { display: none; }
+
+#update-banner .cb-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+#update-banner-message { flex: 1; line-height: 1.5; }
+
+#update-banner-reload { flex-shrink: 0; }
+
+#update-banner-reload:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
+}

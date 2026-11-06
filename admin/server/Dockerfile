@@ -2,7 +2,7 @@
 #
 # Built from the admin/ folder, not server/, so the image can carry web/ too:
 #   docker build -f server/Dockerfile .        (from admin/)
-# docker-compose.yml says the same (context: ..). The image keeps the repo's
+# admin/docker-compose.yml builds the same way. The image keeps the repo's
 # layout, /app/server beside /app/web, so the server finds web/ where it does
 # in a checkout. admin/.dockerignore lets in only what the image needs.
 #
