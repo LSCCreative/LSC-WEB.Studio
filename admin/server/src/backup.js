@@ -3,13 +3,15 @@
 const fs = require('fs');
 const path = require('path');
 
-// Three kinds of backup share one directory, told apart by filename prefix.
+// Four kinds of backup share one directory, told apart by filename prefix.
 // 'nightly' is the daily safety net; 'prewrite' is the snapshot taken just
 // before each mutating request, so a single bad write is always one file
 // away from undone; 'premigrate' is the copy taken before a migration
-// (db.js), the one to restore if an upgrade goes wrong. Kept short since pre-write snapshots pile up fast under
+// (db.js), the one to restore if an upgrade goes wrong; 'preimport' is the
+// copy taken before the Client Hub's data is imported (scripts/import-hub.js).
+// Every kind is the whole file, so every table is in each, the portal's too. Kept short since pre-write snapshots pile up fast under
 // normal use — the point is a recent recovery point, not a full history.
-const RETENTION = { nightly: 14, prewrite: 10, premigrate: 10 };
+const RETENTION = { nightly: 14, prewrite: 10, premigrate: 10, preimport: 10 };
 const AUTOSAVE_WINDOW_MS = 10 * 60 * 1000;
 const NIGHTLY_HOUR = 2; // low-traffic window for a single-user app
 

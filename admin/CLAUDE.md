@@ -37,7 +37,8 @@ Code comments that cite `.design/<track>/` point into that archive.
 - **`server/src/hub/`**: the Client Portal's `/hub/*` routes, moved from the hub's own server (merge
   task M2). `createHubRouter(db, opts)` takes the database and every secret as arguments: nothing in
   `hub/` opens a file or reads `process.env`. Its settings are `config.hub`; `app.js` mounts it (M3) with its
-  own hostname and CORS. Tests in `test-hub.js` and `test-portal-mount.js`.
+  own hostname and CORS. Tests in `test-hub.js` and `test-portal-mount.js`. `hub/import.js` +
+  `scripts/import-hub.js` bring the old `client-hub.db` across (M5, `test-hub-import.js`).
 - `index.html` / `main.js` / `preload.js` at the repo root are the retired Electron app (git-ignored).
   Don't touch them.
 
