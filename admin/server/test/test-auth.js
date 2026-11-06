@@ -89,7 +89,9 @@ test('the right password sets a hardened session cookie', async () => {
   const setCookie = res.headers.getSetCookie()[0];
   assert.match(setCookie, new RegExp(`^${COOKIE_NAME}=`));
   assert.match(setCookie, /HttpOnly/i);
-  assert.match(setCookie, /SameSite=Strict/i);
+  // Lax, now the server serves the admin itself (M4): Google's consent
+  // navigates back to the callback, which Strict would see as signed out.
+  assert.match(setCookie, /SameSite=Lax/i);
   assert.match(setCookie, /Path=\//i);
 
   // The token itself is never what's stored.

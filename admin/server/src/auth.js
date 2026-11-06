@@ -57,8 +57,8 @@ function cookieOptions(maxAgeSeconds) {
   return {
     httpOnly: true,
     secure: config.cookieSecure,
-    // 'strict' when the UI is same-origin; 'none' when it's served from
-    // GitHub Pages and the browser needs to send the cookie cross-site
+    // 'lax' by default: the admin is served by this same process (config.js
+    // says why not 'strict'); 'none' only for an admin on another origin
     // (requires secure:true, which is on by default).
     sameSite: config.cookieSameSite,
     path: '/',

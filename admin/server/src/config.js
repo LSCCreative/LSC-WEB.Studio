@@ -39,10 +39,12 @@ const config = {
   adminUsername: process.env.ADMIN_USERNAME || 'lachlan',
   adminPassword: process.env.ADMIN_PASSWORD || '',
   cookieSecure: bool(process.env.COOKIE_SECURE, true),
-  // 'strict' when the UI is served by this same process (the old plan);
-  // 'none' when the UI lives on a different origin (GitHub Pages) and the
-  // browser needs to send the cookie cross-site. 'none' requires Secure.
-  cookieSameSite: process.env.COOKIE_SAMESITE || 'strict',
+  // 'lax' now this process serves the admin itself (merge task M4): sent on
+  // the admin's own requests and on a top-level navigation into it, which
+  // Google's consent needs to come back to /api/google/oauth/callback signed
+  // in ('strict' would arrive signed out). 'none' only while the admin is
+  // served from another origin; it requires Secure.
+  cookieSameSite: process.env.COOKIE_SAMESITE || 'lax',
   // Comma-separated list of origins allowed to call the API with credentials,
   // e.g. "https://lachlan.github.io". Empty = same-origin only (CORS off).
   corsOrigins: (process.env.CORS_ORIGINS || '')
@@ -96,6 +98,14 @@ const config = {
   // Where Google's consent sends the browser back to: the app's address
   // (Pages), with the trailing slash. APP_URL unless APP_ORIGIN says otherwise.
   appOrigin: appUrlOf(process.env.APP_ORIGIN) || appUrlOf(process.env.APP_URL),
+  // The trip planner's Google Maps, as the admin's generated js/config.js
+  // hands them to the browser (web.js): the "LSC Billing — browser" key,
+  // restricted to the admin's address, and the Map ID. Not secrets once
+  // served, but kept out of the repo. Empty = the travel view says so.
+  mapsBrowser: {
+    key: (process.env.LSC_MAPS_KEY || '').trim(),
+    mapId: (process.env.LSC_MAPS_ID || '').trim(),
+  },
   isTest: process.env.NODE_ENV === 'test',
   // The Client Portal's /hub/* routes (merge task M2), moved from the hub's own
   // server. Its env names gained HUB_ where billing's would be ambiguous: the

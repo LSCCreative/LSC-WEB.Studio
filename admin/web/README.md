@@ -1,7 +1,12 @@
-# web/ — the GitHub Pages frontend
+# web/ — the admin's frontend
 
-The static site. It talks to the NAS API over CORS; it has no build step, no
-bundler and no dependencies — plain HTML, CSS and scripts, served as-is.
+The static site: no build step, no bundler and no dependencies — plain HTML,
+CSS and scripts. **Since merge task M4 the server serves it** (`server/src/web.js`),
+on the same origin as `/api`: it writes `js/config.js` on each request and stamps
+every local script and stylesheet a page names with `?v=<hash of the file>`, the
+two jobs GitHub Pages' workflow did. Until the cutover (M6) the live admin is
+still the Pages copy in `LSCCreative/lsc-billing-app`, talking to the API over
+CORS; the notes below on the two-origin setup describe that.
 
 ## Layout
 
@@ -28,7 +33,9 @@ css/a11y.css             accessibility pass: global focus-visible rings,
 fonts/*.woff2          Delight 400/700 (from the old app) + CS Felice Mono. Metro
                          Sans joins them once its web licence is confirmed
 js/config.js             the API address and the Google Maps browser key + Map
-                         ID. Gitignored — copy from config.example.js
+                         ID. Written by the server per request (LSC_MAPS_KEY,
+                         LSC_MAPS_ID); a file only for the python setup below,
+                         gitignored — copy from config.example.js
 js/api.js                the only place that calls fetch; classifies failures.
                          postPdf() is the one binary path (PDF export)
 js/hnry.js               Hnry on the invoice screens (hnry-invoicing H6): an invoice's
@@ -95,6 +102,11 @@ server shows it present, and a stale `js/views/*.js` shows up as markup the file
 on disk clearly writes simply not being there. `fetch(url, {cache: 'reload'})`
 on each changed file, then reload.
 
+Served by the server this can't happen: the page is sent `no-cache`, and a
+changed file gets a new `?v=` address the browser has never cached
+(`test-web.js` checks it; so did a real browser holding the old file). Only an
+address carrying the file's current stamp is cached for long.
+
 If live totals ever look impossible, check what the page is actually
 running — `LSCCalc.computeTotals.length` is 4 as of the GST-free change — and see
 the cache-busting note on the GitHub Pages task in TASKS.md.
@@ -129,7 +141,13 @@ The two Google values are in `.credentials.local.md`. The browser key only works
 
 ## Running it locally
 
-Two servers, because the split is the whole point — the frontend and the API
+**One server (M4):** `preview_start` the `admin` launch config, or by hand
+`cd server && PORT=8090 COOKIE_SECURE=1 npm start` (on a seeded data dir), then
+open http://localhost:8090. No `CORS_ORIGINS`, no `COOKIE_SAMESITE`, no
+`js/config.js` file. The Maps browser key isn't allowed on that address, so the
+travel view's map won't draw.
+
+**Two servers**, the live setup until M6 — the split is the point there — the frontend and the API
 are different origins in production, so they should be different origins in
 development too. In Claude Code, `preview_start` the `api` and `web` configs
 from `.claude/launch.json`. By hand:

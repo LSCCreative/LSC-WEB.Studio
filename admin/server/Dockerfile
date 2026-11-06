@@ -1,4 +1,10 @@
-# LSC Billing server.
+# LSC Billing server, and the admin's pages it serves (merge task M4).
+#
+# Built from the admin/ folder, not server/, so the image can carry web/ too:
+#   docker build -f server/Dockerfile .        (from admin/)
+# docker-compose.yml says the same (context: ..). The image keeps the repo's
+# layout, /app/server beside /app/web, so the server finds web/ where it does
+# in a checkout. admin/.dockerignore lets in only what the image needs.
 #
 # Built on whatever architecture the host runs: arm64 on Lachlan's Mac for local
 # testing, amd64 on the DXP4800 Pro's Core i3. Nothing here is arch-specific, so
@@ -12,7 +18,7 @@ WORKDIR /app
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 make g++ ca-certificates \
  && rm -rf /var/lib/apt/lists/*
-COPY package.json package-lock.json ./
+COPY server/package.json server/package-lock.json ./
 RUN npm ci --omit=dev
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
@@ -20,7 +26,7 @@ RUN npm ci --omit=dev
 # built modules.
 FROM node:22-bookworm-slim AS runtime
 ENV NODE_ENV=production
-WORKDIR /app
+WORKDIR /app/server
 
 # PDF export (POST /api/estimates/:id/pdf) renders through this Chromium in
 # headless mode via puppeteer-core — puppeteer-core ships no browser of its
@@ -31,10 +37,12 @@ RUN apt-get update \
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY package.json ./
-COPY src ./src
-COPY scripts ./scripts
-COPY public ./public
+COPY server/package.json ./
+COPY server/src ./src
+COPY server/scripts ./scripts
+# The admin's pages (src/web.js serves them). Its js/config.js is written per
+# request, so none is copied in.
+COPY web /app/web
 
 # /data is the volume mount point. Created and owned here so the container can
 # write to it as the unprivileged `node` user.

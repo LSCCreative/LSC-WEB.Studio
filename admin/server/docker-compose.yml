@@ -18,7 +18,10 @@
 
 services:
   billing:
-    build: .
+    # The admin/ folder, so the image carries web/ as well as server/ (M4).
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
     image: lsc-billing:latest
     container_name: lsc-billing
     restart: unless-stopped

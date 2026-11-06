@@ -43,9 +43,11 @@ Code comments that cite `.design/<track>/` point into that archive.
 
 ## Architecture (short)
 
-Different origins, so CORS (`CORS_ORIGINS`) and cross-site cookies (`COOKIE_SAMESITE=none`, `Secure`;
-API over HTTPS through a Cloudflare Tunnel). Site `app.lsccreative.studio`, API
-`billing.lsccreative.studio`. The security bar is deliberately low (the user's conscious call): don't
+Live today: different origins, so CORS (`CORS_ORIGINS`) and cross-site cookies (`COOKIE_SAMESITE=none`,
+`Secure`; API over HTTPS through a Cloudflare Tunnel). Site `app.lsccreative.studio`, API
+`billing.lsccreative.studio`. **In this merged copy (M4) the server serves `web/` itself** (`server/src/web.js`):
+one origin, a `SameSite=Lax` cookie, `js/config.js` written per request, scripts stamped `?v=<content hash>`.
+Tests in `test-web.js`; the `admin` launch config runs it. The security bar is deliberately low (the user's conscious call): don't
 re-raise it, but keep internal figures (floors, tax set-aside, take-home, Cost Breakdown) off every
 public route. Client pages (`web/c/`) are light, in the colours of lsccreative.studio.
 

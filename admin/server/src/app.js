@@ -1,6 +1,5 @@
 'use strict';
 
-const path = require('path');
 const express = require('express');
 const { config, appUrlOf } = require('./config');
 const { registerAuthRoutes, requireAuth } = require('./auth');
@@ -29,8 +28,7 @@ const { createOutbox } = require('./sends');
 const { createHnry } = require('./hnry');
 const { createHnryPusher } = require('./hnry-push');
 const { createHubRouter } = require('./hub/routes');
-
-const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+const { createWebRouter, WEB_DIR } = require('./web');
 
 const underPath = (req, prefix) => req.path === prefix || req.path.startsWith(`${prefix}/`);
 
@@ -283,8 +281,13 @@ function createApp(db, opts = {}) {
   registerGoogleRoutes(app, db, { oauth, sync: googleSync });
   googleSync.start();
 
-  // ── Static app shell. Empty until the UI is ported off the Electron build.
-  app.use(express.static(PUBLIC_DIR, { index: 'index.html', extensions: ['html'] }));
+  // ── The admin's own pages, web/ (merge task M4): same origin as /api, with
+  // config.js written here and every script stamped (web.js, safeguard S17).
+  // A test never reads the developer's Maps key, unless it passes its own.
+  app.use(createWebRouter({
+    dir: opts.webDir || WEB_DIR,
+    maps: opts.webMaps !== undefined ? opts.webMaps : (config.isTest ? {} : config.mapsBrowser),
+  }));
 
   // ── Fallbacks. API 404s stay JSON so the client's fetch wrapper can tell a
   // missing route from a missing page.
@@ -305,4 +308,4 @@ function createApp(db, opts = {}) {
   return app;
 }
 
-module.exports = { createApp, PUBLIC_DIR };
+module.exports = { createApp };

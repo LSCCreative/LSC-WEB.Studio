@@ -225,7 +225,12 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
 - `cd server && npm test` is the acceptance gate. For money math, break the line and confirm a test
   fails. `test-public.js`/`test-call-sheet-page.js` "wrong link is the same 404" is timing-based and
   flaky under load (passes on rerun).
-- Restart the API after server edits; cache-bust web JS before trusting the browser.
+- Restart the API after server edits. Served by the server (the `admin` launch config, M4), every page
+  stamps its scripts `?v=<content hash>` and is sent `no-cache`, so the browser runs what's on disk; only
+  the older two-origin setup (`python3 -m http.server`) still needs web JS cache-busted by hand.
+- `server/src/web.js` serves only `SERVED`'s top-level names under `web/`: a new top-level folder the pages
+  load from must be added there (and to `admin/.dockerignore`'s allow-list if it isn't under `web/`).
+  `js/config.js` is generated, never read from disk.
 - Headless screenshots: `server/node_modules/puppeteer-core` + local Chrome, in-page login,
   `page.on('dialog', d => d.accept())`, wait for `#ed-bar` not networkidle, `captureBeyondViewport:
   false` and no clip for menu shots. The browser pane is often hidden and freezes screenshots.
