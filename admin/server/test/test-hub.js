@@ -25,6 +25,7 @@ const { createHubRouter, normalizeDeliverablePath } = require('../src/hub/routes
 const { createBunny, missingBunnySettings, statusFromVideo } = require('../src/hub/bunny');
 const { createUrlSigner } = require('../src/hub/url-signing');
 const { createAdminAuth } = require('../src/hub/admin-auth');
+const { rateLimit, clientIp } = require('../src/routes/public');
 
 const PIN = '4821';
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
@@ -55,13 +56,15 @@ test('loading the hub code opens no database and reads no secret', () => {
 
 test('the router won’t build without its secrets and settings, and says which', () => {
   const db = openDatabase(path.join(TMP, 'secrets.db'));
-  const base = { publicBaseUrl: BASE, deliverablesDir: TMP, backupDir: path.join(TMP, 'secrets-backups') };
+  const base = { publicBaseUrl: BASE, deliverablesDir: TMP, backupDir: path.join(TMP, 'secrets-backups'), rateLimit, clientIp };
   assert.throws(() => createHubRouter(db, { ...base, adminPinHash: sha(PIN) }), /HUB_SIGNING_SECRET/);
   assert.throws(() => createHubRouter(db, { ...base, signingSecret: 's' }), /HUB_ADMIN_PIN_HASH/);
   const secrets = { signingSecret: 's', adminPinHash: sha(PIN) };
   assert.throws(() => createHubRouter(db, { ...secrets, ...base, publicBaseUrl: '' }), /HUB_PUBLIC_BASE_URL/);
   assert.throws(() => createHubRouter(db, { ...secrets, ...base, deliverablesDir: '' }), /DELIVERABLES_DIR/);
   assert.throws(() => createHubRouter(db, { ...secrets, ...base, backupDir: undefined }), /backupDir/);
+  assert.throws(() => createHubRouter(db, { ...secrets, ...base, rateLimit: undefined }), /rateLimit/);
+  assert.throws(() => createHubRouter(db, { ...secrets, ...base, clientIp: undefined }), /clientIp/);
   db.close();
 });
 
@@ -241,6 +244,8 @@ async function startHub(overrides = {}, { trustProxy = 1 } = {}) {
     bunnyFetch: bunny.fetchImpl,
     videoLookupGapMs: 1,
     backupDir,
+    rateLimit,
+    clientIp,
     ...overrides,
   });
   const app = express();
@@ -462,26 +467,77 @@ test('CORS: credentials for the portal’s origin only; open reads for anyone', 
 test('notify logs and answers, as on the hub; health reads the deliverables folder', async () => {
   const r = await hub.call('/hub/notify', { method: 'POST', cookie, body: { kind: 'invite' } });
   assert.deepEqual(r.body, { ok: true, dispatched: 'invite' });
-  assert.equal(hub.router.deliverablesHealth().ok, true);
-  assert.ok(hub.router.deliverablesHealth().projects >= 2);
+  const health = await hub.call('/hub/deliverables-health', { cookie });
+  assert.equal(health.body.ok, true);
+  assert.ok(health.body.projects >= 2);
+  assert.equal((await hub.call('/hub/deliverables-health')).status, 401, 'the editor only');
   const missing = await startHub({ deliverablesDir: path.join(TMP, 'no-such-folder') });
   try {
-    assert.deepEqual(missing.router.deliverablesHealth(), { ok: false, error: 'ENOENT' });
+    assert.deepEqual(await missing.router.deliverablesHealth(), { ok: false, error: 'ENOENT' });
   } finally { await missing.close(); missing.db.close(); }
 });
 
 /* ── Fixes from the M1 and M2 review ───────────────────────────────────── */
 
-test('without trust proxy at exactly 1, every /hub route refuses, and nothing else is touched', async () => {
-  for (const trustProxy of [null, true, 2]) {
-    const bad = await startHub({}, { trustProxy });
-    try {
-      const r = await bad.call('/hub/admin-auth', { method: 'POST', body: { email: ADMIN, pin: PIN } });
-      assert.deepEqual([r.status, r.body], [503, { error: 'proxy not set up' }], String(trustProxy));
-      assert.equal(r.headers.get('set-cookie'), null);
-      assert.equal((await bad.call('/elsewhere')).text, 'billing', 'only /hub is refused');
-    } finally { await bad.close(); bad.db.close(); }
-  }
+/* ── Fixes from the M3 review ──────────────────────────────────────────── */
+
+test('client sign-in is limited per address', async () => {
+  const fresh = await startHub({ limits: { auth: { max: 3, windowMs: 60_000 } } });
+  try {
+    const from = (ip) => ({ 'cf-connecting-ip': ip });
+    for (let i = 0; i < 3; i += 1) {
+      const r = await fresh.call('/hub/auth', { method: 'POST', headers: from('198.51.100.1'), body: { email: `x${i}@b.example`, code: '1234' } });
+      assert.equal(r.status, 200);
+    }
+    const over = await fresh.call('/hub/auth', { method: 'POST', headers: from('198.51.100.1'), body: { email: 'y@b.example', code: '1234' } });
+    assert.equal(over.status, 429);
+    const other = await fresh.call('/hub/auth', { method: 'POST', headers: from('198.51.100.2'), body: { email: 'y@b.example', code: '1234' } });
+    assert.equal(other.status, 200, 'another address has its own count');
+    assert.equal((await fresh.call('/hub/auth', { method: 'OPTIONS', headers: { origin: PORTAL, ...from('198.51.100.1') } })).status, 204,
+      'a preflight isn’t counted or refused');
+  } finally { await fresh.close(); fresh.db.close(); }
+});
+
+test('one client’s code stops after 10 wrong tries, however many addresses guess', async () => {
+  const fresh = await startHub();
+  try {
+    const c = await fresh.signIn();
+    await fresh.call('/hub/publish', { method: 'POST', cookie: c, body: {
+      record: { id: 'p_guess' }, priv: { clientEmail: 'priya@salt.example', codeHash: sha('7319') } } });
+    const guess = (code, i) => fresh.call('/hub/auth', { method: 'POST',
+      headers: { 'cf-connecting-ip': `198.51.100.${i}` }, body: { email: 'Priya@salt.example', code } });
+    for (let i = 0; i < 10; i += 1) assert.deepEqual((await guess(String(1000 + i), i)).body.projectIds, []);
+    const locked = await guess('7319', 50);
+    assert.deepEqual([locked.status, locked.body], [429, { error: 'too many attempts' }], 'even the right code, for now');
+    const someoneElse = await fresh.call('/hub/auth', { method: 'POST', body: { email: 'other@salt.example', code: '1111' } });
+    assert.equal(someoneElse.status, 200, 'other clients aren’t affected');
+  } finally { await fresh.close(); fresh.db.close(); }
+});
+
+test('a right code clears the count of wrong ones', async () => {
+  const fresh = await startHub();
+  try {
+    const c = await fresh.signIn();
+    await fresh.call('/hub/publish', { method: 'POST', cookie: c, body: {
+      record: { id: 'p_clear' }, priv: { clientEmail: 'sam@salt.example', codeHash: sha('2468') } } });
+    const tryCode = (code) => fresh.call('/hub/auth', { method: 'POST', body: { email: 'sam@salt.example', code } });
+    for (let i = 0; i < 9; i += 1) await tryCode('0000');
+    assert.deepEqual((await tryCode('2468')).body.projectIds, ['p_clear']);
+    for (let i = 0; i < 9; i += 1) await tryCode('0000');
+    assert.deepEqual((await tryCode('2468')).body.projectIds, ['p_clear'], 'a fresh nine, not eighteen');
+  } finally { await fresh.close(); fresh.db.close(); }
+});
+
+test('an agreement records Cloudflare’s client address, as billing’s signatures do', async () => {
+  const fresh = await startHub();
+  try {
+    const c = await fresh.signIn();
+    await fresh.call('/hub/publish', { method: 'POST', cookie: c, body: { record: { id: 'p_cf' }, priv: {} } });
+    await fresh.call('/hub/agreement', { method: 'POST', headers: { 'cf-connecting-ip': '198.51.100.77', 'x-forwarded-for': '6.6.6.6' }, body: {
+      projectId: 'p_cf', signerName: 'P', signedAt: 'x', signatureDataUrl: 'data:,', consentText: 'ok', consentChecked: true,
+    } });
+    assert.equal((await fresh.call('/hub/agreement/p_cf', { cookie: c })).body.ipAddress, '198.51.100.77');
+  } finally { await fresh.close(); fresh.db.close(); }
 });
 
 test('a forged forwarding address can’t change the address recorded or dodge the throttle', async () => {

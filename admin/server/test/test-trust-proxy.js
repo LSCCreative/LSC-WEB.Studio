@@ -16,7 +16,6 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'lsc-proxy-'));
 process.env.DATA_DIR = TMP;
 process.env.SESSION_SECRET = 'test-secret-that-is-definitely-long-enough-0123456789';
 process.env.COOKIE_SECURE = '0'; // the test server speaks plain HTTP
-process.env.TRUST_PROXY = '1';
 process.env.NODE_ENV = 'test';
 
 const { openDatabase, nowIso } = require('../src/db');

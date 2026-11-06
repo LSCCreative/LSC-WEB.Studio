@@ -20,6 +20,7 @@ const { createHubCors } = require('./cors');
 const { createAdminAuth } = require('./admin-auth');
 const { createBunny, missingBunnySettings, statusFromVideo } = require('./bunny');
 const { createDeliverables, streamFile, MAX_PHOTOS_PER_FOLDER } = require('./deliverables');
+const { createAttemptThrottle } = require('./throttle');
 
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.webm', '.m4v']);
 
@@ -27,6 +28,17 @@ const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.webm', '.m4v']);
    reported as failed. Without it a lost fetch job stays "processing" forever. */
 const UNLISTED_VIDEO_LIMIT_MS = 30 * 60 * 1000;
 const VIDEO_LOOKUP_ATTEMPTS = 3;
+
+/* Client sign-in is an email and a 4-digit code, so it is limited twice: per
+   address (billing's rate limit), and per email however many addresses try,
+   so a spread-out guess at one client's code stops after a few wrong ones. */
+const LIMITS = {
+  auth: { max: 20, windowMs: 10 * 60 * 1000 },
+  sign: { max: 10, windowMs: 10 * 60 * 1000 },
+  records: { max: 120, windowMs: 10 * 60 * 1000 },
+};
+const CODE_FAILURE_LIMIT = 10;
+const CODE_FAILURE_WINDOW_MS = 15 * 60 * 1000;
 
 /* Same file, same key: "a/../b/c.mp4" and "b/c.mp4" must not publish twice. */
 function normalizeDeliverablePath(value) {
@@ -46,8 +58,10 @@ function publishTag(seed) {
  *   backupDir       required: where the copy before each write goes (billing's backups)
  *   corsOrigins     origins allowed to send credentials
  *   bunny           Bunny settings; with any missing, publishing answers 503
- * The app must trust exactly one proxy hop (safeguard S7): the PIN throttle and
- * the agreement's IP evidence both read req.ip. Otherwise every route answers 503.
+ *   rateLimit       required: billing's per-address limiter (routes/public.js)
+ *   clientIp        required: billing's client address (routes/public.js), so the
+ *                   PIN throttle and the agreement's evidence read what billing's do
+ *   limits          overrides LIMITS, for tests
  * Tests only: bunnyFetch swaps fetch for Bunny calls, videoLookupGapMs the wait
  * between looking for a fetched video.
  */
@@ -55,7 +69,13 @@ function createHubRouter(db, opts = {}) {
   for (const [key, name] of [['publicBaseUrl', 'HUB_PUBLIC_BASE_URL'], ['deliverablesDir', 'DELIVERABLES_DIR'], ['backupDir', 'the backups folder']]) {
     if (!opts[key]) throw new Error(`The hub router needs ${key} (${name}); config.hub carries it.`);
   }
-  const { publicBaseUrl, backupDir } = opts;
+  for (const key of ['rateLimit', 'clientIp']) {
+    if (typeof opts[key] !== 'function') throw new Error(`The hub router needs ${key}, from billing's routes/public.js; app.js passes it.`);
+  }
+  const { publicBaseUrl, backupDir, clientIp } = opts;
+  const limits = { ...LIMITS, ...(opts.limits || {}) };
+  const limit = (name) => opts.rateLimit(limits[name]);
+  const codeFailures = createAttemptThrottle({ limit: CODE_FAILURE_LIMIT, windowMs: CODE_FAILURE_WINDOW_MS });
   const lookupGapMs = opts.videoLookupGapMs ?? 1000;
   const signer = createUrlSigner(opts.signingSecret);
   const { credentialedCors, openCors } = createHubCors(opts.corsOrigins || []);
@@ -282,18 +302,6 @@ function createHubRouter(db, opts = {}) {
 
   const router = express.Router();
 
-  /* Every /hub route reads req.ip (the throttle, the agreement), so the app
-     must trust exactly the one proxy in front of it: with none trusted every
-     visitor is the tunnel, and with more a client can forge its address. */
-  let proxyWarned = false;
-  router.use('/hub', (req, res, next) => {
-    if (req.app.get('trust proxy') === 1) return next();
-    if (!proxyWarned) {
-      proxyWarned = true;
-      console.error('[hub] refusing /hub requests: the app must set trust proxy to exactly 1 (safeguard S7)');
-    }
-    res.status(503).json({ error: 'proxy not set up' });
-  });
   // Raw-body routes (the Bunny webhook, task B1) go above this line: they need
   // the exact bytes for their signature check (merge safeguard S20).
   router.use('/hub', express.json({ limit: '2mb' }));
@@ -301,8 +309,9 @@ function createHubRouter(db, opts = {}) {
   // ── POST /hub/admin-auth: email + PIN → HttpOnly session cookie
   router.use('/hub/admin-auth', credentialedCors);
   router.post('/hub/admin-auth', (req, res) => {
-    if (auth.isRateLimited(req.ip)) return res.status(429).json({ error: 'too many attempts' });
-    auth.recordAttempt(req.ip);
+    const ip = clientIp(req);
+    if (auth.isRateLimited(ip)) return res.status(429).json({ error: 'too many attempts' });
+    auth.recordAttempt(ip);
     const { email, pin } = req.body || {};
     if (!auth.verifyAdminPin(email, pin)) return res.status(401).json({ error: 'invalid credentials' });
     auth.setAdminSessionCookie(res, auth.createAdminSession());
@@ -336,7 +345,7 @@ function createHubRouter(db, opts = {}) {
   // ── POST /hub/auth: { email, code } or { invite }. Credentialed CORS because
   // the portal sends credentials on every call, though this route reads no cookie.
   router.use('/hub/auth', credentialedCors);
-  router.post('/hub/auth', (req, res) => {
+  router.post('/hub/auth', limit('auth'), (req, res) => {
     const body = req.body || {};
 
     if (body.invite) {
@@ -352,6 +361,7 @@ function createHubRouter(db, opts = {}) {
     if (!email || !/^\d{4}$/.test(code)) return res.status(400).json({ error: 'bad request' });
 
     const emailHash = sha256Hex(email);
+    if (codeFailures.isLimited(emailHash)) return res.status(429).json({ error: 'too many attempts' });
     const codeHash = sha256Hex(code);
     const projectIds = [];
     const records = {};
@@ -361,7 +371,11 @@ function createHubRouter(db, opts = {}) {
         records[row.project_id] = signer.signedUrl(publicBaseUrl, `/hub/records/${row.project_id}`, 900);
       }
     }
-    if (!projectIds.length) return res.json({ token: null, projectIds: [] });
+    if (!projectIds.length) {
+      codeFailures.record(emailHash);
+      return res.json({ token: null, projectIds: [] });
+    }
+    codeFailures.clear(emailHash);
     const token = sha256Hex(codeHash + emailHash + Date.now());
     res.json({ token, projectIds, records });
   });
@@ -369,7 +383,7 @@ function createHubRouter(db, opts = {}) {
   // ── POST /hub/agreement (client): the signed deliverables agreement and its
   // evidence, kept private. The address is read here, never taken from the client.
   router.use('/hub/agreement', credentialedCors);
-  router.post('/hub/agreement', async (req, res) => {
+  router.post('/hub/agreement', limit('sign'), async (req, res) => {
     const body = req.body || {};
     const projectId = String(body.projectId || '').trim();
     const signerName = String(body.signerName || '').trim();
@@ -393,7 +407,7 @@ function createHubRouter(db, opts = {}) {
       consent_checked: 1,
       user_agent: String(body.userAgent || ''),
       verification_token: String(body.verificationToken || ''),
-      ip_address: req.ip || '',
+      ip_address: clientIp(req),
       received_at: new Date().toISOString(),
     });
     res.json({ ok: true });
@@ -419,7 +433,7 @@ function createHubRouter(db, opts = {}) {
   // ── GET /hub/records/:projectId?token=&expires=: a signed, short-lived read,
   // reached only through the URLs /hub/auth hands out.
   router.use('/hub/records', openCors);
-  router.get('/hub/records/:projectId', (req, res) => {
+  router.get('/hub/records/:projectId', limit('records'), (req, res) => {
     const { projectId } = req.params;
     if (!signer.verifyPath(`/hub/records/${projectId}`, req.query.token, req.query.expires)) {
       return res.status(403).json({ error: 'forbidden' });
@@ -519,6 +533,13 @@ function createHubRouter(db, opts = {}) {
     if (!row) return res.status(404).json({ error: 'not published' });
     const current = await resolveVideoId(row);
     res.json(bunnyAssetResponse(current, deliverables.resolveDeliverablePath(path)?.stat));
+  });
+
+  // ── GET /hub/deliverables-health (admin): whether the NAS folder can be read.
+  // Off the public /health, which says nothing about the data.
+  router.use('/hub/deliverables-health', credentialedCors);
+  router.get('/hub/deliverables-health', requireAdmin, async (_req, res) => {
+    res.json(await deliverables.health());
   });
 
   // ── POST /hub/notify (admin): invitation, reset and delivery emails. Not

@@ -4,7 +4,7 @@
    deliverables folder, and streaming files with Range support. Tokens live in
    routes.js, the only caller allowed to turn one into an absolute path. */
 
-const { createReadStream, readdirSync, statSync } = require('fs');
+const { createReadStream, readdirSync, statSync, promises: fsp } = require('fs');
 const { basename, extname, resolve, sep } = require('path');
 
 const MIME_TYPES = {
@@ -78,11 +78,12 @@ function createDeliverables(dir) {
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
   }
 
-  /* For /health: whether the folder can be read, and how many project folders
-     it holds. */
-  function health() {
+  /* Whether the folder can be read, and how many project folders it holds:
+     for the editor and the start-up log, never the public /health. Async, so
+     a slow share can't hold up other requests. */
+  async function health() {
     try {
-      return { ok: true, projects: readdirSync(root).length };
+      return { ok: true, projects: (await fsp.readdir(root)).length };
     } catch (err) {
       return { ok: false, error: err.code };
     }

@@ -38,7 +38,6 @@ const config = {
   sessionSecret: process.env.SESSION_SECRET || '',
   adminUsername: process.env.ADMIN_USERNAME || 'lachlan',
   adminPassword: process.env.ADMIN_PASSWORD || '',
-  trustProxy: bool(process.env.TRUST_PROXY, false),
   cookieSecure: bool(process.env.COOKIE_SECURE, true),
   // 'strict' when the UI is served by this same process (the old plan);
   // 'none' when the UI lives on a different origin (GitHub Pages) and the

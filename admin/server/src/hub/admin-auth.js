@@ -4,6 +4,7 @@
    the admin (merge task R3); until then it works exactly as on the hub. */
 
 const { randomToken, sha256Hex, safeEqual } = require('./tokens');
+const { createAttemptThrottle } = require('./throttle');
 
 const ADMIN_SESSION_COOKIE = 'hub_admin_session';
 
@@ -40,7 +41,7 @@ function createAdminAuth(db, { adminEmail, adminPinHash, now = Date.now } = {}) 
   const insertSession = db.prepare('INSERT INTO admin_sessions (token, created_at, expires_at) VALUES (?, ?, ?)');
   const getSession = db.prepare('SELECT * FROM admin_sessions WHERE token = ?');
   const deleteExpiredSessions = db.prepare('DELETE FROM admin_sessions WHERE expires_at < ?');
-  const attemptsByIp = new Map();
+  const throttle = createAttemptThrottle({ limit: ATTEMPT_LIMIT, windowMs: ATTEMPT_WINDOW_MS, now });
 
   function verifyAdminPin(givenEmail, pin) {
     const emailOk = safeEqual((givenEmail || '').trim().toLowerCase(), email);
@@ -71,31 +72,10 @@ function createAdminAuth(db, { adminEmail, adminPinHash, now = Date.now } = {}) 
     next();
   }
 
-  function isRateLimited(ip) {
-    const t = now();
-    const recent = (attemptsByIp.get(ip) || []).filter((at) => t - at < ATTEMPT_WINDOW_MS);
-    if (recent.length) attemptsByIp.set(ip, recent);
-    else attemptsByIp.delete(ip);
-    return recent.length >= ATTEMPT_LIMIT;
-  }
-
-  /* This runs inside the admin's long-lived process, so addresses that tried
-     once and left are swept out rather than kept until a restart. */
-  const SWEEP_AT = 500;
-  function recordAttempt(ip) {
-    const t = now();
-    if (attemptsByIp.size >= SWEEP_AT) {
-      for (const [key, times] of attemptsByIp) {
-        if (t - times[times.length - 1] >= ATTEMPT_WINDOW_MS) attemptsByIp.delete(key);
-      }
-    }
-    const recent = attemptsByIp.get(ip) || [];
-    recent.push(t);
-    attemptsByIp.set(ip, recent);
-  }
-
+  const isRateLimited = (ip) => throttle.isLimited(ip);
+  const recordAttempt = (ip) => throttle.record(ip);
   /** How many addresses the throttle is holding, for the tests. */
-  const trackedAddresses = () => attemptsByIp.size;
+  const trackedAddresses = () => throttle.size();
 
   return { verifyAdminPin, createAdminSession, setAdminSessionCookie, requireAdmin, isRateLimited, recordAttempt, trackedAddresses };
 }

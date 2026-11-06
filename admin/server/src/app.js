@@ -19,7 +19,7 @@ const { registerHolidayRoutes } = require('./routes/holidays');
 const { registerSetupRoutes } = require('./routes/setup');
 const { registerProjectRoutes } = require('./routes/projects');
 const { registerInvoiceRoutes } = require('./routes/invoices');
-const { registerPublicRoutes } = require('./routes/public');
+const { registerPublicRoutes, rateLimit, clientIp } = require('./routes/public');
 const { registerEmailRoutes, registerSendRoutes } = require('./routes/email');
 const { registerRecoveryRoutes, registerAccountRoutes } = require('./routes/account');
 const { registerGoogleOAuthRoutes, registerGoogleRoutes } = require('./routes/google');
@@ -34,10 +34,13 @@ const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
 const underPath = (req, prefix) => req.path === prefix || req.path.startsWith(`${prefix}/`);
 
-/** "host[:port]" of a URL, lower case, or '' if it isn't one. */
-function hostOf(url) {
+/** A hostname as one spelling: lower case, no port, no trailing dot. */
+const canonicalHost = (host) => String(host || '').toLowerCase().replace(/:\d*$/, '').replace(/\.+$/, '');
+
+/** The canonical hostname of a URL, or '' if it isn't one. */
+function hostnameOf(url) {
   try {
-    return new URL(url).host.toLowerCase();
+    return canonicalHost(new URL(url).hostname);
   } catch {
     return '';
   }
@@ -88,11 +91,12 @@ function createCors(allowedOrigins, portalOrigins) {
  * S4): /api, the admin and the client pages answer 404 there. The owner's
  * cookie is host-only, so a portal page can never carry it, and stored
  * hub-api file links keep working. Read from the Host header as sent, not
- * X-Forwarded-Host, which a client could write.
+ * X-Forwarded-Host, which a client could write, and compared as one spelling,
+ * so a port, a trailing dot or capitals can't make it look like another host.
  */
 function portalHostOnly(portalHost) {
   return (req, res, next) => {
-    if (!portalHost || String(req.headers.host || '').toLowerCase() !== portalHost) return next();
+    if (!portalHost || canonicalHost(req.headers.host) !== portalHost) return next();
     if (req.path === '/health' || underPath(req, '/hub')) return next();
     res.status(404).json({ error: 'not found' });
   };
@@ -109,7 +113,12 @@ function buildPortal(db, hub) {
     console.warn('[hub] HUB_SIGNING_SECRET and HUB_ADMIN_PIN_HASH aren\'t set, so the Client Portal\'s /hub routes answer 503');
     return null;
   }
-  return createHubRouter(db, hub);
+  // Billing's limiter and client address, so both halves count and record visitors alike.
+  const portal = createHubRouter(db, { rateLimit, clientIp, ...hub });
+  portal.deliverablesHealth().then((h) => {
+    if (!h.ok) console.warn(`[hub] the deliverables folder can't be read (${h.error}); file links and publishing will fail`);
+  });
+  return portal;
 }
 
 /**
@@ -125,8 +134,9 @@ function createApp(db, opts = {}) {
   /* Exactly one hop, always: the tunnel (merge safeguard S7). `true` would
      believe the leftmost X-Forwarded-For entry, which the client writes, and
      let a script reset its login throttle; off would make every visitor the
-     tunnel, so one person's tries would lock everyone out. TRUST_PROXY now
-     only decides whether CF-Connecting-IP is believed (routes/public.js). */
+     tunnel, so one person's tries would lock everyone out. The old
+     TRUST_PROXY setting is gone; client routes read CF-Connecting-IP first
+     (routes/public.js clientIp). */
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
 
@@ -135,7 +145,7 @@ function createApp(db, opts = {}) {
   const hub = opts.hub !== undefined ? opts.hub : (config.isTest ? null : config.hub);
   const portal = buildPortal(db, hub);
 
-  app.use(portalHostOnly(hub ? hostOf(hub.publicBaseUrl) : ''));
+  app.use(portalHostOnly(hub ? hostnameOf(hub.publicBaseUrl) : ''));
   app.use(createCors(config.corsOrigins, (hub || config.hub).corsOrigins || []));
 
   /* Routes that need the raw request body (a webhook's signature check, merge
@@ -171,19 +181,15 @@ function createApp(db, opts = {}) {
   // ── /health — the only route besides /login that never requires a session,
   // and the one health check for billing and the portal both (merge safeguard
   // S15). Deliberately says nothing about the data; it is a liveness probe for
-  // Container Manager, not a status page. An unreadable deliverables folder is
-  // named but doesn't fail it: restarting the container wouldn't remount it,
-  // and billing would go down with it.
+  // Container Manager, not a status page. The deliverables folder's state is
+  // for the editor (/hub/deliverables-health) and the start-up log.
   app.get('/health', (_req, res) => {
     try {
       db.prepare('SELECT 1').get();
+      res.type('text/plain').status(200).send('ok');
     } catch (err) {
       res.type('text/plain').status(503).send('db unavailable');
-      return;
     }
-    const deliverables = portal ? portal.deliverablesHealth() : { ok: true };
-    res.type('text/plain').status(200)
-      .send(deliverables.ok ? 'ok' : `ok; deliverables folder unreadable (${deliverables.error || 'unknown'})`);
   });
 
   // The call sheet's route images (trip-planner task 9). A test never reaches

@@ -13,8 +13,8 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 // Before config.js loads: a throwaway data directory, and the portal's origin
-// put in CORS_ORIGINS by mistake, which billing must ignore. TRUST_PROXY is
-// left unset on purpose: the app trusts one hop anyway.
+// put in CORS_ORIGINS by mistake, which billing must ignore. The retired
+// TRUST_PROXY is cleared, to show the app trusts one hop without it.
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'lsc-portal-'));
 process.env.DATA_DIR = TMP;
 process.env.NODE_ENV = 'test';
@@ -81,7 +81,7 @@ let s;
 test.before(async () => { s = await start(); });
 test.after(async () => { await s.close(); });
 
-test('trust proxy is exactly one hop, with TRUST_PROXY unset (S7)', () => {
+test('trust proxy is exactly one hop, with no setting needed (S7)', () => {
   assert.equal(s.app.get('trust proxy'), 1);
 });
 
@@ -110,7 +110,9 @@ test('the portal’s hostname serves the portal and /health only (S4)', async ()
     const r = await s.call(p, { host: HUB_HOST, method: p === '/api/login' ? 'POST' : 'GET', body: p === '/api/login' ? {} : undefined });
     assert.deepEqual([r.status, r.body], [404, { error: 'not found' }], p);
   }
-  assert.equal((await s.call('/api/session', { host: HUB_HOST.toUpperCase() })).status, 404, 'whatever the case');
+  for (const host of [HUB_HOST.toUpperCase(), `${HUB_HOST}.`, `${HUB_HOST}:443`, `${HUB_HOST}.:8443`, `${HUB_HOST}..`]) {
+    assert.equal((await s.call('/api/session', { host })).status, 404, `however it is spelt: ${host}`);
+  }
   assert.equal((await s.call('/api/session', { host: HUB_HOST, headers: { 'x-forwarded-host': 'app.lsccreative.studio' } })).status, 404,
     'a forwarded host can’t talk it round');
   assert.equal((await s.call('/health', { host: HUB_HOST })).text, 'ok');
@@ -141,13 +143,15 @@ test('the portal reads its own bodies, ahead of billing’s parser (S20)', async
   assert.notDeepEqual(apiBad.body, { error: 'bad request' }, 'in billing’s shape, not the portal’s');
 });
 
-test('one /health: plain ok, naming an unreadable deliverables folder without failing', async () => {
+test('one /health: plain ok, saying nothing about the deliverables folder', async () => {
   const r = await s.call('/health');
   assert.deepEqual([r.status, r.text], [200, 'ok']);
   const gone = await start({ hub: hubSettings({ deliverablesDir: path.join(TMP, 'no-such-folder') }) });
   try {
-    const g = await gone.call('/health');
-    assert.deepEqual([g.status, g.text], [200, 'ok; deliverables folder unreadable (ENOENT)']);
+    for (const host of [undefined, HUB_HOST]) {
+      const g = await gone.call('/health', { host });
+      assert.deepEqual([g.status, g.text], [200, 'ok'], 'a missing share is for the editor and the log, not the public');
+    }
   } finally { await gone.close(); }
 });
 
