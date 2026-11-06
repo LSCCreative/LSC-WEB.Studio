@@ -28,35 +28,88 @@ const { createMailer } = require('./mail');
 const { createOutbox } = require('./sends');
 const { createHnry } = require('./hnry');
 const { createHnryPusher } = require('./hnry-push');
+const { createHubRouter } = require('./hub/routes');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+
+const underPath = (req, prefix) => req.path === prefix || req.path.startsWith(`${prefix}/`);
+
+/** "host[:port]" of a URL, lower case, or '' if it isn't one. */
+function hostOf(url) {
+  try {
+    return new URL(url).host.toLowerCase();
+  } catch {
+    return '';
+  }
+}
 
 /**
  * The UI is served from GitHub Pages, a different origin than this API, so the
  * browser needs an explicit CORS allow-list with credentials — otherwise the
  * session cookie never gets sent. `CORS_ORIGINS` is empty by default (same-
  * origin only); set it once the Pages URL is known.
+ *
+ * The Client Portal's origins are never granted here, even if one is added to
+ * CORS_ORIGINS by mistake (merge safeguard S5): a portal page must never be
+ * able to make a credentialed call to /api.
  */
-function corsMiddleware(req, res, next) {
-  // The client's routes answer CORS themselves, without credentials
-  // (routes/public.js): a client page must never be offered the session.
-  if (req.path === '/public' || req.path.startsWith('/public/')) return next();
-  const origin = req.headers.origin;
-  if (origin && config.corsOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Vary', 'Origin');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-    // The editor's autosave headers (trip-planner task 7) need a preflight pass.
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-LSC-Autosave, X-LSC-Session');
-    // Not CORS-safelisted, so without this the page can't read the PDF's filename.
-    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+function createCors(allowedOrigins, portalOrigins) {
+  const portal = new Set(portalOrigins);
+  for (const o of allowedOrigins.filter((x) => portal.has(x))) {
+    console.error(`[cors] ${o} is the Client Portal's origin, so CORS_ORIGINS can't grant it /api; it is ignored`);
   }
-  if (req.method === 'OPTIONS') {
-    res.status(204).end();
-    return;
+  return function corsMiddleware(req, res, next) {
+    // The client's routes answer CORS themselves, without credentials
+    // (routes/public.js): a client page must never be offered the session.
+    // The portal's /hub routes answer their own too (hub/cors.js).
+    if (underPath(req, '/public') || underPath(req, '/hub')) return next();
+    const origin = req.headers.origin;
+    // The list is read on each request, as before: tests add to it live.
+    if (origin && allowedOrigins.includes(origin) && !portal.has(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+      // The editor's autosave headers (trip-planner task 7) need a preflight pass.
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-LSC-Autosave, X-LSC-Session');
+      // Not CORS-safelisted, so without this the page can't read the PDF's filename.
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+    }
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+    next();
+  };
+}
+
+/**
+ * The portal's hostname serves the portal and nothing else (merge safeguard
+ * S4): /api, the admin and the client pages answer 404 there. The owner's
+ * cookie is host-only, so a portal page can never carry it, and stored
+ * hub-api file links keep working. Read from the Host header as sent, not
+ * X-Forwarded-Host, which a client could write.
+ */
+function portalHostOnly(portalHost) {
+  return (req, res, next) => {
+    if (!portalHost || String(req.headers.host || '').toLowerCase() !== portalHost) return next();
+    if (req.path === '/health' || underPath(req, '/hub')) return next();
+    res.status(404).json({ error: 'not found' });
+  };
+}
+
+/**
+ * The Client Portal's routes, or a 503 for them when its secrets aren't set:
+ * billing still starts without them, saying why. Setting only one of the two
+ * is a mistake, so that stops the server instead.
+ */
+function buildPortal(db, hub) {
+  if (!hub) return null;
+  if (!hub.signingSecret && !hub.adminPinHash) {
+    console.warn('[hub] HUB_SIGNING_SECRET and HUB_ADMIN_PIN_HASH aren\'t set, so the Client Portal\'s /hub routes answer 503');
+    return null;
   }
-  next();
+  return createHubRouter(db, hub);
 }
 
 /**
@@ -69,12 +122,29 @@ function corsMiddleware(req, res, next) {
 function createApp(db, opts = {}) {
   const app = express();
 
-  /* One hop: the tunnel. `true` would believe the leftmost X-Forwarded-For
-     entry, which the client writes, and let a script reset its login throttle. */
-  if (config.trustProxy) app.set('trust proxy', 1);
+  /* Exactly one hop, always: the tunnel (merge safeguard S7). `true` would
+     believe the leftmost X-Forwarded-For entry, which the client writes, and
+     let a script reset its login throttle; off would make every visitor the
+     tunnel, so one person's tries would lock everyone out. TRUST_PROXY now
+     only decides whether CF-Connecting-IP is believed (routes/public.js). */
+  app.set('trust proxy', 1);
   app.disable('x-powered-by');
 
-  app.use(corsMiddleware);
+  // The Client Portal (merge task M3). Tests pass their own settings, or get
+  // the 503 stub: a test never reads the developer's real hub settings.
+  const hub = opts.hub !== undefined ? opts.hub : (config.isTest ? null : config.hub);
+  const portal = buildPortal(db, hub);
+
+  app.use(portalHostOnly(hub ? hostOf(hub.publicBaseUrl) : ''));
+  app.use(createCors(config.corsOrigins, (hub || config.hub).corsOrigins || []));
+
+  /* Routes that need the raw request body (a webhook's signature check, merge
+     safeguard S20) mount here, before any JSON parser reads it. The portal's
+     router parses its own JSON, after its own raw-body routes, so it comes
+     before billing's parser too and answers bad bodies in its own JSON. */
+  if (portal) app.use(portal);
+  else app.use('/hub', (_req, res) => res.status(503).json({ error: 'portal not set up' }));
+
   app.use(express.json({ limit: '2mb' }));
 
   // The send queue (task 28): signing queues email and kicks the worker, the
@@ -98,16 +168,22 @@ function createApp(db, opts = {}) {
   app.locals.hnry = hnry;
   app.locals.hnryPush = hnryPush;
 
-  // ── /health — the only route besides /login that never requires a session.
-  // Deliberately says nothing about the data; it is a liveness probe for
-  // Container Manager, not a status page.
+  // ── /health — the only route besides /login that never requires a session,
+  // and the one health check for billing and the portal both (merge safeguard
+  // S15). Deliberately says nothing about the data; it is a liveness probe for
+  // Container Manager, not a status page. An unreadable deliverables folder is
+  // named but doesn't fail it: restarting the container wouldn't remount it,
+  // and billing would go down with it.
   app.get('/health', (_req, res) => {
     try {
       db.prepare('SELECT 1').get();
-      res.type('text/plain').status(200).send('ok');
     } catch (err) {
       res.type('text/plain').status(503).send('db unavailable');
+      return;
     }
+    const deliverables = portal ? portal.deliverablesHealth() : { ok: true };
+    res.type('text/plain').status(200)
+      .send(deliverables.ok ? 'ok' : `ok; deliverables folder unreadable (${deliverables.error || 'unknown'})`);
   });
 
   // The call sheet's route images (trip-planner task 9). A test never reaches

@@ -6,10 +6,10 @@
    a file or reads the environment when it is loaded, and the tests run it on a
    throwaway database (merge safeguard S14).
 
-   createHubRouter returns an Express router. It isn't mounted yet: merge task
-   M3 mounts it, with its own CORS, the hub hostname and one /health. It parses
-   its own JSON and answers its own 404s and errors in JSON, as the hub's server
-   did, so mount it before billing's body parser. */
+   createHubRouter returns an Express router, mounted by app.js (merge task M3)
+   with its own CORS, the hub hostname and one /health. It parses its own JSON
+   and answers its own 404s and errors in JSON, as the hub's server did, so it
+   is mounted before billing's body parser. */
 
 const { basename, extname, posix } = require('path');
 const express = require('express');
@@ -294,6 +294,8 @@ function createHubRouter(db, opts = {}) {
     }
     res.status(503).json({ error: 'proxy not set up' });
   });
+  // Raw-body routes (the Bunny webhook, task B1) go above this line: they need
+  // the exact bytes for their signature check (merge safeguard S20).
   router.use('/hub', express.json({ limit: '2mb' }));
 
   // ── POST /hub/admin-auth: email + PIN → HttpOnly session cookie
