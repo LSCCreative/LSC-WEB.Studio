@@ -19,14 +19,12 @@
  */
 
 const LSCShell = (() => {
-  /* Pipeline is the project list's pre-acceptance stages until L3 gives it
-     its own address (#/pipeline); app.js highlights it from the stage. */
   const AREAS = {
     sales: {
       label: 'Scope & Sales',
       pages: [
         { id: 'home', label: 'Dashboard', path: '/home' },
-        { id: 'pipeline', label: 'Pipeline', path: '/projects?stage=sent' },
+        { id: 'pipeline', label: 'Pipeline', path: '/pipeline' },
         { id: 'finance', label: 'Finance & Price', path: '/finance' },
       ],
     },
@@ -44,6 +42,7 @@ const LSCShell = (() => {
   let area = null; // 'sales' | 'clients' | null (Settings)
   let page = null;
   let onSignOut = null;
+  let placed = null; // { id, area, page }: the last project placed, see placeProject()
 
   const $ = (id) => document.getElementById(id);
   const tabs = () => Array.from(document.querySelectorAll('#app-header .shell-tab'));
@@ -98,6 +97,27 @@ const LSCShell = (() => {
       revealCurrent(sub);
     }
     $('acct-btn').classList.toggle('is-current', area === null && pageId === 'settings');
+  }
+
+  /* A project's page belongs where the record's state says (IA "Where a
+     project belongs"), which only its own screen knows once it has loaded.
+     placeProject() lights that tab and remembers it for the project, so the
+     screens under it (its estimate, its invoices) light the same tab while
+     they load, and on to the next. projectPlace() answers for an id: the
+     remembered place, else Scope & Sales with no page lit. notePlace() only
+     remembers: a card being opened already knows its project's stage, so the
+     route lights the right tab from the start. */
+  function notePlace(id, place) {
+    placed = { id, area: place.area, page: place.page };
+  }
+
+  function placeProject(id, place) {
+    notePlace(id, place);
+    set(place.area, place.page);
+  }
+
+  function projectPlace(id) {
+    return placed && placed.id === id ? placed : { area: 'sales', page: null };
   }
 
   /* On a phone the row scrolls sideways; the current page is brought into it
@@ -182,5 +202,5 @@ const LSCShell = (() => {
     $('acct-sign-out').addEventListener('click', () => onSignOut && onSignOut());
   }
 
-  return { set, title, pageLabel, setUser, bind, AREAS };
+  return { set, notePlace, placeProject, projectPlace, title, pageLabel, setUser, bind, AREAS };
 })();

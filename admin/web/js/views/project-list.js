@@ -1,11 +1,16 @@
 'use strict';
 
-/* #/projects — the Projects list (production-booking task 17; D58, IA
- * "Projects"). One card per project, newest activity first, from
- * GET /api/projects. It replaces the estimates list, whose first-run
- * checklist and UPID fix-up banner it keeps.
+/* #/pipeline and #/projects — the two project lists (production-booking task
+ * 17; D58, IA "Projects"; split in merged-admin L3). One card per project,
+ * newest activity first, from GET /api/projects. The Pipeline (Scope & Sales)
+ * is what hasn't been accepted: draft, sent and declined. Live projects
+ * (Clients) is what was accepted and isn't paid yet. Paid projects are found
+ * under their client. One screen draws both, from a MODES entry; it replaces
+ * the estimates list, whose first-run checklist and UPID fix-up banner it keeps.
+ * An old `#/projects?stage=sent` is sent to the list that holds those
+ * projects (ProjectCard.redirectForStage).
  *
- * THE FILTER IS IN THE ADDRESS: `?stage=` (a chip; Active when absent) and
+ * THE FILTER IS IN THE ADDRESS: `?stage=` (a chip; the whole list when absent) and
  * `?q=` (the search). A chip is a step in history, so Back returns to the last
  * one; typing replaces the entry instead of adding one per keystroke. When
  * only the query changes, the router calls show() again with this screen
@@ -20,30 +25,51 @@
 const ProjectsView = (() => {
   const { esc } = LSCUtil;
 
-  const LIST = '/projects';
   const SEARCH_WAIT_MS = 300;
-  const STAGE_KEYS = ProjectCard.CHIPS.map(([key]) => key);
+  /* `def` is the whole list's stage: the first chip, and what an address
+     leaves out. */
+  const MODES = {
+    pipeline: {
+      path: '/pipeline', title: 'Pipeline', chips: ProjectCard.PIPELINE_CHIPS, def: 'pipeline',
+      noun: 'pipeline', canCreate: true,
+      noneSub: 'Nothing in the pipeline',
+      emptyAll: 'Nothing open in the pipeline',
+      emptyAllNote: 'Drafts and sent estimates show here. Declined ones are under Declined; accepted projects are under Live projects.',
+      searchNote: 'Open searches drafts and sent estimates by UPID, name and client. Declined ones are under Declined; accepted ones are under Live projects.',
+      chipNote: 'Open searches drafts and sent estimates.',
+    },
+    live: {
+      path: '/projects', title: 'Live projects', chips: ProjectCard.LIVE_CHIPS, def: 'live',
+      noun: 'live projects', canCreate: false,
+      noneSub: 'None live',
+      emptyAll: 'No live projects',
+      emptyAllNote: 'A project is live from the day its estimate is accepted until it’s paid. Paid projects are under Clients.',
+      searchNote: 'Search looks at every live project’s UPID, name and client. Drafts and sent estimates are under Pipeline; paid projects are under Clients.',
+      chipNote: 'All searches every live project.',
+    },
+  };
 
   let root = null;
   let handlers = null;
 
   // What the screen on #main is showing, while it's this one.
-  let filter = { stage: 'active', q: '' };
+  let mode = MODES.pipeline;
+  let filter = { stage: 'pipeline', q: '' };
   let projects = [];
   let next = null;
   let typing = null; // the search box's pending route change
   let firstLoad = true; // nothing to announce on arrival: the heading says it
 
-  const onScreen = () => Boolean(root && root.querySelector('#projects-view'));
+  const onScreen = () => Boolean(root && root.querySelector('#projects-view[data-mode="' + mode.def + '"]'));
   const $ = (id) => root.querySelector('#' + id);
 
-  /* '/projects?stage=sent&q=acme', leaving out what is the default. */
+  /* '/pipeline?stage=sent&q=acme', leaving out what is the default. */
   function pathFor(f) {
     const params = new URLSearchParams();
-    if (f.stage !== 'active') params.set('stage', f.stage);
+    if (f.stage !== mode.def) params.set('stage', f.stage);
     if (f.q) params.set('q', f.q);
     const qs = params.toString();
-    return qs ? LIST + '?' + qs : LIST;
+    return qs ? mode.path + '?' + qs : mode.path;
   }
 
   // ── First run ────────────────────────────────────────────────────────────
@@ -123,7 +149,7 @@ const ProjectsView = (() => {
   /* The space between word and count keeps the chip's name "Sent 3" rather
      than "Sent3"; on screen the flex gap spaces them. */
   function chipsMarkup() {
-    return ProjectCard.CHIPS.map(([key, word]) =>
+    return mode.chips.map(([key, word]) =>
       '<button type="button" class="stage-chip" data-stage="' + key + '" aria-pressed="' + (key === filter.stage) + '">' +
       '<span class="stage-chip-word">' + word + '</span> <span class="stage-chip-count" data-count="' + key + '"></span>' +
       '</button>'
@@ -132,10 +158,10 @@ const ProjectsView = (() => {
 
   function shellMarkup() {
     return (
-      '<div id="projects-view">' +
-      '<div class="page-head"><div><h1 class="page-title">Projects</h1>' +
+      '<div id="projects-view" data-mode="' + mode.def + '">' +
+      '<div class="page-head"><div><h1 class="page-title">' + esc(mode.title) + '</h1>' +
       '<div class="page-sub" id="projects-sub">Loading…</div></div>' +
-      '<button class="btn btn-accent" id="js-new">+ New project</button></div>' +
+      (mode.canCreate ? '<button class="btn btn-accent" id="js-new">+ New project</button>' : '') + '</div>' +
       '<div id="projects-banner"></div>' +
       '<div class="projects-tools">' +
       '<div class="projects-search" role="search">' +
@@ -143,7 +169,7 @@ const ProjectsView = (() => {
       '<input type="search" id="projects-q" class="projects-q" autocomplete="off" spellcheck="false" ' +
       'placeholder="Search UPID, project or client" value="' + esc(filter.q) + '">' +
       '</div>' +
-      '<div class="stage-chips" role="group" aria-label="Show projects by stage">' + chipsMarkup() + '</div>' +
+      '<div class="stage-chips" role="group" aria-label="Show ' + esc(mode.noun) + ' by stage">' + chipsMarkup() + '</div>' +
       '</div>' +
       '<div id="projects-results" aria-busy="true"></div>' +
       '<p class="sr-only" id="projects-live" aria-live="polite"></p>' +
@@ -153,7 +179,7 @@ const ProjectsView = (() => {
 
   function mountShell() {
     root.innerHTML = shellMarkup();
-    $('js-new').addEventListener('click', () => handlers.onNew());
+    if (mode.canCreate) $('js-new').addEventListener('click', () => handlers.onNew());
 
     const input = $('projects-q');
     const search = () => {
@@ -221,39 +247,41 @@ const ProjectsView = (() => {
 
   const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many || one + 's');
 
-  /* Under a search, `counts.all` is every match in any stage; without one,
-     every project. */
+  /* The whole list, whichever chip is on: the sum of its one-stage chips, so
+     the Pipeline's Declined (outside Open) is counted in it. Under a search,
+     every match in this list; without one, every project in it. */
+  const listTotal = (reply) => mode.chips.slice(1).reduce((sum, [key]) => sum + (reply.counts[key] || 0), 0);
+
   function subText(reply) {
-    const all = reply.counts.all;
+    const all = listTotal(reply);
     if (filter.q) {
       return reply.total === all ? plural(all, 'match', 'matches') : reply.total + ' of ' + plural(all, 'match', 'matches');
     }
-    if (reply.total === all) return all ? plural(all, 'project') : 'No projects yet';
+    if (reply.total === all) return all ? plural(all, 'project') : mode.noneSub;
     return reply.total + ' of ' + plural(all, 'project');
   }
 
   // ── The results ──────────────────────────────────────────────────────────
 
   function chipWord(stage) {
-    const chip = ProjectCard.CHIPS.find(([key]) => key === stage);
+    const chip = mode.chips.find(([key]) => key === stage);
     return chip ? chip[1].toLowerCase() : '';
   }
 
   function emptyMarkup(reply) {
-    if (!reply.counts.all && !filter.q) return firstRunMarkup();
+    // Nothing anywhere, in either list: the first-run steps (Pipeline only,
+    // where a first project is made).
+    if (!reply.counts.all && !filter.q && mode.canCreate) return firstRunMarkup();
     if (filter.q) {
       return (
         '<div class="empty-state"><h3>Nothing matches “' + esc(filter.q) + '”</h3>' +
-        '<p>' + (filter.stage === 'active' ? 'Search looks at every project’s UPID, name and client.'
-          : 'That’s among ' + esc(chipWord(filter.stage)) + ' projects only. Active searches every stage.') + '</p>' +
+        '<p>' + (filter.stage === mode.def ? esc(mode.searchNote)
+          : 'That’s among ' + esc(chipWord(filter.stage)) + ' projects only. ' + esc(mode.chipNote)) + '</p>' +
         '<button type="button" class="btn" id="js-clear" style="margin-top:16px">Clear search</button></div>'
       );
     }
-    if (filter.stage === 'active') {
-      return (
-        '<div class="empty-state"><h3>Nothing active</h3>' +
-        '<p>Every project was paid or declined more than 90 days ago. They’re under Paid and Declined.</p></div>'
-      );
+    if (filter.stage === mode.def) {
+      return '<div class="empty-state"><h3>' + esc(mode.emptyAll) + '</h3><p>' + esc(mode.emptyAllNote) + '</p></div>';
     }
     return '<div class="empty-state"><h3>No ' + esc(chipWord(filter.stage)) + ' projects</h3></div>';
   }
@@ -395,12 +423,26 @@ const ProjectsView = (() => {
     },
 
     /* The router's way in: the route (LSCRouter.parse), whose segments after
-       'projects' must be none. False for a shape this area doesn't have. */
-    show(route) {
-      if (route.segments.length > 1) return false;
-      const stage = route.query.get('stage') || 'active';
+       the area must be none, and which list (`pipeline` or `live`). False for
+       a shape this area doesn't have. */
+    show(route, kind) {
+      if (route.segments.length > 1 || !MODES[kind]) return false;
+      const wantedMode = MODES[kind];
+      const asked = route.query.get('stage');
+      // An address from before the split, or for a stage whose projects live
+      // elsewhere now (Paid is under Clients).
+      const moved = kind === 'live' ? ProjectCard.redirectForStage(asked) : null;
+      if (moved && !moved.startsWith(wantedMode.path)) {
+        // The search goes along where the screen reads one (Clients doesn't).
+        const q = (route.query.get('q') || '').trim();
+        LSCRouter.go(q && moved.startsWith('/pipeline') ? moved + '&' + new URLSearchParams({ q }) : moved,
+          { replace: true, skipGuard: true });
+        return true;
+      }
+      const stage = asked || wantedMode.def;
+      mode = wantedMode;
       const wanted = {
-        stage: STAGE_KEYS.includes(stage) ? stage : 'active',
+        stage: mode.chips.some(([key]) => key === stage) ? stage : mode.def,
         q: (route.query.get('q') || '').trim(),
       };
       // An address this list wouldn't write (an unknown stage, a padded
@@ -413,7 +455,7 @@ const ProjectsView = (() => {
       clearTimeout(typing);
       typing = null;
       filter = wanted;
-      document.title = LSCShell.title(['draft', 'sent', 'declined'].includes(filter.stage) ? 'Pipeline' : 'Live projects');
+      document.title = LSCShell.title(mode.title);
       if (onScreen()) {
         syncShell();
       } else {

@@ -572,9 +572,14 @@ const ProjectFolder = (() => {
     const today = LSCUtil.today();
     const project = folder.project;
     LSCMenu.close(false);
+    // Where this project belongs follows its state, so the tab and the title
+    // change when an acceptance or a payment moves it. Back returns to the
+    // list it was opened from when that is one step behind (ProjectCard.backOf).
+    LSCShell.placeProject(project.id, ProjectCard.placeOf(project));
+    const back = ProjectCard.backOf(project);
     root.innerHTML =
       '<div id="project-folder" class="project-folder">' +
-      '<button class="back-btn" id="js-back">← All projects</button>' +
+      '<button class="back-btn" id="js-back">← ' + esc(back.crumb) + '</button>' +
       headMarkup(project, today) +
       noticeMarkup(project, today) +
       '<div class="pf-body">' +
@@ -599,7 +604,7 @@ const ProjectFolder = (() => {
   }
 
   function bind() {
-    $('js-back').addEventListener('click', () => LSCRouter.leaveTo('/projects'));
+    $('js-back').addEventListener('click', () => LSCRouter.leaveTo(ProjectCard.backOf(folder.project).path));
     const fix = $('js-fix-upid');
     if (fix) fix.addEventListener('click', () => LSCRouter.go('/setup/upids'));
     // Buttons and closed menus' items alike: menu.js clicks a chosen item in place.
@@ -819,7 +824,9 @@ const ProjectFolder = (() => {
       setBusy(button, false);
       Toast.ok('Project deleted.');
       closeDialog(false);
-      if (onScreen() && folder.project.id === id) LSCRouter.go('/projects', { replace: true, skipGuard: true });
+      if (onScreen() && folder.project.id === id) {
+        LSCRouter.go(ProjectCard.placeOf(folder.project).path, { replace: true, skipGuard: true });
+      }
       return true;
     } catch (err) {
       setBusy(button, false);
@@ -1432,10 +1439,12 @@ const ProjectFolder = (() => {
 
   function placeholder(body) {
     folder = null;
+    // No project to place: back where it was opened from, else the Pipeline.
+    const back = ProjectCard.backOf(null);
     root.innerHTML =
-      '<button class="back-btn" id="js-back">← All projects</button>' +
+      '<button class="back-btn" id="js-back">← ' + esc(back.crumb) + '</button>' +
       '<div class="empty-state">' + body + '</div>';
-    root.querySelector('#js-back').addEventListener('click', () => LSCRouter.leaveTo('/projects'));
+    root.querySelector('#js-back').addEventListener('click', () => LSCRouter.leaveTo(back.path));
   }
 
   /* A project that's gone says so where it was asked for (IA, router rules). */

@@ -658,8 +658,10 @@ const HomeView = (() => {
       }),
     },
     paid: {
+      // No "see all": paid jobs are Complete, and those are listed under
+      // their client only (IA, Dashboard links). The rows still open the project.
       title: 'Recent payments',
-      act: { href: '/projects?stage=paid', label: 'Paid projects', icon: ICON.open },
+      act: null,
       url: () => '/api/invoices?state=paid&limit=' + LIST_COUNT,
       what: 'recent payments',
       empty: 'No payments yet. An invoice marked paid shows here.',
@@ -679,8 +681,10 @@ const HomeView = (() => {
       '<div class="dash-card-head"><div class="dash-card-titles">' +
       '<h2 class="dash-card-title" id="dash-' + key + '-h">' + esc(L.title) + '</h2>' +
       '<p class="dash-card-sub" id="dash-' + key + '-sub"></p></div>' +
-      '<a class="dash-card-act" href="#' + esc(L.act.href) + '" aria-label="' + esc(L.act.label) + '" title="' + esc(L.act.label) + '">' +
-      L.act.icon + '</a></div>' +
+      (L.act
+        ? '<a class="dash-card-act" href="#' + esc(L.act.href) + '" aria-label="' + esc(L.act.label) + '" title="' + esc(L.act.label) + '">' +
+          L.act.icon + '</a>'
+        : '') + '</div>' +
       '<div class="dash-card-body" id="dash-' + key + '-body"><p class="home-empty">Loading…</p></div>' +
       '</section>';
   }

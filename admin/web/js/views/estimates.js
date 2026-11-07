@@ -28,7 +28,9 @@ const EstimatesView = (() => {
   let root = null;
   let onAuthLost = null;
 
-  const LIST = '/projects';
+  // A new project's editor, and a project with no folder to go back to: its
+  // work is Pipeline work (merged-admin L3).
+  const LIST = '/pipeline';
   const folderPath = (projectId) => '/projects/' + encodeURIComponent(projectId);
   // A project as far as these paths need it: its id and its lead estimate.
   const projectOf = (estimate) => ({ id: estimate.projectId, estimateId: estimate.id });
@@ -81,7 +83,7 @@ const EstimatesView = (() => {
   function showPlaceholder(body, back) {
     const to = back || LIST;
     root.innerHTML =
-      '<button class="back-btn" id="js-back">' + (to === LIST ? '← All Projects' : '← Back') + '</button>' +
+      '<button class="back-btn" id="js-back">' + (to === LIST ? '← Pipeline' : '← Back') + '</button>' +
       '<div class="empty-state">' + body + '</div>';
     root.querySelector('#js-back').addEventListener('click', () => LSCRouter.leaveTo(to));
   }
@@ -136,6 +138,8 @@ const EstimatesView = (() => {
       showMissing('That estimate isn’t in this project', 'It may have been deleted.', null, folderPath(projectId));
       return null;
     }
+    // A deep link: the folder never placed this project, so its tab is lit here.
+    LSCShell.placeProject(reply.project.id, ProjectCard.placeOf(reply.project));
     return { estimate, project: reply.project, held: false };
   }
 

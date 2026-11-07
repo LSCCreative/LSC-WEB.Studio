@@ -527,6 +527,7 @@ const InvoiceView = (() => {
     const totals = totalsNow();
     const body = inv.kind === 'deposit' ? depositMarkup(inv, totals) : inv.kind === 'legacy' ? legacyMarkup(inv) : billMarkup(inv, totals);
     LSCMenu.close(false);
+    LSCShell.placeProject(project.id, ProjectCard.placeOf(project));
     root.innerHTML =
       '<div id="invoice-screen" class="inv-screen">' +
       '<button class="back-btn" id="js-back">← ' + esc([project.upid, project.name].filter(Boolean).join(' · ') || 'Project') + '</button>' +

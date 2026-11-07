@@ -20,18 +20,73 @@ const ProjectCard = (() => {
   const { fmt, esc } = LSCUtil;
   const C = LSCCalendar;
 
-  // The filter chips, in the order a job moves through them. `active` leaves
-  // out paid and declined projects settled more than 90 days ago (IA, Content
-  // Growth Plan); each stage's own chip still has them.
-  const CHIPS = [
-    ['active', 'Active'],
+  /* The two lists' filter chips, in the order a job moves through them
+     (merged-admin L3; IA "Pipeline", "Live projects"). Each list's first chip
+     is its default (the server's `pipeline` and `live`); the others narrow it
+     to one stage. Pipeline's Open leaves declined projects a filter away.
+     Paid projects belong to their client, so there is no Paid chip: they are
+     under Clients. */
+  const PIPELINE_CHIPS = [
+    ['pipeline', 'Open'],
     ['draft', 'Draft'],
     ['sent', 'Sent'],
-    ['accepted', 'Accepted'],
-    ['invoiced', 'Invoiced'],
-    ['paid', 'Paid'],
     ['declined', 'Declined'],
   ];
+  const LIVE_CHIPS = [
+    ['live', 'All'],
+    ['accepted', 'Accepted'],
+    ['invoiced', 'Invoiced'],
+  ];
+
+  /* Where a project belongs in the admin, from its stage, not from how you
+     arrived (IA "Navigation Model"). Before acceptance: Scope & Sales, with
+     the breadcrumb "Pipeline / Project". After it: Clients, "Clients / Client
+     / Project". `area` and `page` are LSCShell's ids (no page lit once the
+     project is a level below the row); `path` is where the Back link goes and
+     `crumb` what it says. A project with no client record has nowhere under
+     Clients to go yet, so it falls back to the list that holds it. */
+  function placeOf(project) {
+    const stage = project && project.stage;
+    if (stage === 'accepted' || stage === 'invoiced' || stage === 'paid') {
+      const client = (project && project.client) || {};
+      const name = client.businessName || client.contactName || '';
+      if (client.id) {
+        return { area: 'clients', page: null, path: '/clients/' + encodeURIComponent(client.id), crumb: 'Clients / ' + (name || 'Client') };
+      }
+      return stage === 'paid'
+        ? { area: 'clients', page: null, path: '/clients', crumb: 'Clients' }
+        : { area: 'clients', page: 'live', path: '/projects', crumb: 'Live projects' };
+    }
+    return { area: 'sales', page: 'pipeline', path: '/pipeline', crumb: 'Pipeline' };
+  }
+
+  /* A project screen's Back link: the list or client page it was opened from
+     when that is one Back away, so the chip and search it showed come back;
+     else where the project belongs (placeOf). `project` may be null (a
+     project that couldn't be loaded). { path, crumb }. */
+  const LIST_CRUMBS = { '/pipeline': 'Pipeline', '/projects': 'Live projects', '/clients': 'Clients' };
+  function backOf(project) {
+    const place = placeOf(project);
+    const behind = LSCRouter.behindPath();
+    if (!behind || behind === place.path) return { path: place.path, crumb: place.crumb };
+    if (LIST_CRUMBS[behind]) return { path: behind, crumb: LIST_CRUMBS[behind] };
+    if (behind.startsWith('/clients/') && behind.split('/').length === 3) {
+      const client = (project && project.client) || {};
+      const own = client.id && behind === '/clients/' + encodeURIComponent(client.id);
+      return { path: behind, crumb: own ? 'Clients / ' + (client.businessName || client.contactName || 'Client') : 'Back' };
+    }
+    return { path: place.path, crumb: place.crumb };
+  }
+
+  /* An old address's `?stage=` (from before the Pipeline had its own screen)
+     as the screen that now holds those projects, or null when the stage is
+     one the lists still use: '/pipeline?stage=sent', '/projects', '/clients'. */
+  function redirectForStage(stage) {
+    if (stage === 'draft' || stage === 'sent' || stage === 'declined') return '/pipeline?stage=' + stage;
+    if (stage === 'accepted' || stage === 'invoiced') return '/projects';
+    if (stage === 'paid') return '/clients';
+    return null;
+  }
 
   /* A date as YYYY-MM-DD. A timestamp (accepted_at, declined_at, a send) is
      UTC, so it is read on this browser's clock: an evening here is the next
@@ -233,5 +288,5 @@ const ProjectCard = (() => {
     });
   }
 
-  return { CHIPS, stageLine, stageMarkup, cardMarkup, bind, pathOf, dayMonth, localDate, activityText };
+  return { PIPELINE_CHIPS, LIVE_CHIPS, placeOf, backOf, redirectForStage, stageLine, stageMarkup, cardMarkup, bind, pathOf, dayMonth, localDate, activityText };
 })();

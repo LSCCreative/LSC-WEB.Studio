@@ -29,6 +29,20 @@ const HOME_MAX = 50;
 
 /* The Dashboard's "Open projects": every stage short of paid or declined. */
 const OPEN_STAGES = ['draft', 'sent', 'accepted', 'invoiced'];
+/* The admin's two lists (merged-admin L3): the Pipeline's default is the work
+   still awaiting a reply (Declined is a filter of its own), Live projects is
+   what was accepted and isn't paid. */
+const PIPELINE_STAGES = ['draft', 'sent'];
+const LIVE_STAGES = ['accepted', 'invoiced'];
+/* GET /api/projects's named lists, as (row, q) => kept. Each is also a count
+   in the reply; any other `stage` must be one of STAGES. */
+const LISTS = {
+  active: (row, q) => Boolean(q) || !row.old,
+  all: () => true,
+  open: (row) => OPEN_STAGES.includes(row.project.stage),
+  pipeline: (row) => PIPELINE_STAGES.includes(row.project.stage),
+  live: (row) => LIVE_STAGES.includes(row.project.stage),
+};
 
 /* A real calendar date: '2026-13-01' and '2026-02-30' are not (an invalid
    Date's toISOString throws, so it is checked first). */
@@ -634,7 +648,9 @@ function acceptEstimate(db, p, lead, ownIds, choice, now, opts = {}) {
  * GET /api/projects — one card per project, newest activity first.
  *
  * Query:
- *   stage   `active` (the default), `all`, `open`, or one of projects.js STAGES.
+ *   stage   `active` (the default), `all`, `open`, `pipeline`, `live`, or one of
+ *           projects.js STAGES. Pipeline is draft and sent; live is accepted
+ *           and invoiced.
  *           Active is every project except paid and declined ones settled more
  *           than 90 days ago, unless `q` is given: a search looks at everything.
  *           Open (the Dashboard's list) is every project not yet paid or
@@ -733,7 +749,7 @@ function registerProjectRoutes(app, db, opts = {}) {
 
   app.get('/api/projects', (req, res) => {
     const stage = String(req.query.stage || 'active');
-    if (stage !== 'active' && stage !== 'all' && stage !== 'open' && !STAGES.includes(stage)) {
+    if (!Object.hasOwn(LISTS, stage) && !STAGES.includes(stage)) {
       return res.status(400).json({ error: 'stage_invalid' });
     }
     const today = todayOf(req);
@@ -796,16 +812,16 @@ function registerProjectRoutes(app, db, opts = {}) {
     });
 
     const searched = q ? all.filter((row) => row.text.includes(q)) : all;
-    const inActive = (row) => q || !row.old;
-    const isOpen = (row) => OPEN_STAGES.includes(row.project.stage);
-    const counts = { active: searched.filter(inActive).length, all: searched.length, open: searched.filter(isOpen).length };
+    const counts = {};
+    Object.entries(LISTS).forEach(([name, keep]) => {
+      counts[name] = searched.filter((row) => keep(row, q)).length;
+    });
     STAGES.forEach((s) => {
       counts[s] = searched.filter((row) => row.project.stage === s).length;
     });
-    const wanted = stage === 'all' ? () => true
-      : stage === 'active' ? inActive
-        : stage === 'open' ? isOpen
-          : (row) => row.project.stage === stage;
+    const wanted = Object.hasOwn(LISTS, stage)
+      ? (row) => LISTS[stage](row, q)
+      : (row) => row.project.stage === stage;
     const shown = searched
       .filter(wanted)
       .map((row) => row.project)

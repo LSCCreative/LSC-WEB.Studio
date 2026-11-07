@@ -81,7 +81,20 @@ tab, page, wordmark, sign-out; keyboard sign-out and sign back in land on the as
 Trap: a scripted `.click()` on an open menu item does nothing (the browser's re-entrant click rule); test
 menus with real clicks or keys.
 
-**Next: L3 Split Pipeline from the project list | Model: Sonnet 5.5 | Effort: Medium.**
+**L3 done 2026-11-07 (not committed when written).** Pipeline/Live split: one `ProjectsView` with `MODES`;
+server `stage=pipeline|live`; redirects per IA except `accepted|invoiced` keep their chip (Live's own
+addresses). `ProjectCard.placeOf(project)` + `LSCShell.placeProject(id, place)` decide the tab and Back crumb
+from state (folder and invoice screens call it; `projectPlace(id)` carries it to estimate/call-sheet screens).
+Review fixes (same day): list subtitle counts the whole list (sum of one-stage chips, so Pipeline's
+Declined is in it); a card click notes its place first (`LSCShell.notePlace`) and estimate screens place
+themselves on a deep link; folder Back uses `ProjectCard.backOf` (the list or client page one Back away,
+via `LSCRouter.behindPath()`, else placeOf); old `?stage=` redirects keep `q`; server lists are one
+`LISTS` map; new test with real accepted/invoiced/paid projects. Bare old `#/projects` now means Live
+by design (it is Live's address). Tests 950/950.
+Trap: a local `const next` in `show()` shadowed the module's paging cursor; the preview server keeps old
+API code until restarted (`preview_stop` then start). Test post-acceptance pages by patching `LSCApi.get`.
+
+**Next: L4 Guard every delete | Model: Sonnet 5.5 | Effort: Medium.**
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
 `routes.js` (`createHubRouter(db, opts)`, not mounted yet), `url-signing.js` (was signing.js), `admin-auth.js`,

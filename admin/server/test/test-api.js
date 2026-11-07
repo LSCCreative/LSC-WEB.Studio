@@ -2340,7 +2340,12 @@ test('projects list: one card per project, searched, filtered by stage and count
   assert.deepEqual(new Set(ids(found)),
     new Set([draft, sent, paidOld, paidNew, declined].map((e) => e.projectId)));
   assert.deepEqual(found.body.counts,
-    { active: 5, all: 5, open: 2, draft: 1, sent: 1, accepted: 0, invoiced: 0, paid: 2, declined: 1 });
+    { active: 5, all: 5, open: 2, pipeline: 2, live: 0, draft: 1, sent: 1, accepted: 0, invoiced: 0, paid: 2, declined: 1 });
+  // The admin's lists (L3): Pipeline is draft and sent (Declined is its own
+  // filter); Live is accepted and invoiced.
+  assert.deepEqual(new Set(ids(await listProjects({ today, q: 't17', stage: 'pipeline' }))),
+    new Set([draft, sent].map((e) => e.projectId)));
+  assert.deepEqual(ids(await listProjects({ today, q: 't17', stage: 'live' })), []);
   // Open (the Dashboard's list): every stage short of paid or declined, however old.
   assert.deepEqual(new Set(ids(await listProjects({ today, q: 't17', stage: 'open' }))),
     new Set([draft, sent].map((e) => e.projectId)));
@@ -2406,6 +2411,30 @@ test('projects list: one card per project, searched, filtered by stage and count
   await dropEstimates(draft.id, sent.id, paidOld.id, paidNew.id, declined.id);
 });
 
+test('projects list: Live is accepted and invoiced, never paid; the Pipeline is draft and sent', async () => {
+  // merged-admin L3. Its own search word, so the T17 test's exact sets don't see these.
+  const today = '2026-10-04';
+  const mk = async (name, upid) => (await saveEstimate({ name: 'L3L ' + name, upid })).body.estimate;
+  const sent = await mk('Sent', 'L3L-SENT');
+  const accepted = await mk('Accepted', 'L3L-ACC');
+  const invoiced = await mk('Invoiced', 'L3L-INV');
+  const paid = await mk('Paid', 'L3L-PAID');
+  db.prepare("UPDATE estimates SET status = 'sent' WHERE id = ?").run(sent.id);
+  for (const e of [accepted, invoiced, paid]) db.prepare("UPDATE estimates SET status = 'accepted' WHERE id = ?").run(e.id);
+  db.prepare("INSERT INTO invoices (id, project_id, kind, number, status, created_at, updated_at) VALUES ('inv_l3li', ?, 'single', 'INV-L3L-INV', 'sent', '2026-10-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z')")
+    .run(invoiced.projectId);
+  db.prepare("INSERT INTO invoices (id, project_id, kind, number, status, paid_at, created_at, updated_at) VALUES ('inv_l3lp', ?, 'single', 'INV-L3L-PAID', 'paid', '2026-10-02', '2026-10-02T00:00:00.000Z', '2026-10-02T00:00:00.000Z')")
+    .run(paid.projectId);
+  const ids = (reply) => new Set(reply.body.projects.map((p) => p.id));
+  const live = await listProjects({ today, q: 'l3l', stage: 'live' });
+  assert.equal(live.status, 200);
+  assert.deepEqual(ids(live), new Set([accepted, invoiced].map((e) => e.projectId)));
+  assert.deepEqual(ids(await listProjects({ today, q: 'l3l', stage: 'pipeline' })), new Set([sent.projectId]));
+  const { counts } = live.body;
+  assert.deepEqual([counts.pipeline, counts.live, counts.accepted, counts.invoiced, counts.paid], [1, 2, 1, 1, 1]);
+
+  await dropEstimates(sent.id, accepted.id, invoiced.id, paid.id);
+});
 test('projects list: a kept-together project is one card, named and totalled by its latest live estimate', async () => {
   const a = (await saveEstimate({ name: 'T17 Older', upid: 'T17-KEEP' })).body.estimate;
   const b = (await saveEstimate({ name: 'T17 Newer', upid: 'T17-KEEP2' })).body.estimate;

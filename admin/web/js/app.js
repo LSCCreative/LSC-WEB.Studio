@@ -180,6 +180,8 @@
        alone lands on the Dashboard. */
     const openProject = (project) => {
       const path = ProjectCard.pathOf(project);
+      // The card knows the stage, so the route lights the right tab at once.
+      if (path) LSCShell.notePlace(project.id, ProjectCard.placeOf(project));
       if (path) LSCRouter.go(path);
       else Toast.error('That project can’t be opened.');
     };
@@ -227,16 +229,24 @@
     if (area === 'home') {
       setNav('sales', 'home');
       shown = HomeView.show(rest, state);
+    } else if (area === 'pipeline') {
+      // Draft, sent and declined work (L3). The old `#/projects?stage=` links
+      // for those stages arrive here from Live projects' redirect.
+      setNav('sales', 'pipeline');
+      shown = ProjectsView.show(route, 'pipeline');
     } else if (area === 'projects') {
-      /* The list; `new`, a new project's editor (IA flow 1: the project is
-         made on its first save); a project's folder (task 18); its
+      /* Live projects; `new`, a new project's editor (IA flow 1: the project
+         is made on its first save); a project's folder (task 18); its
          estimate's editor and read-only view under it; and each of its
-         invoices (task 20). */
+         invoices (task 20). A project lights the tab its record's state says,
+         which its screens report once loaded (LSCShell.placeProject); until
+         then the last one placed for it, else Scope & Sales. */
       const [id, sub, ...more] = rest;
-      if (id === undefined) setNav(...listPlace(route));
-      // A project, before L3 reads its state: Scope & Sales, no page lit.
-      else setNav('sales', null);
-      if (id === undefined) shown = ProjectsView.show(route);
+      const at = id === undefined ? { area: 'clients', page: 'live' }
+        : id === 'new' ? { area: 'sales', page: 'pipeline' }
+          : LSCShell.projectPlace(id);
+      setNav(at.area, at.page);
+      if (id === undefined) shown = ProjectsView.show(route, 'live');
       else if (id === 'new') shown = sub === undefined && EstimatesView.showNew();
       else if (sub === undefined) shown = ProjectFolder.show(id);
       else if (sub === 'estimate') shown = EstimatesView.showInProject(id, more, state, route.query);
@@ -247,7 +257,7 @@
          is now. */
       setNav('sales', null);
       if (!rest.length) {
-        LSCRouter.go('/projects', { replace: true, skipGuard: true });
+        LSCRouter.go('/pipeline', { replace: true, skipGuard: true });
         return;
       }
       shown = EstimatesView.showOld(rest);
@@ -281,13 +291,6 @@
   function setNav(areaId, pageId) {
     LSCShell.set(areaId, pageId);
     document.title = LSCShell.title(LSCShell.pageLabel());
-  }
-
-  /* The project list, until L3 splits it: its pre-acceptance stages are the
-     Pipeline (Scope & Sales), everything else is Live projects (Clients). */
-  const PIPELINE_STAGES = ['draft', 'sent', 'declined'];
-  function listPlace(route) {
-    return PIPELINE_STAGES.includes(route.query.get('stage')) ? ['sales', 'pipeline'] : ['clients', 'live'];
   }
 
   function bindNav() {
