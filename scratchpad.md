@@ -3,6 +3,301 @@
 > High-frequency memory zone. Wiped clean when the current feature merges to
 > main. Keep this brutally current — overwrite, don't append history.
 
+## BUILD: merged admin + paid delivery. On branch `merged-admin`, P1-P4 and M1-M5 done, M6 prep done
+
+**M3 done 2026-11-06 (local, not pushed).** The portal is mounted in billing's `app.js`: trust proxy always 1
+hop; `hub-api` serves `/hub/*` and `/health` only (Host header); billing's CORS skips `/hub` and ignores portal
+origins; the portal router sits before billing's JSON parser, with the raw-body slot above it for B1's webhook.
+Without both `HUB_` secrets billing starts and `/hub` answers 503. Tests: `test-portal-mount.js`. 917/917,
+three local runs; the real server booted on a throwaway folder with and without the hub secrets.
+- Review fixes before M3 (`f2e54f3`): `openDatabase` copies before migrating by default (scripts too), hub writes
+  take the pre-write copy, JSON 404s and errors under `/hub`.
+- Before M6: check the tunnel's `hub-api` route keeps the Host header (TASKS Live Settings).
+- M3 review fixes: client sign-in limited per address (billing's `rateLimit`) and per email (10 wrong codes in
+  15 min); the hub reads billing's `clientIp`; the `hub-api` check compares one spelling of the host;
+  `/health` is plain `ok` again, the deliverables state is `GET /hub/deliverables-health`; `TRUST_PROXY` retired.
+  The portal shows a 429 on sign-in as "network" today; its rebuild should say "too many tries".
+
+**M4 done 2026-11-06 (local, not pushed).** The server serves `admin/web` (`server/src/web.js`): `js/config.js`
+written per request (API = page origin, `LSC_MAPS_KEY`/`LSC_MAPS_ID`), pages `no-cache` with scripts and
+stylesheets stamped `?v=<content hash>`, only current-stamp addresses cached long; only the pages' folders are
+served. Cookie default `lax`. Docker builds from `admin/` (`admin/docker-compose.yml`, `admin/.dockerignore`).
+Review fixes (M4 review): won't start without `web/` or with a mismatched `calc.js`/`documents.js`/`call-sheet.js`;
+`/api` replies carry `X-LSC-Version` and an open tab shows a Reload banner (`js/update.js`); 933/933.
+`test-web.js`; 928/928; checked in a real browser (launch config `admin`, port 8090, `/tmp/lsc-admin-scratch`):
+with the old `calc.js` cached, a changed file loaded under its new stamp. Image build and the Cloudflare
+header check wait for M6 (Docker wasn't running). New M6 settings in TASKS Live Settings: Maps key into
+`.env`, Google OAuth redirect onto `app`, the app folder holding `server/` + `web/`.
+
+**M5 done 2026-11-06 (local, not pushed).** `scripts/import-hub.js` (core `src/hub/import.js`) copies the hub's
+tables into billing.db, never overwriting; a differing row undoes the run. Rehearsed on `.backup` copies of
+both live DBs (deleted afterwards): live hub = schema 5, 31 file tokens, no records/logins/evidence. Run 1 added
+31, runs 2-3 changed nothing; 28 live tokens serve 200 through the merged app, 3 point at deleted September test
+files (dead today too). M6 steps for the import are in TASKS (copy with `.backup`, not `cp`: the hub's data sits
+in its `-wal`). Backups are whole-file, every table covered (S16, tested). M5 review fixes: dead links/files
+warn (exit 0), dry run on a throwaway copy, refuses while a server answers, strict args, tokens printed short;
+re-rehearsed on fresh live copies (deleted after). 948/948 before the last output-only change; import tests 15/15.
+
+**M6 in progress (2026-11-07).** Runbook: `.design/merged-admin/CUTOVER.md` (rollback first; its Progress
+note is the live state). Prep done on the NAS from local `a0c2baa`: `/volume4/lsc-admin/{app,data}`, the NAS
+compose (`lsc-admin`, `127.0.0.1:8098`, `LSC_ADMIN_DATA` override), `.env` built NAS-side (20 names), image
+`lsc-admin:latest` built, full rehearsal on live copies 17/17 checks + PDF + 28/31 tokens (deleted after).
+Old containers untouched and healthy. Pushed; draft PR LSCCreative/LSC-WEB.Studio#1. Waiting on the user:
+P5 and P6 done 2026-11-07 (Maps values in the NAS `.env`, `app` redirect URI in Google). Pre-cutover review fixed (`21aba29`, 949/949; NAS image rebuilt, re-rehearsed 20/20). **Cut over 2026-11-07 19:43: live on `lsc-admin`, C1-C8 passed** (log in CUTOVER.md). Left: C9 (push, merge PR #1 with the user's OK, `gh workflow disable` on lsc-billing-app), then the Afterwards list.
+
+**Next: M6 cutover (C1-C9) | Model: Opus 5.5 | Effort: High.** [USER + API].
+
+**M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
+`routes.js` (`createHubRouter(db, opts)`, not mounted yet), `url-signing.js` (was signing.js), `admin-auth.js`,
+`bunny.js`, `deliverables.js`, `cors.js`, `tokens.js` (was crypto.js). Hub tables are migration v21; billing now
+copies an existing db to `backups/premigrate-*.db` before any migration. Settings are `config.hub`; hub env names
+that clash gained `HUB_` (rename table under Live Settings in TASKS.md). `nas/client-hub-api` is gone from this
+branch; `main` keeps it for any hub hotfix before M6. 901/901 pass, three runs from a local-disk copy.
+- Behaviour changes, both invisible today: missing Bunny keys answer 503 on publishing instead of stopping the
+  server; `/hub/publish` writes its two rows in one transaction.
+- A full run can stall on this Mac: a leftover Chrome crash reporter holds a PDF-rendering test's pipe (not Google Drive, as first thought). See WORKING_NOTES.
+
+## (M2 notes)
+
+**M1 done 2026-11-05 (local, not pushed).** Billing is at `admin/` with its 308 commits, rewritten only
+so paths start `admin/`. 878 of 878 tests pass from a clean clone; allow-list site unchanged.
+- Live billing still deploys from `LSCCreative/lsc-billing-app` until M6. Anything fixed there comes across
+  too. Billing's own `main` still has the failing send-routes test; the fix is here only.
+- Run tests: `cd admin/server && npm test`. Hub has no test suite yet; M2 adds hub tests.
+- Timing check "a wrong, short or malformed link" failed once on a shifted-clock run, then passed 3 of 3
+  alone: it's a timing assert, so suspect machine load before the code if it recurs.
+- `.design/quote-format/` stays untracked in billing's folder and did not come across.
+
+## PLANNING notes (design-flow)
+
+User ran `/design-flow` to put deliverables behind payment; it grew into merging
+the Billing App here. Full decisions: `.design/merged-admin/DESIGN_BRIEF.md`.
+Design Tokens was skipped at the start, but the rebrand now needs a token mapping;
+raise it at Phase 4. Agreed order: **merge → Bunny → payment**. `feature-spec.md` /
+`buildplan.md` still describe Bunny only and are untouched. Next: user confirms the
+Defaults are confirmed (2026-11-04). Work `.design/merged-admin/TASKS.md` top to bottom.
+P3's live settings are in `TASKS.md`. `ssh lsc-nas` currently fails because the NAS's local address
+moved; see `TASKS.md`.
+
+The allow-list Pages deploy is live on `main` (`f177537`), merged into `merged-admin`, so
+docs and `nas/` no longer reach the website. They are still public on GitHub.
+
+Found in Phase 2 (code reading, not run live): on live projects client notes and
+approvals never reach the server (`persistViewProject` no-ops, no route), the record
+has no signed state, and `POST /hub/agreement` has no login check. User says no live
+clients today, so this is built in the merge with no stopgap.
+
+- **Names:** Billing App → "Scope & Sales", adopts the hub's UI/brand. Client Hub
+  → "Client Portal". Full merge: one repo, one API container, one database.
+- **Admin tabs:** Scope & Sales (Dashboard, pipeline before acceptance, Finance &
+  Price) and Clients. Each client: Projects (active / complete, archive from
+  complete, archived sub-tab), Client details, Invoice index. Settings → account menu.
+- **Project page:** Production (shoot days, call sheets, trip planner),
+  Deliverables, Payments. One server-side project under the billing UPID; hub
+  projects leave `localStorage` via a one-time import.
+- **Superseded detail below:** the brief is the source of truth. Overlap audit
+  (2026-11-03) removed the hub's Final Sign-Off, added revision rounds (2 per Final,
+  drafts free, Submit uses one), a quote-based checklist, contract rewording, and "show
+  only the invoice actually sent" (no billing PDF or bank details beside Hnry's).
+- **Lifecycle:** accepted quote opens the client project. Portal invite goes on
+  first draft published (manual send also available). Complete is automatic:
+  checklist approved or not needed + all invoices paid.
+- **Assets:** stage replaces the `gated` checkbox. Draft Cut: notes or approve,
+  never downloadable or payable. Final: approve → pay → download, same asset,
+  comment history kept.
+- **Payment:** final invoice via Hnry, order approve → pay. Downloads and
+  the Drive link lock; review stays open. Per-project "Payment required" toggle
+  (on for new, off for existing live projects).
+- **Unlock:** Mark paid in billing, plus a hub admin override. Hnry via Zapier has
+  no paid trigger or pay link, and Hnry sends no payment email. To test: does Find
+  Invoice report PAID on a real paid invoice? If yes, add a ~15 min check.
+  Client "I've paid" button alerts the admin and never unlocks by itself.
+- **Review copy:** NAS review URLs are the permanent public master, so payment
+  projects review over Bunny HLS only. The gate isn't real without Bunny publishing
+  + signed URLs (Slice 9).
+- **Login/hosting:** billing account is the one admin login (replaces hub PIN).
+  app.lsccreative.studio is served from the merged NAS container; main site and
+  portal stay on Pages.
+
+Merge facts: no table-name collisions; both on `media_net`; both Express 5 +
+better-sqlite3 12. Billing is CommonJS (server ~20k lines, web JS ~38k, CSS ~16k,
+875 tests), hub is ESM (755 lines). Billing has `trip-should-fix` and `ui-clarity`
+worktrees and uncommitted `.design/quote-format/` to settle first.
+
+## ACTIVE FEATURE: Bunny delivery layer (planned 2026-10-20) — PAUSED until the merge lands
+
+Decision 2026-11-03: Bunny continues AFTER the merge (order merge → Bunny → payment). Next agent:
+the "first unchecked task" rule is suspended for `buildplan.md` until then. Work the merge first
+(next: user confirms the brief's 7 defaults, then Phase 3 IA). Slice 2 code stays uncommitted on
+branch `bunny-delivery-layer`; commit or stash it before merge work so it isn't lost. Slice 3's
+"Next" line below is the resume point.
+
+The user asked for something specific: Bunny for **client-facing media delivery
+only**. The NAS stays master and backend, and records/auth/DB don't move (the
+2026-10-17 "migrate DB to Bunny" slice stays dropped). Spec in
+`feature-spec.md`, 13 slices (0-12) in `buildplan.md`. No code written yet.
+
+- Top constraint (the user's words): the player is huge to maintain. Keep
+  our own `<video id="asset-video">` and attach HLS to it, no Bunny iframe.
+  Every [WEB] slice re-runs the 6-point player contract in the spec.
+- The widget and editor link through the NAS relative path (admin projects
+  live in browser localStorage, so the NAS can't write into an asset).
+- Bunny Stream fetch-from-URL pulls from the existing `/hub/files/<token>`
+  URL. Confirm its params against the OpenAPI before Slice 2.
+
+### Slice 0 progress (2026-10-20, done in the browser pane) — PARTIAL
+Done:
+- Reused existing Stream library "Client Deliverables", ID `683470`, CDN host
+  `vz-0c8c724c-a53.b-cdn.net`. Webhook set to
+  `https://hub-api.lsccreative.studio/hub/bunny-webhook`. Its CDN token auth +
+  block-direct-URL were ON; both turned OFF (re-enable in Slice 9). Direct
+  play ON. Existing 2 videos are therefore unsigned until Slice 9.
+- New Edge Storage zone `lsc-client-media` (ID 2003290, main region Sydney, no
+  replicas, S3 off) + pull zone `lscclientmedia` (ID 6833812), CDN host
+  `lscclientmedia.b-cdn.net`.
+- Test HLS (200 OK):
+  `https://vz-0c8c724c-a53.b-cdn.net/a3fdcf0a-f70d-4aa9-bb48-e04968478b30/playlist.m3u8`
+Skipped on purpose: Optimizer + Dynamic Image API ($9.50/mo, user declined).
+Slice 7 (resized photos) needs it later.
+Secrets: all 8 BUNNY_* vars now in 1Password Environment "LSC Client Hub Bunny" (names verified).
+Leftover: NAS `.env` via create_local_env_file at deploy (Slice 2/5); scrub gitignored
+`client-hub-docs/Bunny.Net Storage zone & Pull Zone Details.rtf` (7 key/password lines) + rotate what it held.
+
+### Slice 1 (2026-10-21) — CODE DONE, awaiting real Safari + iPhone check
+`client-hub-app/index.html` only:
+- hls.js **1.7.3 light build** (released 2026-09-11) from jsdelivr, pinned + SRI
+  (`HLS_JS` const). Light = no subtitles/alt-audio/DRM, which Bunny review
+  streams don't need. **Lazy-loaded** by `loadHlsJs()` only when a non-Apple
+  browser opens an HLS asset (no `<script>` in `<head>`). A failed load
+  resolves anyway → plain `src` fallback, and resets so the next attach retries.
+- `#asset-video` renders `data-src` (no `src`). An asset with an EMPTY review
+  link skips the player and renders the Drive fallback card directly
+  (`renderVideoCanvas`), since the old `src=""` error path no longer exists.
+- `attachReviewSource` OWNS `video.onerror` (onFail for native/plain, recovery
+  routing for hls.js). `bindClientAsset` sets only onplay/onpause, then attaches.
+  Re-attaching to the SAME element only swaps the hls instance (keeps the pill
+  handlers), which Slice 9's 403 re-attach relies on.
+- hls.js buffers one segment (`maxBufferLength` AND `maxMaxBufferLength` = 2)
+  until the first `play`, then restores `Hls.DefaultConfig`. Note:
+  `maxBufferLength` alone is only a floor. hls.js otherwise grows to
+  `maxMaxBufferLength` (600s), and paused it pulled the whole 41s test video.
+- Landing-card thumbnail skips the `<video>` for `.m3u8` links (`isHlsUrl`
+  helper) → icon until Slice 4's `posterLink`.
+- `attachReviewSource` branch rule: not `.m3u8` → plain `src` (NAS links
+  unchanged); `.m3u8` on Apple WebKit (`navigator.vendor === 'Apple Computer, Inc.'`
+  = Safari + every iOS browser) → native `src`; `.m3u8` elsewhere → hls.js;
+  no MSE → native `src`. Note: Chrome 152 also says `canPlayType(mpegurl)='maybe'`,
+  which is why the rule keys on vendor, not canPlayType alone.
+- Module-level `reviewHls` / `reviewVideo`. `render()` calls `detachReviewSource()`
+  first, which nulls the old element's onerror/onplay/onpause (stops a stale
+  error flipping `videoFailed` on the next asset) and destroys hls.
+- Fatal errors: before MANIFEST_PARSED → fail straight to `videoFailed` (a bad
+  link used to hang forever because `startLoad()` can't re-fetch a manifest that
+  never loaded — caught in testing). After it: one recovery (`recoverMediaError`
+  / `startLoad`), then fail. In hls mode `video.onerror` is routed through the
+  same single recovery (hls.js doesn't watch the element's own error event).
+- onplay/onpause/setPausePill/refreshAssetInteraction untouched.
+
+Verified in the browser pane (Chromium 152), Bunny test stream:
+- hls.js branch: contract 1-4 pass; seek while panel open re-stamps (00:17);
+  3 notes at 5.2/23.8/36.1s → same `<video>`, same Hls instance, playhead held,
+  panel open, box empty+focused, logged 00:05/00:23/00:36. Timeline starts at
+  0 (first frag 0.005s, buffered 0.08s).
+- Native branch (vendor spoofed to Apple in Chromium, so the exact Safari code
+  path ran): contract 1-4 pass, 3 notes 00:08/00:20/00:33, same element.
+- Item 5: 404 HLS link → Drive card in ~0.6s (both branches). Forced fatal
+  MEDIA_ERROR mid-playback → recovered, same element, playhead 12.30s kept;
+  second fatal → Drive card, hls null.
+- Plain webm (NAS-style link) → no hls instance, plays, pill/approve-hide work.
+- Leaving the asset screen → `reviewHls` and `reviewVideo` both null.
+- 375px: hls.js plays, contract holds, no horizontal overflow.
+- After the /code-review fixes (all re-run, both branches): contract 1-6 pass
+  again. Paused buffer = 0.1-4.0s only, a paused seek to 30s loads 28-32s only,
+  and play restores defaults. Empty link → Drive card, no `<video>`. hls.js not
+  loaded at boot or on landing. CDN 404 → native `src` fallback, loader resets,
+  next attach loads 1.7.3 with SRI OK.
+Test project `hls-test` removed from localStorage afterwards.
+
+2026-10-28 — real desktop Safari 27.0.1 via a throwaway harness (session scratchpad,
+not in repo: same-origin iframe drives the real app, POSTs results to a localhost-only
+server that serves only client-hub-app/ + fonts). Chromium run of the same harness: 80/80.
+**DESKTOP SAFARI: 81/81 PASS** (run `safari4`, 1280px + 375px). Native branch, hls.js
+never loaded, no Hls instance, timeline from 0 (41.16s). Contract 1-6 all pass: no pill
+on a plain pause; COMMENT REVISIONS stamps 00:03; play clears it; seek to 17.4 with panel
+open + pause → 00:17; 3 notes at 5.2/23.8/36.1 → 00:05/00:23/00:36 saved, same <video>,
+playhead unchanged, panel open, box empty + focused, approve absent; 404 HLS → Drive card
+in ~0.6s; leaving the screen releases the player; no overflow at 375. Plain mp4
+(NAS-style) stamps + submits the same way.
+Gotcha for future harness runs: Safari rejects script `play()` (NotAllowedError) even
+muted and even on screen without a user gesture, so the harness shows a CLICK TO PLAY
+button once per <video>. Real clients always press play themselves, so not an app issue.
+
+2026-11-03 — iOS Simulator (Xcode 27.2, iPhone 17, Mobile Safari iOS 27.2).
+**iPHONE SIMULATOR: 44/44 PASS** (run `iphone2`, device width): native branch, contract
+1-6, 3 notes, 404 → Drive card, no overflow. An earlier run went 40/41: its one failure
+was the harness's in-browser MediaRecorder blob clip, which iOS wouldn't load. A real
+mp4 over HTTP with Range support (what the NAS `/hub/files/` route sends) passes.
+Also did the real client flow with real taps, no harness, top-level page, Bunny stream:
+play → pause in fullscreen → ✕ → frame held, no pill → COMMENT REVISIONS → pill 00:38,
+approve gone → typed note, SUBMIT → logged 00:38, box empty + focused, keyboard up, panel
+open, video still 00:38 with pill intact. Pill + note + Submit all fit above the keyboard.
+CONFIRMED (not changed): `#asset-video` has no `playsinline`, so on iPhone every play
+opens native fullscreen and the client must pause, then ✕, to reach COMMENT REVISIONS.
+Works, but it's extra steps. Pre-existing (NAS links same). Ask the user before changing.
+Oddity: iOS fullscreen showed 0:39 where the inline player + pill show 00:38. Likely
+rounding vs floor, not measured.
+NOT verified: a physical iPhone (Simulator decodes on the Mac's hardware). User OK'd
+ticking Slice 1 on the Simulator pass (2026-11-03); the physical check is in Slice 5.
+Slice 1 code in client-hub-app/index.html is still UNCOMMITTED, so it isn't live yet.
+Harness recipe for later [WEB] slices (the scratchpad copy gets wiped): same-origin iframe
+of the real app, seed `lsc_hub_projects_v1` in localStorage, `?project=hls-test`, read
+state via `iframe.contentWindow.eval`, first play in a real click, server allowlisted to
+client-hub-app/ + fonts, localhost only. Simulator reaches localhost directly.
+Disk: `xcodebuild -downloadPlatform iOS` installed TWO runtimes. Deleted the unused iPhone
+Duo one (24B91016s) with the user's OK; 13 GB free. Kept iOS 27.2 24B8117 (7.7 GB) +
+iPhone 17 for the [WEB] slices' contract re-runs.
+
+### Slice 2 (2026-11-03) — CODE DONE, uncommitted, not deployed, no real Bunny call yet
+New `src/bunny.js`, `bunny_assets` + `bunny_collections` (schema 6), `POST /hub/publish-asset`,
+`GET /hub/publish-status`, `.env` names in the compose comment.
+- **Fetch returns no video id** (OpenAPI 1.6.18: `{success,message,statusCode}` only). So the
+  title carries a tag, `<file> [lsc-<16 hex>]`, and the id comes from `GET /videos?search=tag`.
+  3 tries after fetch; if still unlisted the row stays `processing` with a NULL id and
+  `/hub/publish-status` keeps looking. Unlisted after 30 min → `failed`.
+- First-publish tag = hash of the path, so a crash after fetch adopts the video instead of a
+  second pull. Repeat publishes get a time-salted tag so they can't find the old video.
+- Calls I made beyond the plan: failed rows retry without `force`; a failed `force` keeps the
+  working video (502, row untouched); `force` leaves the old video on Bunny, since a client
+  record may still use it (only Slice 11's collection delete removes it); root-level files →
+  422 (no project folder); only .mp4/.mov/.webm/.m4v; response adds `sourceChanged` for a NAS
+  file replaced since publishing (Slice 4 should show this, or the client reviews the old cut).
+- Boot requires 8 BUNNY_ vars, not `BUNNY_CDN_TOKEN_KEY` (Slice 9).
+Verified: 57/57 in a throwaway harness (real API process, temp DB + tree, fake Bunny built from
+the OpenAPI shapes, real network blocked). Covers guards, idempotency, 3 simultaneous publishes,
+force, failures, late listing, adoption, timeout, restart, no key in logs.
+NOT verified: real Bunny. Open assumption: a fetched video is listed and searchable by title
+soon after the call. Also unproven: Bunny pulling a large master through the Cloudflare Tunnel.
+**DEPLOY TRAP:** add the BUNNY_ vars to the NAS `.env` BEFORE rebuilding. Missing vars stop boot,
+and `restart: always` makes that a crash loop that takes the live API down. Whether the NAS has
+them is unchecked (my SSH read was blocked by the permission classifier; the user can check).
+For Slice 3: Bunny's REST status enum differs from the webhook's. REST (OpenAPI) 3 = transcoding,
+4 = finished, 5 = error, 6 = upload failed; the plan's webhook mapping has 3 = finished. Use
+`statusFromVideo` for the 30-min fallback, NOT the webhook map. A webhook can also arrive before
+the row has its id, so "unknown id → ignore" needs the 30-min fallback or a lookup behind it.
+
+**Live Bunny test (2026-11-03, real library 683470):** called the real `bunny.js` (keys via a
+1Password-mounted env file in the session scratchpad, never printed) with a public 5s sample mp4.
+`findOrCreateCollection` ok; `fetchVideo` accepted; `findVideoByTag` found the video on the 3rd
+poll ~12.6s after fetch (status 3 → 4 "ready" in ~15s more); `hlsUrl` returned 200. So the title-tag
+lookup works. BUT the inline lookup in `publishVideo` only waits 3×1s, so on a real publish the row
+will usually be saved `processing` with a NULL id and rely on `/hub/publish-status` to adopt it — that
+path is the design, but is only unit-tested against the fake. NOT live-tested: the NAS `/hub/files/<token>`
+source URL through the Tunnel, the full route/DB, webhook. Test collection and video were deleted from Bunny afterwards. Slice 2 left unticked until a real NAS publish.
+
+Next: Slice 3 [API] | Model: Sonnet 5.5 | Effort: Medium (once Slice 2 is ticked)
+
+## Previous feature notes (Client Review-Flow Fixes — complete, in git)
+
 ## Current Focus
 
 All 9 slices done and verified locally. Feature is code-complete; the ONE

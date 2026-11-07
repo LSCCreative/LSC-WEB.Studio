@@ -1,0 +1,65 @@
+# Deployment unit for the DXP4800 Pro (UGOS Pro → Container Manager), and the
+# same file that runs the stack locally on the Mac.
+#
+#   Local:  docker compose up --build          → data lands in ./server/data
+#   NAS:    /volume4/lsc-admin/app keeps its own copy of this file, with the
+#           real data folder and the deliverables share (merge task M6).
+#
+# It lives in admin/, beside server/ and web/, and builds this folder (merge task
+# M4): the image carries the admin's pages as well as the server. The context is
+# always this file's own folder, so wherever it is copied, the build can only
+# take in what sits beside it, filtered by .dockerignore here. Copied into a
+# folder of the old layout (server's files, no server/ or web/), the build stops
+# at its first COPY rather than reaching anything outside it.
+#
+# The container never listens on the public internet directly. Put Tailscale or
+# a reverse proxy in front of the published port — see the deployment guide.
+#
+# `media_net` joins this container to the same Docker network as the NAS's
+# Cloudflare Tunnel container, so the tunnel can reach it at `lsc-admin:8080`
+# for a Zero Trust Public Hostname (see DEPLOYMENT.md). It's declared external
+# because that network is owned by another stack (the media server), not this
+# one. Locally this network won't exist — `docker compose up` will fail to
+# find it; either create it once (`docker network create media_net`) or, for
+# purely local runs, comment the `networks:` blocks below out.
+
+services:
+  # `admin`, not `billing`: the service name is also its name on media_net,
+  # where the old lsc-billing container answers to `billing`.
+  admin:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    image: lsc-admin:latest
+    container_name: lsc-admin
+    restart: unless-stopped
+
+    # Bound to loopback so nothing is reachable from the LAN until a proxy or
+    # Tailscale is deliberately put in front of it. Change to "8080:8080" only
+    # if you intend the whole local network to reach it.
+    ports:
+      - "127.0.0.1:8080:8080"
+
+    env_file:
+      - server/.env
+
+    # These win over .env: inside the container the data path and port are
+    # fixed, whatever the host-side .env says.
+    environment:
+      DATA_DIR: /data
+      PORT: "8080"
+      # scripts/import-hub.js runs in a container of its own (`docker compose
+      # run`); this lets it see a running server here before it writes.
+      IMPORT_PROBE_HOSTS: lsc-admin
+
+    volumes:
+      - ./server/data:/data
+
+    networks:
+      - default
+      - media_net
+
+networks:
+  default: {}
+  media_net:
+    external: true

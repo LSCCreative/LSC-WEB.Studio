@@ -1,0 +1,242 @@
+/* Goals screen — additive only. app.css already carries the form fields
+   (.form-grid, .field), the shared tax control (.tax-setting), the save bar
+   (.pricing-save-bar, .saved-msg, .spinner) and the card surface (.proj-card).
+   Nothing here restyles any of them; this file is the handful of things those
+   components don't already do. */
+
+/* ── The form ───────────────────────────────────────────────────────────────
+   .form-grid is a two-column grid built for the Invoice Settings modal, where
+   the fields are short labelled strings. These three are money and hours with
+   a sentence under each, and at three items a two-column grid leaves one
+   field orphaned beside a gap. Three columns on a wide screen puts them on one
+   line as the single group they are; responsive.css already collapses
+   .form-grid to one column below 768px, which this inherits by being one. */
+.goals-grid {
+  grid-template-columns: repeat(3, 1fr);
+  align-items: start;
+}
+
+/* Sits inside its own .field, under the input it describes, so the 6px .field
+   gap doesn't open into a paragraph break. Same treatment as .oh-hint on the
+   Overhead modal's Cost field. */
+.goals-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* ── Annual billable hours (read-only) ───────────────────────────────────────
+   Sits in the third column where the old weekly-capacity input was, so the
+   row keeps its shape — but it is a figure, not a box. The label copies
+   `.field label` (app.css) so the three captions line up; the value has no
+   border or background at all, because an input-shaped outline would promise
+   an edit this screen doesn't own (the hint links to where it's changed). */
+.goals-derived-label {
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--muted);
+}
+.goals-derived-value {
+  padding: 8px 0 2px;
+  font-size: 18px;
+  line-height: 1.2;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.goals-derived-value.is-empty {
+  color: var(--muted);
+}
+
+/* ── Target Annual Revenue ──────────────────────────────────────────────────
+   A .proj-card with its navigation affordances taken back off — no accent
+   border on hover, no underline sweeping in — because nothing happens when you
+   click it. The card is a tile everywhere else in the app and those two rules
+   promise a destination this one doesn't have.
+
+   These same two resets are on .oh-summary in overhead.css. Deliberately
+   repeated rather than hoisted into a shared .proj-card modifier: it is two
+   declarations, and hoisting means editing a verified screen's markup and CSS
+   from a task that doesn't otherwise touch it. If a third stat card appears,
+   hoist it then — that is the point where three copies start being three
+   chances to disagree.
+
+   It sits at the top of the screen, above the fields, on both Goals and
+   Capacity (moved from below Goals' save bar 2026-09-28, Finance & Price
+   design review should-fix 8). */
+.goals-outcome {
+  cursor: default;
+  margin: 0 0 24px;
+  max-width: 78ch;
+}
+.goals-outcome:hover {
+  border-color: var(--border);
+}
+.goals-outcome:hover::after {
+  transform: scaleX(0);
+}
+
+.goals-outcome-value {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 30px;
+  color: var(--text);
+  letter-spacing: 0.02em;
+  margin-bottom: 8px;
+}
+/* The em dash is a placeholder, not a figure, and at 30px in full --text it
+   reads as one of the screen's headline numbers. Muted says "nothing here
+   yet"; the note under it says why. */
+.goals-outcome-value.is-empty {
+  color: var(--muted);
+}
+
+.goals-outcome-note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+/* The Overhead link inside that note. Button, not an anchor: it navigates
+   inside the app, and a real href would offer a page load the router doesn't
+   want. Styled as the inline link it reads as — the same rest/hover pair
+   .pricing-rate-note-link uses, which is --text rather than --accent at rest
+   because the accent measures 3.71:1 on this background, under the 4.5:1 this
+   feature's brief sets for body text, and 11px muted copy is exactly where
+   that bar matters. */
+.goals-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.goals-link:hover,
+.goals-link:focus-visible {
+  color: var(--accent);
+}
+
+/* ── Errors ─────────────────────────────────────────────────────────────────
+   Same treatment as #pricing-error and #overhead-error: inline, above the
+   button that refused, rather than an alert() covering the fields it names. */
+#goals-error {
+  display: none;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+#goals-error.show {
+  display: block;
+}
+/* No adjacent-sibling margin fix here, unlike #pricing-error's: this one
+   carries its own 14px bottom margin and sits between two blocks that already
+   space themselves the same way, so the save bar lands where it does with no
+   error showing. */
+
+/* ── Super and bad debt (2026-09-28 audit) ──────────────────────────────────
+   A second row of the same grid, two fields, so it doesn't stretch a third
+   column's worth of gap. */
+.goals-grid-2 {
+  grid-template-columns: repeat(2, 1fr);
+  margin-top: 4px;
+}
+
+/* ── Income tax: the user's own scale per FY ────────────────────────────────
+   Same flat 1px box as the Dashboard's panels. The bracket table reuses
+   .est-table; its inputs are .text-inp at a fixed width so the two columns
+   read as a tax table, not as a stretched form. */
+.goals-ty {
+  margin: 22px 0;
+  padding: 20px 22px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  max-width: 78ch;
+}
+.goals-ty-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 16px;
+  margin-bottom: 8px;
+}
+.goals-ty-head .dash-h {
+  margin: 0;
+}
+.goals-ty-status {
+  font-size: 11px;
+  color: var(--muted);
+}
+/* A placeholder is the one state worth marking: the accent rule, never the
+   accent as text (under 4.5:1 here). */
+.goals-ty-status.is-placeholder {
+  color: var(--text);
+  border-bottom: 1px solid var(--accent);
+}
+.goals-ty-table {
+  margin: 12px 0;
+  max-width: 420px;
+}
+.goals-ty-table .text-inp {
+  width: 130px;
+  text-align: right;
+}
+.goals-ty-act {
+  width: 1%;
+}
+.goals-ty-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+}
+.goals-ty-levy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--muted);
+}
+.goals-ty-levy .text-inp {
+  width: 80px;
+  text-align: right;
+}
+.goals-ty-suggest {
+  margin-top: 12px;
+}
+.goals-ty-suggest strong {
+  color: var(--text);
+  font-weight: 600;
+}
+#goals-ty-error {
+  display: none;
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: 12px;
+}
+#goals-ty-error.show {
+  display: block;
+}
+
+/* ── Target Annual Revenue's working (pricing-floor PF6) ────────────────────
+   The Dashboard's ledger lines (.dash-line and its -of / -sub / -total
+   modifiers, finance-dashboard.css), so the two screens read the target the
+   same way. */
+.goals-parts {
+  margin: 4px 0 14px;
+}
+.goals-parts:empty {
+  display: none;
+}

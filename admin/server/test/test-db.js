@@ -1,0 +1,1665 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
+const { openDatabase, migrate, newId, nowIso, LATEST_VERSION } = require('../src/db');
+
+function tempDbPath(label) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `lsc-db-${label}-`));
+  return path.join(dir, 'billing.db');
+}
+
+test('creates a fresh database with every table the app needs', () => {
+  const file = tempDbPath('fresh');
+  const db = openDatabase(file);
+
+  const tables = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+  ).all().map((r) => r.name);
+
+  for (const expected of
+    ['account', 'clients', 'depreciation_assets', 'depreciation_locks', 'estimates', 'goals',
+      'holidays', 'overhead_items', 'overhead_snapshots', 'pricing', 'production_days', 'rentals',
+      'schema_version', 'sessions', 'settings']) {
+    assert.ok(tables.includes(expected), `missing table: ${expected}`);
+  }
+
+  assert.equal(db.pragma('journal_mode', { simple: true }), 'wal');
+  assert.equal(db.pragma('foreign_keys', { simple: true }), 1);
+  db.close();
+});
+
+test('re-running migrations against an existing database changes nothing', () => {
+  const file = tempDbPath('idempotent');
+
+  const first = openDatabase(file);
+  first.prepare(`
+    INSERT INTO clients (id, business_name, created_at, updated_at) VALUES (?, ?, ?, ?)
+  `).run(newId('cl'), 'Acme Pty Ltd', nowIso(), nowIso());
+  first.close();
+
+  // Second open on the same file: the data survives and no migration re-runs.
+  const second = openDatabase(file);
+  const result = migrate(second);
+  assert.equal(result.applied, 0);
+  assert.equal(result.to, LATEST_VERSION);
+
+  const clients = second.prepare('SELECT business_name FROM clients').all();
+  assert.equal(clients.length, 1);
+  assert.equal(clients[0].business_name, 'Acme Pty Ltd');
+
+  const versions = second.prepare('SELECT COUNT(*) AS n FROM schema_version').get();
+  assert.equal(versions.n, LATEST_VERSION);
+  second.close();
+});
+
+test('refuses to run against a database built by a newer version of the app', () => {
+  const file = tempDbPath('future');
+  const db = openDatabase(file);
+  db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)')
+    .run(LATEST_VERSION + 5, nowIso());
+  db.close();
+
+  assert.throws(() => openDatabase(file), /newer database/);
+});
+
+test('a corrupt file is refused rather than overwritten', () => {
+  const file = tempDbPath('corrupt');
+  // Not a database at all — the shape a truncated copy or a bad restore takes.
+  fs.writeFileSync(file, 'this is not a sqlite file, but it is the only copy');
+  const before = fs.readFileSync(file);
+
+  assert.throws(() => openDatabase(file));
+
+  // The point of the check: whatever was in there is still in there.
+  assert.deepEqual(fs.readFileSync(file), before);
+});
+
+test('only one account row can ever exist', () => {
+  const file = tempDbPath('account');
+  const db = openDatabase(file);
+
+  db.prepare(`
+    INSERT INTO account (id, username, password_hash, created_at, updated_at)
+    VALUES (1, 'lachlan', 'hash', ?, ?)
+  `).run(nowIso(), nowIso());
+
+  assert.throws(() => {
+    db.prepare(`
+      INSERT INTO account (id, username, password_hash, created_at, updated_at)
+      VALUES (2, 'someone-else', 'hash', ?, ?)
+    `).run(nowIso(), nowIso());
+  }, /CHECK constraint failed/);
+
+  db.close();
+});
+
+test('deleting a client leaves their estimates intact, snapshot and all', () => {
+  const file = tempDbPath('snapshot');
+  const db = openDatabase(file);
+
+  const clientId = newId('cl');
+  db.prepare('INSERT INTO clients (id, business_name, created_at, updated_at) VALUES (?,?,?,?)')
+    .run(clientId, 'Acme Pty Ltd', nowIso(), nowIso());
+
+  const estimateId = newId('est');
+  db.prepare(`
+    INSERT INTO estimates (id, upid, name, client_id, client_json, totals_json, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    estimateId, 'UPID-001', 'Brand film', clientId,
+    JSON.stringify({ businessName: 'Acme Pty Ltd', email: 'accounts@acme.example' }),
+    JSON.stringify({ totalIncGst: 3916 }),
+    nowIso(), nowIso()
+  );
+
+  db.prepare('DELETE FROM clients WHERE id = ?').run(clientId);
+
+  const row = db.prepare('SELECT * FROM estimates WHERE id = ?').get(estimateId);
+  assert.ok(row, 'the estimate must survive its client being deleted');
+  assert.equal(row.client_id, null);
+  assert.equal(JSON.parse(row.client_json).businessName, 'Acme Pty Ltd');
+
+  db.close();
+});
+
+test('total_inc_gst tracks totals_json without being stored twice', () => {
+  const file = tempDbPath('generated');
+  const db = openDatabase(file);
+
+  const id = newId('est');
+  db.prepare(`
+    INSERT INTO estimates (id, totals_json, created_at, updated_at) VALUES (?, ?, ?, ?)
+  `).run(id, JSON.stringify({ totalIncGst: 3916 }), nowIso(), nowIso());
+
+  assert.equal(db.prepare('SELECT total_inc_gst AS t FROM estimates WHERE id = ?').get(id).t, 3916);
+
+  db.prepare('UPDATE estimates SET totals_json = ? WHERE id = ?')
+    .run(JSON.stringify({ totalIncGst: 100.5 }), id);
+
+  assert.equal(db.prepare('SELECT total_inc_gst AS t FROM estimates WHERE id = ?').get(id).t, 100.5);
+  db.close();
+});
+
+test('an estimate cannot be saved with a status the pipeline does not have', () => {
+  const file = tempDbPath('status');
+  const db = openDatabase(file);
+
+  assert.throws(() => {
+    db.prepare('INSERT INTO estimates (id, status, created_at, updated_at) VALUES (?,?,?,?)')
+      .run(newId('est'), 'archived', nowIso(), nowIso());
+  }, /CHECK constraint failed/);
+
+  db.close();
+});
+
+test('an overhead item is confined to the fixed category and frequency lists', () => {
+  const file = tempDbPath('overhead-category');
+  const db = openDatabase(file);
+
+  const insert = (category, frequency) => db.prepare(`
+    INSERT INTO overhead_items (id, name, category, cost, frequency, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(newId('ovh'), 'Adobe Creative Cloud', category, 79.99, frequency, nowIso(), nowIso());
+
+  assert.throws(() => insert('subscriptions', 'monthly'), /CHECK constraint failed/);
+  assert.throws(() => insert('software', 'yearly'), /CHECK constraint failed/);
+
+  insert('software', 'monthly');
+  const row = db.prepare('SELECT * FROM overhead_items').get();
+  assert.equal(row.category, 'software');
+  assert.equal(row.frequency, 'monthly');
+
+  db.close();
+});
+
+test('overhead snapshots are an append-only log, ordered by time', () => {
+  const file = tempDbPath('overhead-snapshots');
+  const db = openDatabase(file);
+
+  const insert = db.prepare(`
+    INSERT INTO overhead_snapshots (id, ts, total_annual, by_category_json) VALUES (?, ?, ?, ?)
+  `);
+  insert.run(newId('snap'), '2026-09-01T00:00:00.000Z', 20000, JSON.stringify({ software: 20000 }));
+  insert.run(newId('snap'), '2026-09-15T00:00:00.000Z', 24000, JSON.stringify({ software: 24000 }));
+
+  const rows = db.prepare('SELECT total_annual FROM overhead_snapshots ORDER BY ts').all();
+  assert.deepEqual(rows.map((r) => r.total_annual), [20000, 24000]);
+
+  db.close();
+});
+
+test('only one goals row can ever exist, matching pricing/settings', () => {
+  const file = tempDbPath('goals');
+  const db = openDatabase(file);
+
+  db.prepare(`
+    INSERT INTO goals
+      (id, desired_net_income, target_profit_margin_pct, billable_capacity_hrs_per_week,
+       created_at, updated_at)
+    VALUES (1, 80000, 20, 25, ?, ?)
+  `).run(nowIso(), nowIso());
+
+  assert.throws(() => {
+    db.prepare(`
+      INSERT INTO goals
+        (id, desired_net_income, target_profit_margin_pct, billable_capacity_hrs_per_week,
+         created_at, updated_at)
+      VALUES (2, 80000, 20, 25, ?, ?)
+    `).run(nowIso(), nowIso());
+  }, /CHECK constraint failed/);
+
+  db.close();
+});
+
+test('a fresh database has no goals row until the app writes one', () => {
+  const file = tempDbPath('goals-unset');
+  const db = openDatabase(file);
+
+  const row = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+  assert.equal(row, undefined, 'goals must start empty, like pricing/settings, not pre-seeded');
+
+  db.close();
+});
+
+/**
+ * MIGRATION v5 — capacity fields, depreciation assets and lodgement locks.
+ *
+ * The upgrade test is the one that matters. A goals row saved under v4 has no
+ * capacity fields, and what it gets on upgrade is a decision the migration
+ * makes on the user's behalf: the reference defaults, because leave and sick
+ * days cannot be inferred from the single weekly figure that existed before.
+ * Inventing a split would be fabrication dressed as a migration.
+ */
+function insertV4Goals(db, capacityHrsPerWeek = 20) {
+  db.prepare(`
+    INSERT INTO goals
+      (id, desired_net_income, target_profit_margin_pct, billable_capacity_hrs_per_week,
+       created_at, updated_at)
+    VALUES (1, 80000, 25, ?, ?, ?)
+  `).run(capacityHrsPerWeek, nowIso(), nowIso());
+}
+
+test('a goals row keeps its data and gains the seeded capacity defaults', () => {
+  const file = tempDbPath('v5-goals');
+  const db = openDatabase(file);
+  insertV4Goals(db, 20);
+
+  const g = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+
+  // Seeded, not derived from billable_capacity_hrs_per_week.
+  assert.equal(g.billable_hours_per_day, 8);
+  assert.equal(g.working_days_per_week, 5);
+  assert.equal(g.leave_days_per_year, 30);
+  assert.equal(g.sick_days_per_year, 8);
+
+  // Nothing that was already there moved.
+  assert.equal(g.desired_net_income, 80000);
+  assert.equal(g.target_profit_margin_pct, 25);
+  assert.equal(g.billable_capacity_hrs_per_week, 20);
+
+  db.close();
+});
+
+test('the seeded capacity defaults are NOT derived from the legacy weekly figure', () => {
+  // Two databases whose legacy capacity differs wildly still seed identically.
+  // This is the point: the seeds are a starting guess the Capacity screen asks
+  // the user to confirm, not a conversion of what they had.
+  //
+  // It also pins the size of what confirming costs. 8 × 5 with 30 + 8 days off
+  // is 1,776 annual hours; a legacy 20 hrs/week annualised at the retired 48 is
+  // 960. Accepting the seeds unexamined would nearly halve the overhead rate for
+  // that user, which is why the screen must show before/after and not just save.
+  for (const legacy of [10, 20, 37.5]) {
+    const db = openDatabase(tempDbPath(`v5-seed-${legacy}`));
+    insertV4Goals(db, legacy);
+    const g = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+    assert.equal(g.billable_hours_per_day, 8, `legacy ${legacy} must not change the seed`);
+    assert.equal(g.leave_days_per_year, 30);
+    assert.equal(g.billable_capacity_hrs_per_week, legacy, 'the legacy column is kept as-is');
+    db.close();
+  }
+});
+
+test('iawo_threshold starts NULL — an ATO figure is never hardcoded as a default', () => {
+  const file = tempDbPath('v5-iawo');
+  const db = openDatabase(file);
+  insertV4Goals(db);
+
+  // NULL, not 0. The threshold moves with the federal budget, so the screen
+  // offers the current figure as a placeholder to confirm. A 0 would make every
+  // one-off expense exceed the threshold and the double-count hint would fire
+  // on all of them until the user learned to ignore it.
+  assert.equal(db.prepare('SELECT iawo_threshold FROM goals WHERE id = 1').get().iawo_threshold, null);
+
+  db.close();
+});
+
+test('depreciation_assets constrains method and category, like overhead_items does', () => {
+  const file = tempDbPath('v5-assets');
+  const db = openDatabase(file);
+
+  const insert = (over) => {
+    const a = {
+      id: newId('asset'), name: 'Camera', category: 'camera',
+      purchase_date: '2025-08-01', start_date: '2025-08-15',
+      cost_inc_gst: 6600, gst_amount: 600, gst_credit_claimed: 1,
+      method: 'diminishing_value', effective_life_years: 6, business_use_pct: 100,
+      created_at: nowIso(), updated_at: nowIso(), ...over,
+    };
+    db.prepare(`
+      INSERT INTO depreciation_assets
+        (id, name, category, purchase_date, start_date, cost_inc_gst, gst_amount,
+         gst_credit_claimed, method, effective_life_years, business_use_pct, created_at, updated_at)
+      VALUES (@id, @name, @category, @purchase_date, @start_date, @cost_inc_gst, @gst_amount,
+              @gst_credit_claimed, @method, @effective_life_years, @business_use_pct,
+              @created_at, @updated_at)
+    `).run(a);
+    return a;
+  };
+
+  insert({});
+  for (const method of
+    ['prime_cost', 'instant_writeoff', 'small_business_pool', 'low_value_pool']) {
+    insert({ method });
+  }
+  for (const category of
+    ['lens', 'lighting', 'audio', 'computer', 'drone', 'vehicle', 'other']) {
+    insert({ category });
+  }
+
+  assert.throws(() => insert({ method: 'straight_line' }), /CHECK constraint failed/);
+  assert.throws(() => insert({ category: 'tripod' }), /CHECK constraint failed/);
+
+  // business_use_pct is a PERCENT, 0–100 — not a 0–1 fraction. The CHECK is the
+  // only thing standing between a 0.6 typed as "60% of business use" and a
+  // deduction 100× too small, so it is pinned here.
+  insert({ business_use_pct: 0 });
+  insert({ business_use_pct: 60 });
+  insert({ business_use_pct: 100 });
+  assert.throws(() => insert({ business_use_pct: 101 }), /CHECK constraint failed/);
+  assert.throws(() => insert({ business_use_pct: -1 }), /CHECK constraint failed/);
+
+  assert.throws(() => insert({ gst_credit_claimed: 2 }), /CHECK constraint failed/);
+
+  db.close();
+});
+
+test('an asset defaults to held, fully business-use, and no GST credit claimed', () => {
+  const file = tempDbPath('v5-asset-defaults');
+  const db = openDatabase(file);
+
+  db.prepare(`
+    INSERT INTO depreciation_assets
+      (id, name, category, purchase_date, start_date, cost_inc_gst, method, created_at, updated_at)
+    VALUES (?, 'Mic', 'audio', '2025-07-01', '2025-07-01', 300, 'prime_cost', ?, ?)
+  `).run(newId('asset'), nowIso(), nowIso());
+
+  const a = db.prepare('SELECT * FROM depreciation_assets').get();
+
+  // A NULL disposal_date is the "still held" signal replacementReserveTotal()
+  // filters on, so it must not default to anything else.
+  assert.equal(a.disposal_date, null);
+  assert.equal(a.disposal_proceeds, null);
+  assert.equal(a.business_use_pct, 100);
+  assert.equal(a.gst_credit_claimed, 0);
+  assert.equal(a.gst_amount, 0);
+  // NULL means "starts at its cost base" rather than mid-life.
+  assert.equal(a.opening_adjustable_value, null);
+  // Vehicles only.
+  assert.equal(a.car_limit, null);
+
+  db.close();
+});
+
+test('depreciation_locks is an append-only log that keeps amendments', () => {
+  const file = tempDbPath('v5-locks');
+  const db = openDatabase(file);
+
+  const insert = db.prepare(`
+    INSERT INTO depreciation_locks (id, fy_label, locked_at, figures_json) VALUES (?, ?, ?, ?)
+  `);
+  // The canonical FY token from calc.js's fyLabel() — no space, plain hyphen.
+  // The en-dash form is display only and must never reach a stored value.
+  insert.run(newId('lock'), 'FY2025-26', '2026-07-10T00:00:00.000Z', JSON.stringify({ total: 4200 }));
+  insert.run(newId('lock'), 'FY2025-26', '2026-09-02T00:00:00.000Z', JSON.stringify({ total: 4350 }));
+
+  // Deliberately NO unique constraint on fy_label: a re-lodgement is an
+  // amendment, and an append-only log should keep both. Readers take the latest.
+  const rows = db.prepare(
+    'SELECT figures_json FROM depreciation_locks WHERE fy_label = ? ORDER BY locked_at DESC'
+  ).all('FY2025-26');
+  assert.equal(rows.length, 2);
+  assert.equal(JSON.parse(rows[0].figures_json).total, 4350);
+
+  db.close();
+});
+
+/**
+ * MIGRATION v6 — goals income and margin may be unset; capacity confirmation.
+ *
+ * A table rebuild, so the upgrade test builds the real v5 shape of `goals`
+ * (NOT NULL income and margin, no capacity_confirmed_at), puts a row in it,
+ * rewinds schema_version, and lets migrate() run v6 over it — the same path the
+ * NAS database takes on its next boot.
+ */
+function rewindGoalsToV5(db) {
+  // v7's additive changes come off too, so migrate() can re-apply them.
+  db.exec(`
+    DROP TABLE IF EXISTS tax_years;
+    ALTER TABLE depreciation_assets DROP COLUMN expected_resale_value;
+    ALTER TABLE depreciation_assets DROP COLUMN opening_value_fy;
+  `);
+  db.exec(`
+    DROP TABLE goals;
+    CREATE TABLE goals (
+      id                             INTEGER PRIMARY KEY CHECK (id = 1),
+      desired_net_income             REAL NOT NULL,
+      target_profit_margin_pct       REAL NOT NULL,
+      billable_capacity_hrs_per_week REAL NOT NULL,
+      created_at                     TEXT NOT NULL,
+      updated_at                     TEXT NOT NULL,
+      billable_hours_per_day         REAL NOT NULL DEFAULT 8,
+      working_days_per_week          REAL NOT NULL DEFAULT 5,
+      leave_days_per_year            REAL NOT NULL DEFAULT 30,
+      sick_days_per_year             REAL NOT NULL DEFAULT 8,
+      iawo_threshold                 REAL
+    );
+  `);
+  db.prepare('DELETE FROM schema_version WHERE version >= 6').run();
+}
+
+test('v6 carries every goals value across the rebuild and starts unconfirmed', () => {
+  const db = openDatabase(tempDbPath('v6-upgrade'));
+  rewindGoalsToV5(db);
+  db.prepare(`
+    INSERT INTO goals
+      (id, desired_net_income, target_profit_margin_pct, billable_capacity_hrs_per_week,
+       created_at, updated_at, billable_hours_per_day, working_days_per_week,
+       leave_days_per_year, sick_days_per_year, iawo_threshold)
+    VALUES (1, 80000, 25, 34.15, '2026-09-01T00:00:00.000Z', '2026-09-02T00:00:00.000Z', 7, 4, 20, 5, 20000)
+  `).run();
+
+  // To v17: v18 moves capacity and profit on purpose (its own tests below).
+  const result = migrate(db, { to: 17 });
+  assert.deepEqual([result.from, result.to, result.applied], [5, 17, 12]);
+
+  const g = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+  assert.deepEqual(
+    [g.desired_net_income, g.target_profit_margin_pct, g.billable_capacity_hrs_per_week],
+    [80000, 25, 34.15],
+  );
+  assert.deepEqual(
+    [g.billable_hours_per_day, g.working_days_per_week, g.leave_days_per_year, g.sick_days_per_year],
+    [7, 4, 20, 5],
+    'capacity the user already had must survive the rebuild, not reset to the seeds',
+  );
+  assert.equal(g.iawo_threshold, 20000);
+  assert.equal(g.created_at, '2026-09-01T00:00:00.000Z');
+  assert.equal(g.updated_at, '2026-09-02T00:00:00.000Z');
+  // Nobody has confirmed capacity on the Capacity screen yet — it didn't exist.
+  assert.equal(g.capacity_confirmed_at, null);
+
+  // And the singleton rule survived the rebuild.
+  assert.throws(() => {
+    db.prepare(`
+      INSERT INTO goals (id, billable_capacity_hrs_per_week, created_at, updated_at)
+      VALUES (2, 1, ?, ?)
+    `).run(nowIso(), nowIso());
+  }, /CHECK constraint failed/);
+
+  db.close();
+});
+
+test('v6 lets income and margin be unset rather than forcing a zero', () => {
+  // The Capacity screen can be the first thing ever saved. A NOT NULL margin
+  // would force a 0 in, and 0% is a real break-even margin, not "not set".
+  const db = openDatabase(tempDbPath('v6-nullable'));
+  db.prepare(`
+    INSERT INTO goals (id, billable_capacity_hrs_per_week, created_at, updated_at)
+    VALUES (1, 34.15, ?, ?)
+  `).run(nowIso(), nowIso());
+  const g = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+  assert.equal(g.desired_net_income, null);
+  assert.equal(g.target_profit_margin_pct, null);
+  db.close();
+});
+
+/**
+ * MIGRATION v7 — the 2026-09-28 money-math audit. Additive: a tax_years table,
+ * goals.super_pct / bad_debt_pct, and two asset columns. The one data step is
+ * the opening-value backfill: an asset already carrying an opening adjustable
+ * value gets opening_value_fy from its created_at, because the form described
+ * the value as the one "when you entered it here".
+ */
+test('v7 backfills opening_value_fy from created_at, and only where an opening value exists', () => {
+  const db = openDatabase(tempDbPath('v7-upgrade'));
+  db.exec(`
+    DROP TABLE tax_years;
+    ALTER TABLE depreciation_assets DROP COLUMN expected_resale_value;
+    ALTER TABLE depreciation_assets DROP COLUMN opening_value_fy;
+    ALTER TABLE goals DROP COLUMN super_pct;
+    ALTER TABLE goals DROP COLUMN bad_debt_pct;
+  `);
+  db.prepare('DELETE FROM schema_version WHERE version >= 7').run();
+  const insert = db.prepare(`
+    INSERT INTO depreciation_assets
+      (id, name, category, purchase_date, start_date, cost_inc_gst, method, effective_life_years,
+       opening_adjustable_value, created_at, updated_at)
+    VALUES (?, 'Cam', 'camera', '2023-07-01', '2023-07-01', 9000, 'diminishing_value', 3, ?, ?, ?)
+  `);
+  insert.run('da_old', 3000, '2025-10-02T01:00:00.000Z', '2025-10-02T01:00:00.000Z');
+  insert.run('da_new', null, '2025-10-02T01:00:00.000Z', '2025-10-02T01:00:00.000Z');
+
+  const result = migrate(db);
+  assert.deepEqual([result.from, result.to], [6, LATEST_VERSION]);
+  const byId = (id) => db.prepare('SELECT opening_value_fy FROM depreciation_assets WHERE id = ?').get(id);
+  assert.equal(byId('da_old').opening_value_fy, 'FY2025-26');
+  assert.equal(byId('da_new').opening_value_fy, null);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'tax_years'").get().n, 1);
+  db.close();
+});
+
+/**
+ * MIGRATION v8 — five more operating-cost categories (four new values; the
+ * fifth is the existing 'marketing', relabelled on screen). A table rebuild, so
+ * the upgrade test puts a row in the v7 shape, rewinds, and lets v8 run.
+ */
+test('v8 keeps every overhead row and widens the category list', () => {
+  const db = openDatabase(tempDbPath('v8-upgrade'));
+  db.prepare(`
+    INSERT INTO overhead_items (id, name, category, cost, frequency, created_at, updated_at)
+    VALUES ('oh_keep', 'Website ads', 'marketing', 120, 'monthly', '2026-09-01T00:00:00.000Z', '2026-09-02T00:00:00.000Z')
+  `).run();
+  db.prepare('DELETE FROM schema_version WHERE version >= 8').run();
+
+  const result = migrate(db);
+  // v9 and every later one run too; with no pricing row and no estimates, v9
+  // changes nothing, and v10 only adds a goals column.
+  assert.deepEqual([result.from, result.to, result.applied], [7, LATEST_VERSION, LATEST_VERSION - 7]);
+  const row = db.prepare("SELECT * FROM overhead_items WHERE id = 'oh_keep'").get();
+  assert.deepEqual(
+    [row.name, row.category, row.cost, row.frequency, row.created_at, row.updated_at],
+    ['Website ads', 'marketing', 120, 'monthly', '2026-09-01T00:00:00.000Z', '2026-09-02T00:00:00.000Z'],
+  );
+
+  const insert = db.prepare(`
+    INSERT INTO overhead_items (id, name, category, cost, frequency, created_at, updated_at)
+    VALUES (?, 'x', ?, 1, 'monthly', ?, ?)
+  `);
+  for (const c of ['motor_vehicle', 'phone_internet', 'home_office', 'training']) {
+    insert.run('oh_' + c, c, nowIso(), nowIso());
+  }
+  assert.throws(() => insert.run('oh_bad', 'fuel', nowIso(), nowIso()), /CHECK constraint failed/);
+  // The category index came back with the rebuild.
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'idx_overhead_items_category'").get().n,
+    1,
+  );
+  db.close();
+});
+
+/* ── v9: services priced per hour, half day and full day ───────────────────── */
+
+const { computeTotals } = require('../src/calc');
+const { readPricing, readSettings } = require('../src/ratecard');
+const { DEFAULT_PRICING } = require('../src/defaults');
+const { pricingProblem } = require('../src/routes/pricing');
+const { reshapeCard, snapshotLegacyLines, V8_DEFAULT_PRICING } = require('../src/migrations/v9-service-units');
+
+/* A v8 card with one of every kind of labour row the migration must place. */
+const V8_CARD = {
+  labourSections: [
+    {
+      id: 'prod',
+      label: 'Production',
+      rows: [
+        { id: 'vc', name: 'Video Capture', rate: 100, mu: 140 },
+        { id: 'vcf', name: 'Video Capture — Full Day', rate: 800, mu: 1120, hoursPerUnit: 8, dayUnit: 'full' },
+        { name: 'Video Capture — Half Day', rate: 400, mu: 640, hoursPerUnit: 4, dayUnit: 'half' },
+        { id: 'dd', name: 'Drone Day', rate: 0, mu: 900, hoursPerUnit: 6, dayUnit: 'full' },
+        { name: 'Eight-hour row', rate: 0, mu: 700, hoursPerUnit: 8 },
+        { name: 'Four-hour row', rate: 0, mu: 380, hoursPerUnit: 4 },
+        { name: 'Long block', rate: 0, mu: 500, hoursPerUnit: 5 },
+        { name: 'Unpriced', rate: 0 },
+      ],
+    },
+    {
+      id: 'post',
+      label: 'Post-Production',
+      rows: [{ id: 'raw', name: 'Raw Footage Handover [on HDD]', rate: 70, mu: 98, customBill: true }],
+    },
+  ],
+  travelRows: [
+    { name: 'Fuel & Tolls', rate: 1, mu: 1, directCost: true },
+    { name: 'Crew Meals', rate: 30, mu: 33, unit: 'meals' },
+    { name: 'Transport & Logistics Hrs', rate: 25, mu: 35, ownTime: true },
+  ],
+  taxSetAsideRate: 0.35,
+};
+
+const V9_ESTIMATES = [
+  {
+    id: 'est_legacy', gstFree: 0,
+    rows: {
+      prod: [
+        { rowId: 'vc', name: 'Renamed since', qty: 3 },
+        { name: 'Video Capture — Full Day', qty: 2 },
+        { rowId: 'vcf', name: 'Video Capture — Full Day', qty: 1 },
+        { name: 'Video Capture — Half Day', qty: 1 },
+        { name: 'Drone Day', qty: 2 },
+        { name: 'Eight-hour row', qty: 1 },
+        { name: 'Long block', qty: 2 },
+        { name: 'Unpriced', qty: 4 },
+      ],
+      post: [{ rowId: 'raw', name: 'Raw Footage Handover [on HDD]', qty: 1, override: 250 }],
+      travel: [
+        { name: 'Fuel & Tolls', qty: 120 },
+        { name: 'Crew Meals', qty: 4 },
+        { name: 'Transport & Logistics Hrs', qty: 3 },
+      ],
+      crew: [{ name: 'Gaffer', days: 2, cost: 500 }],
+      equip: [{ name: 'Lens', days: 2, cost: 150 }],
+    },
+  },
+  {
+    // Snapshotted already, and lines no card can price.
+    id: 'est_mixed', gstFree: 1,
+    rows: {
+      prod: [
+        { rowId: 'vc', name: 'Video Capture', qty: 2, mu: 99 },
+        { rowId: 'vcf', name: 'Video Capture — Full Day', qty: 1, mu: 1000, hoursPerUnit: 8, dayUnit: 'full' },
+        { name: 'Gone from the card', qty: 5 },
+        { name: 'Video Capture', qty: 1 },
+      ],
+      oldcat: [{ name: 'Video Capture', qty: 7 }],
+    },
+  },
+];
+
+const GST_INC_SETTINGS = { gst: { registered: true, rate: 0.1, pricesIncludeGst: true } };
+
+/** A database at v8, holding `card` (or no pricing row) and the estimates above. */
+function v8Database(label, card) {
+  const db = openDatabase(tempDbPath(label));
+  db.prepare('DELETE FROM schema_version WHERE version >= 9').run();
+  if (card) {
+    db.prepare("INSERT INTO pricing (id, data_json, updated_at) VALUES (1, ?, '2026-09-01T00:00:00.000Z')")
+      .run(JSON.stringify(card));
+  }
+  db.prepare("INSERT INTO settings (id, data_json, updated_at) VALUES (1, ?, '2026-09-01T00:00:00.000Z')")
+    .run(JSON.stringify(GST_INC_SETTINGS));
+  const insert = db.prepare(`
+    INSERT INTO estimates (id, name, active_rows_json, gst_free, created_at, updated_at)
+    VALUES (?, ?, ?, ?, '2026-09-01T00:00:00.000Z', '2026-09-02T00:00:00.000Z')
+  `);
+  for (const e of V9_ESTIMATES) insert.run(e.id, e.id, JSON.stringify(e.rows), e.gstFree);
+  return db;
+}
+
+/** Every estimate's totals as the server would compute them now. */
+function recomputedTotals(db) {
+  const pricing = readPricing(db);
+  const settings = readSettings(db);
+  const out = {};
+  for (const e of db.prepare('SELECT id, active_rows_json, gst_free FROM estimates ORDER BY id').all()) {
+    out[e.id] = computeTotals(JSON.parse(e.active_rows_json), pricing, settings, {
+      gstFree: e.gst_free === 1,
+      overheadRate: 30,
+    });
+  }
+  return out;
+}
+
+function quietly(t) {
+  const log = t.mock.method(console, 'log', () => {});
+  return () => log.mock.calls.map((c) => c.arguments.join(' '));
+}
+
+test('v9 leaves every estimate\'s recomputed totals exactly as they were', (t) => {
+  const logs = quietly(t);
+  const db = v8Database('v9-totals', V8_CARD);
+  const before = recomputedTotals(db);
+  // The fixture means something: labour is priced, and some of it by day rows.
+  assert.ok(before.est_legacy.labourTotal > 0);
+  assert.ok(before.est_legacy.totalHours > 20);
+
+  const result = migrate(db);
+  // v9 and every later one (v10 only adds a goals column).
+  assert.deepEqual([result.from, result.to, result.applied], [8, LATEST_VERSION, LATEST_VERSION - 8]);
+  assert.deepEqual(recomputedTotals(db), before);
+  assert.ok(logs().some((l) => /migrated to v9/.test(l)));
+
+  // …and they now come from each line's own snapshot, not the card.
+  const legacy = JSON.parse(db.prepare("SELECT active_rows_json FROM estimates WHERE id = 'est_legacy'").get().active_rows_json);
+  assert.deepEqual(legacy.prod[1], { name: 'Video Capture — Full Day', qty: 2, mu: 1120, rowId: 'vcf', hoursPerUnit: 8, dayUnit: 'full', rate: 800 });
+  assert.deepEqual(legacy.prod[0], { rowId: 'vc', name: 'Renamed since', qty: 3, mu: 140, rate: 100 });
+  assert.deepEqual(legacy.prod[4], { name: 'Drone Day', qty: 2, mu: 900, rowId: 'dd', hoursPerUnit: 6, dayUnit: 'full', rate: 0 });
+  assert.deepEqual(legacy.post[0], { rowId: 'raw', name: 'Raw Footage Handover [on HDD]', qty: 1, override: 250, mu: 98, rate: 70, customBill: true });
+  assert.deepEqual(legacy.travel[2], { name: 'Transport & Logistics Hrs', qty: 3, mu: 35, rate: 25, ownTime: true });
+  assert.deepEqual(legacy.crew, V9_ESTIMATES[0].rows.crew);
+  assert.deepEqual(legacy.prod[7], { name: 'Unpriced', qty: 4, mu: 0, rate: 0 });
+
+  // A line that already had its price, or has nowhere to get one, is untouched.
+  const mixed = JSON.parse(db.prepare("SELECT active_rows_json FROM estimates WHERE id = 'est_mixed'").get().active_rows_json);
+  assert.deepEqual(mixed.prod.slice(0, 3), V9_ESTIMATES[1].rows.prod.slice(0, 3));
+  assert.deepEqual(mixed.oldcat, V9_ESTIMATES[1].rows.oldcat);
+  assert.deepEqual(mixed.prod[3], { name: 'Video Capture', qty: 1, rowId: 'vc', mu: 140, rate: 100 });
+
+  // A migration is not an edit.
+  for (const r of db.prepare('SELECT updated_at FROM estimates').all()) assert.equal(r.updated_at, '2026-09-02T00:00:00.000Z');
+  assert.equal(db.prepare('SELECT updated_at FROM pricing').get().updated_at, '2026-09-01T00:00:00.000Z');
+  db.close();
+});
+
+test('v9 puts each row\'s one price in one slot and keeps everything else on the card', (t) => {
+  quietly(t);
+  const db = v8Database('v9-card', V8_CARD);
+  migrate(db);
+  const card = readPricing(db);
+
+  assert.deepEqual(card.serviceDay, { fullHours: 8, halfHours: 4 });
+  assert.deepEqual(card.travelRows, V8_CARD.travelRows);
+  assert.equal(card.taxSetAsideRate, 0.35);
+  const rows = Object.fromEntries(card.labourSections.flatMap((s) => s.rows).map((r) => [r.name, r]));
+  const slots = (name) => rows[name].prices;
+  assert.deepEqual(slots('Video Capture'), { hour: 140, half: null, full: null });
+  assert.deepEqual(slots('Video Capture — Full Day'), { hour: null, half: null, full: 1120 });
+  assert.deepEqual(slots('Video Capture — Half Day'), { hour: null, half: 640, full: null });
+  assert.deepEqual(slots('Drone Day'), { hour: null, half: null, full: 900 }); // dayUnit wins over 6 hrs
+  assert.deepEqual(slots('Eight-hour row'), { hour: null, half: null, full: 700 });
+  assert.deepEqual(slots('Four-hour row'), { hour: null, half: 380, full: null });
+  assert.deepEqual(slots('Long block'), { hour: 500, half: null, full: null });
+  assert.deepEqual(slots('Unpriced'), { hour: null, half: null, full: null });
+  // Nothing merged by name, nothing lost.
+  assert.equal(Object.keys(rows).length, 9);
+  assert.deepEqual(rows['Raw Footage Handover [on HDD]'], {
+    id: 'raw', name: 'Raw Footage Handover [on HDD]', rate: 70, customBill: true, prices: { hour: 98, half: null, full: null },
+  });
+  assert.equal(rows['Video Capture'].id, 'vc');
+  for (const r of Object.values(rows)) {
+    for (const old of ['mu', 'hoursPerUnit', 'dayUnit']) assert.equal(r[old], undefined, `${r.name} kept ${old}`);
+  }
+  // The card it leaves is one the Rate Card can save back.
+  assert.equal(pricingProblem(card), null);
+  db.close();
+});
+
+test('v9 logs every row whose unit of work changed length', (t) => {
+  const logs = quietly(t);
+  const db = v8Database('v9-log', V8_CARD);
+  migrate(db);
+  const v9 = logs().filter((l) => l.startsWith('[db] v9: '));
+  assert.ok(v9.includes('[db] v9: Production › Drone Day: was 6 hrs a unit, now a full day of 8 hrs. Price kept ($900).'), v9.join('\n'));
+  assert.ok(v9.includes('[db] v9: Production › Long block: was 5 hrs a unit, now an hour of 1 hrs. Price kept ($500).'));
+  assert.ok(v9.includes('[db] v9: Production › Unpriced: had no price; an hour is now auto.'));
+  assert.ok(v9.some((l) => /snapshotted \d+ line\(s\) on 2 estimate\(s\)/.test(l)));
+  // Rows whose hours match their slot are not mentioned.
+  assert.ok(!v9.some((l) => /Video Capture|Eight-hour|Four-hour|Raw Footage/.test(l)), v9.join('\n'));
+  db.close();
+});
+
+test('v9 on a database that never saved a card snapshots against the old defaults', (t) => {
+  quietly(t);
+  const db = v8Database('v9-no-card', null);
+  // What these estimates priced from until now: v8's defaults, frozen in the migration.
+  const pricedAt = (activeRows, card) => computeTotals(activeRows, card, GST_INC_SETTINGS, { overheadRate: 30 });
+  const before = pricedAt(V9_ESTIMATES[0].rows, V8_DEFAULT_PRICING);
+  // Three full days and a half day from the old day rows, and the hour of handover.
+  // The fixture's other services were never on the default card.
+  assert.equal(before.totalHours, 24 + 4 + 1);
+
+  migrate(db);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM pricing').get().n, 0, 'no card is written');
+  assert.deepEqual(readPricing(db), DEFAULT_PRICING);
+  const rows = JSON.parse(db.prepare("SELECT active_rows_json FROM estimates WHERE id = 'est_legacy'").get().active_rows_json);
+  assert.deepEqual(pricedAt(rows, readPricing(db)), before);
+  db.close();
+});
+
+test('v9 on a fresh database changes nothing, and running it again changes nothing', (t) => {
+  quietly(t);
+  const fresh = openDatabase(tempDbPath('v9-fresh'));
+  assert.equal(fresh.prepare('SELECT COUNT(*) AS n FROM pricing').get().n, 0);
+  assert.deepEqual(readPricing(fresh), DEFAULT_PRICING);
+  fresh.close();
+
+  const db = v8Database('v9-twice', V8_CARD);
+  migrate(db);
+  assert.equal(migrate(db).applied, 0);
+  const state = () => JSON.stringify([
+    db.prepare('SELECT data_json FROM pricing').all(),
+    db.prepare('SELECT id, active_rows_json FROM estimates ORDER BY id').all(),
+  ]);
+  const once = state();
+  // Even forced to run a second time over its own output, v9 is a no-op
+  // (and so is every one after it, which run again with it).
+  db.prepare('DELETE FROM schema_version WHERE version >= 9').run();
+  assert.equal(migrate(db).applied, LATEST_VERSION - 8);
+  assert.equal(state(), once);
+  db.close();
+});
+
+test('the v9 steps leave their inputs alone', () => {
+  const card = JSON.parse(JSON.stringify(V8_CARD));
+  reshapeCard(card);
+  assert.deepEqual(card, V8_CARD);
+  const rows = JSON.parse(JSON.stringify(V9_ESTIMATES[0].rows));
+  snapshotLegacyLines(rows, V8_CARD);
+  assert.deepEqual(rows, V9_ESTIMATES[0].rows);
+  // A negative price from before the audit's validation is not carried across.
+  const neg = reshapeCard({ labourSections: [{ id: 'p', label: 'P', rows: [{ name: 'Neg', mu: -5 }] }] });
+  assert.deepEqual(neg.card.labourSections[0].rows[0].prices, { hour: 0, half: null, full: null });
+  assert.equal(neg.notes.length, 1);
+});
+
+test('the schema knows it is at v21', () => {
+  assert.equal(LATEST_VERSION, 21);
+});
+
+/**
+ * MIGRATION v10 — goals.vehicle_cost_per_km (estimate-accuracy task 6b). One
+ * nullable column: an existing goals row keeps every value and reads the new
+ * one as unset, and running it again changes nothing.
+ */
+test('v10 adds the per-km cost as unset and touches nothing else on goals', () => {
+  const db = openDatabase(tempDbPath('v10-upgrade'));
+  db.prepare(`
+    INSERT INTO goals (id, desired_net_income, target_profit_margin_pct, billable_capacity_hrs_per_week,
+      billable_hours_per_day, working_days_per_week, leave_days_per_year, sick_days_per_year,
+      super_pct, bad_debt_pct, created_at, updated_at)
+    VALUES (1, 65000, 25, 34.15, 8, 5, 30, 8, 12, 2, '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z')
+  `).run();
+  const before = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+  db.exec('ALTER TABLE goals DROP COLUMN vehicle_cost_per_km;');
+  db.prepare('DELETE FROM schema_version WHERE version >= 10').run();
+
+  // To v17: v18 moves capacity and profit on purpose (its own tests below).
+  const result = migrate(db, { to: 17 });
+  assert.deepEqual([result.from, result.to], [9, 17]);
+  const after = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+  assert.deepEqual(after, before);
+  assert.equal(after.vehicle_cost_per_km, null);
+
+  // Rewound again with the column still there: v10 runs, and nothing moves.
+  db.prepare('DELETE FROM schema_version WHERE version >= 10').run();
+  assert.equal(migrate(db, { to: 17 }).applied, 8);
+  assert.deepEqual(db.prepare('SELECT * FROM goals WHERE id = 1').get(), before);
+  db.close();
+});
+
+/**
+ * MIGRATION v11 — production days, holidays, and the surcharge snapshot
+ * (production-booking task 2). Additive: every estimate keeps every value and
+ * reads no days, no short notice and an empty snapshot; running it again
+ * changes nothing; and deleting an estimate takes its days with it (D22).
+ */
+test('v11 leaves every estimate as it was, with no days and nothing surcharged', () => {
+  const db = openDatabase(tempDbPath('v11-upgrade'));
+  const now = nowIso();
+  db.prepare(`
+    INSERT INTO estimates (id, upid, name, active_rows_json, totals_json, created_at, updated_at)
+    VALUES ('est_old', 'UP-1', 'Old job', ?, ?, ?, ?)
+  `).run(JSON.stringify({ prod: [{ name: 'Video Capture', qty: 1, mu: 1120, dayUnit: 'full' }] }),
+    JSON.stringify({ totalIncGst: 1120 }), now, now);
+  const before = db.prepare('SELECT * FROM estimates').get();
+
+  // Back to v10: the two columns and two tables gone, then migrate.
+  db.exec(`
+    DROP TABLE production_days; DROP TABLE holidays;
+    ALTER TABLE estimates DROP COLUMN short_notice;
+    ALTER TABLE estimates DROP COLUMN surcharges_json;
+  `);
+  db.prepare('DELETE FROM schema_version WHERE version >= 11').run();
+  const result = migrate(db);
+  assert.deepEqual([result.from, result.to, result.applied], [10, LATEST_VERSION, LATEST_VERSION - 10]);
+
+  const after = db.prepare('SELECT * FROM estimates').get();
+  // v13 also runs, and gives the raw-inserted row the project it lacked.
+  assert.match(after.project_id, /^prj_/);
+  assert.deepEqual(after, { ...before, short_notice: 0, surcharges_json: '{}', project_id: after.project_id });
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM production_days').get().n, 0);
+
+  // Again, with everything already there: it runs, and nothing moves.
+  db.prepare("INSERT INTO holidays (date, name, source) VALUES ('2026-10-05', 'Labour Day', 'fetched')").run();
+  db.prepare('DELETE FROM schema_version WHERE version >= 11').run();
+  assert.equal(migrate(db).applied, LATEST_VERSION - 10);
+  assert.deepEqual(db.prepare('SELECT * FROM estimates').get(), after);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM holidays').get().n, 1);
+  db.close();
+});
+
+test('v11 moves Overtime off set, into Additional work, and leaves saved estimates alone', () => {
+  const db = openDatabase(tempDbPath('v11-overtime'));
+  const now = nowIso();
+  const overtime = { id: 'svc_ot', name: 'Overtime — per hour', rate: 150, prices: { hour: 210, half: null, full: null } };
+  const capture = { id: 'svc_vc', name: 'Video Capture', rate: 100, prices: { hour: 140, half: null, full: null } };
+  const card = {
+    serviceDay: { fullHours: 8, halfHours: 4 },
+    labourSections: [
+      { id: 'prod', label: 'Production', rows: [capture, overtime] },
+      { id: 'post', label: 'Post-Production', rows: [{ id: 'svc_ed', name: 'Edit', prices: { hour: 120, half: null, full: null } }] },
+    ],
+    travelRows: [],
+  };
+  db.prepare('INSERT OR REPLACE INTO pricing (id, data_json, updated_at) VALUES (1, ?, ?)').run(JSON.stringify(card), now);
+  const rows = JSON.stringify({ prod: [{ name: 'Overtime — per hour', qty: 2, mu: 210, rowId: 'svc_ot' }] });
+  db.prepare(`INSERT INTO estimates (id, upid, name, active_rows_json, totals_json, created_at, updated_at)
+    VALUES ('est_ot', 'UP-OT', 'Long day', ?, ?, ?, ?)`).run(rows, JSON.stringify({ totalIncGst: 420 }), now, now);
+  const estimateBefore = db.prepare('SELECT * FROM estimates').get();
+
+  db.prepare('DELETE FROM schema_version WHERE version >= 11').run();
+  migrate(db);
+  const moved = JSON.parse(db.prepare('SELECT data_json FROM pricing WHERE id = 1').get().data_json);
+  assert.deepEqual(moved.labourSections.map((sec) => [sec.id, sec.label, sec.rows.map((r) => r.id)]), [
+    ['prod', 'Production', ['svc_vc']],
+    ['post', 'Post-Production', ['svc_ed']],
+    ['additional', 'Additional work', ['svc_ot']],
+  ]);
+  // The row moves whole: same id, same prices.
+  assert.deepEqual(moved.labourSections[2].rows[0], overtime);
+  // A saved estimate's Overtime line is untouched.
+  const est = db.prepare('SELECT * FROM estimates').get();
+  assert.deepEqual([est.active_rows_json, est.totals_json], [estimateBefore.active_rows_json, estimateBefore.totals_json]);
+
+  // Again: nothing left in Production to move, and nothing duplicated.
+  db.prepare('DELETE FROM schema_version WHERE version >= 11').run();
+  migrate(db);
+  assert.deepEqual(JSON.parse(db.prepare('SELECT data_json FROM pricing WHERE id = 1').get().data_json), moved);
+
+  // A card that already has Additional work keeps its rows, Overtime joining after them.
+  const withAdditional = { ...card, labourSections: [
+    { id: 'prod', label: 'Production', rows: [capture, overtime] },
+    { id: 'additional', label: 'Extras', rows: [{ id: 'svc_rev', name: 'Revision round', prices: { hour: 90, half: null, full: null } }] },
+  ] };
+  db.prepare('UPDATE pricing SET data_json = ? WHERE id = 1').run(JSON.stringify(withAdditional));
+  db.prepare('DELETE FROM schema_version WHERE version >= 11').run();
+  migrate(db);
+  const merged = JSON.parse(db.prepare('SELECT data_json FROM pricing WHERE id = 1').get().data_json);
+  assert.deepEqual(merged.labourSections.map((sec) => [sec.id, sec.label, sec.rows.map((r) => r.id)]), [
+    ['prod', 'Production', ['svc_vc']],
+    ['additional', 'Extras', ['svc_rev', 'svc_ot']],
+  ]);
+  db.close();
+});
+
+test('v11 gives a holidays table made before task 3 its fetched_at column, keeping the rows', () => {
+  const db = openDatabase(tempDbPath('v11-fetched-at'));
+  db.exec(`
+    DROP TABLE holidays;
+    CREATE TABLE holidays (
+      date TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '',
+      source TEXT NOT NULL CHECK (source IN ('fetched', 'added')),
+      hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1))
+    );
+    INSERT INTO holidays (date, name, source) VALUES ('2026-10-05', 'Labour Day', 'fetched');
+  `);
+  db.prepare('DELETE FROM schema_version WHERE version >= 11').run();
+  assert.equal(migrate(db).applied, LATEST_VERSION - 10);
+  assert.deepEqual(db.prepare('SELECT date, name, source, hidden, fetched_at FROM holidays').all(),
+    [{ date: '2026-10-05', name: 'Labour Day', source: 'fetched', hidden: 0, fetched_at: null }]);
+  db.close();
+});
+
+test('v11: a day belongs to one estimate, has a known status, and goes when its estimate does', () => {
+  const db = openDatabase(tempDbPath('v11-days'));
+  const now = nowIso();
+  db.prepare("INSERT INTO estimates (id, created_at, updated_at) VALUES ('est_a', ?, ?)").run(now, now);
+  const day = db.prepare(`
+    INSERT INTO production_days (id, estimate_id, date, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  day.run('day_1', 'est_a', '2026-10-03', 'confirmed', now, now);
+  day.run('day_2', 'est_a', null, 'proposed', now, now); // Date TBC
+  assert.throws(() => day.run('day_3', 'est_a', '2026-10-03', 'booked', now, now), /CHECK/);
+  assert.throws(() => day.run('day_4', 'est_missing', '2026-10-03', 'confirmed', now, now), /FOREIGN KEY/);
+  assert.throws(() => db.prepare("INSERT INTO holidays (date, source) VALUES ('2026-12-25', 'guessed')").run(), /CHECK/);
+
+  db.prepare("DELETE FROM estimates WHERE id = 'est_a'").run();
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM production_days').get().n, 0);
+  db.close();
+});
+
+/**
+ * MIGRATION v12 — gear rentals (production-booking B2-2). One new table:
+ * every estimate keeps every value, running it again changes nothing, and
+ * deleting an estimate takes its rentals with it.
+ */
+test('v12 adds the rentals table and leaves every estimate as it was', () => {
+  const db = openDatabase(tempDbPath('v12-upgrade'));
+  const now = nowIso();
+  db.prepare(`
+    INSERT INTO estimates (id, upid, name, active_rows_json, totals_json, created_at, updated_at)
+    VALUES ('est_old', 'UP-1', 'Old job', ?, ?, ?, ?)
+  `).run(JSON.stringify({ equip: [{ vendor: 'Lens hire / Cine zoom', days: 2, cost: 150 }] }),
+    JSON.stringify({ totalIncGst: 300 }), now, now);
+  const before = db.prepare('SELECT * FROM estimates').get();
+
+  db.exec('DROP TABLE rentals;');
+  db.prepare('DELETE FROM schema_version WHERE version >= 12').run();
+  const result = migrate(db);
+  assert.deepEqual([result.from, result.to, result.applied], [11, LATEST_VERSION, LATEST_VERSION - 11]);
+  const after = db.prepare('SELECT * FROM estimates').get();
+  assert.deepEqual(after, { ...before, project_id: after.project_id }); // v13 gave it a project
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM rentals').get().n, 0);
+  const indexes = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'rentals'").all().map((r) => r.name);
+  for (const name of ['idx_rentals_estimate', 'idx_rentals_out_date', 'idx_rentals_back_date']) assert.ok(indexes.includes(name), name);
+
+  const add = db.prepare(`
+    INSERT INTO rentals (id, estimate_id, vendor, out_date, out_method, back_date, back_method, created_at, updated_at)
+    VALUES (?, 'est_old', 'Lensworks', ?, ?, ?, ?, ?, ?)
+  `);
+  add.run('rn_1', '2026-10-02', 'pickup', '2026-10-05', 'return', now, now);
+  // Blank dates and methods are allowed; a method off the list is not.
+  add.run('rn_2', null, null, null, null, now, now);
+  assert.throws(() => add.run('rn_3', null, 'courier', null, null, now, now), /CHECK/);
+  assert.throws(() => add.run('rn_4', null, null, null, 'pickup', now, now), /CHECK/);
+
+  // Again, with the table already there: it runs, and nothing moves.
+  db.prepare('DELETE FROM schema_version WHERE version >= 12').run();
+  assert.equal(migrate(db).applied, LATEST_VERSION - 11);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM rentals').get().n, 2);
+
+  // Deleting the estimate takes its rentals.
+  db.prepare("DELETE FROM estimates WHERE id = 'est_old'").run();
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM rentals').get().n, 0);
+  db.close();
+});
+
+/**
+ * MIGRATION v13 — projects, the new statuses, invoices and activity
+ * (production-booking task 15). Built on a real v12 database: every estimate
+ * keeps every stored value but its status (mapped) and project_id; days and
+ * rentals survive the estimates rebuild; shared and blank UPIDs are never
+ * guessed at; invoice-typed rows yield legacy invoices; a re-run is a no-op.
+ */
+function v12Fixture() {
+  const db = openDatabase(tempDbPath('v13'), { migrate: false });
+  db.pragma('foreign_keys = ON');
+  migrate(db, { to: 12 });
+  const now = '2026-09-20T01:00:00.000Z';
+  db.prepare('INSERT INTO clients (id, business_name, created_at, updated_at) VALUES (?,?,?,?)')
+    .run('cl_acme', 'Acme Pty Ltd', now, now);
+  const add = db.prepare(`
+    INSERT INTO estimates
+      (id, upid, name, date, status, doc_type, invoice_number, client_id, client_json,
+       active_rows_json, totals_json, gst_free, short_notice, surcharges_json, created_at, updated_at)
+    VALUES (@id, @upid, @name, @date, @status, @doc, @num, @client, '{"businessName":"Acme Pty Ltd"}',
+       @rows, @totals, 0, @sn, @sur, @created, @updated)
+  `);
+  const est = (id, upid, extra = {}) => add.run({
+    id, upid, name: `Job ${id}`, date: '', status: 'draft', doc: 'estimate', num: '', client: 'cl_acme',
+    rows: JSON.stringify({ prod: [{ name: 'Video Capture', qty: 1, mu: 1120.5, dayUnit: 'full', dayId: 'day_' + id }] }),
+    totals: JSON.stringify({ subtotal: 1120.5, gst: 112.05, totalIncGst: 1232.55 }),
+    sn: 0, sur: '{}', created: now, updated: '2026-09-21T02:00:00.000Z', ...extra,
+  });
+  est('est_unique', ' UP-100 ', { sn: 1, sur: '{"mode":"higher"}' });
+  est('est_shared1', 'UP-200');
+  est('est_shared2', 'up-200', { client: null });
+  est('est_blank', '');
+  est('est_doc_inv', 'UP-300', { doc: 'invoice', num: ' INV-0042 ', date: '2026-09-01' });
+  est('est_approved', 'UP-400', { status: 'approved' });
+  est('est_paid', 'UP-500', { status: 'paid', doc: 'invoice', num: 'INV-0050' });
+  est('est_paid_again', 'UP-501', { status: 'paid', doc: 'invoice', num: 'INV-0050' });
+  est('est_invoiced', 'UP-600', { status: 'invoiced' });
+  est('est_sent', 'UP-700', { status: 'sent' });
+  db.prepare(`INSERT INTO production_days (id, estimate_id, date, status, start_time, end_time, created_at, updated_at)
+    VALUES ('day_est_unique', 'est_unique', '2026-10-10', 'confirmed', '08:00', '18:00', ?, ?)`).run(now, now);
+  db.prepare(`INSERT INTO production_days (id, estimate_id, date, status, created_at, updated_at)
+    VALUES ('day_est_shared1', 'est_shared1', NULL, 'proposed', ?, ?)`).run(now, now);
+  db.prepare(`INSERT INTO rentals (id, estimate_id, vendor, out_date, created_at, updated_at)
+    VALUES ('rn_1', 'est_unique', 'Lensworks', '2026-10-09', ?, ?)`).run(now, now);
+  return db;
+}
+
+const dump = (db, table) => db.prepare(`SELECT * FROM ${table} ORDER BY 1`).all();
+
+test('v13 keeps every estimate\'s stored values, days and rentals through the rebuild', () => {
+  const db = v12Fixture();
+  const estimates = dump(db, 'estimates');
+  const days = dump(db, 'production_days');
+  const rentals = dump(db, 'rentals');
+
+  const result = migrate(db, { to: 13 });
+  assert.deepEqual([result.from, result.to, result.applied], [12, 13, 1]);
+  assert.equal(db.pragma('foreign_keys', { simple: true }), 1, 'foreign keys are back on');
+  assert.deepEqual(db.pragma('foreign_key_check'), []);
+
+  const after = new Map(dump(db, 'estimates').map((r) => [r.id, r]));
+  assert.equal(after.size, estimates.length);
+  for (const was of estimates) {
+    const now = after.get(was.id);
+    assert.match(now.project_id, /^prj_/, was.id);
+    // Totals byte-identical; the only other changes are the status and, for
+    // the one unique UPID with spaces round it, the trim.
+    const { status, project_id: _p, upid, ...rest } = now;
+    const { status: _s, upid: oldUpid, ...wasRest } = was;
+    assert.deepEqual(rest, wasRest, was.id);
+    assert.equal(now.totals_json, was.totals_json);
+    assert.equal(upid, was.id === 'est_unique' ? 'UP-100' : oldUpid, was.id);
+  }
+  // Every day as it was, plus task 19's clash flag, off on all of them.
+  assert.deepEqual(dump(db, 'production_days'), days.map((d) => ({ ...d, rebook: 0 })));
+  assert.deepEqual(dump(db, 'rentals'), rentals);
+
+  const statuses = Object.fromEntries([...after.values()].map((r) => [r.id, r.status]));
+  assert.deepEqual(statuses, {
+    est_unique: 'draft', est_shared1: 'draft', est_shared2: 'draft', est_blank: 'draft',
+    est_doc_inv: 'accepted', est_approved: 'accepted', est_paid: 'accepted', est_paid_again: 'accepted',
+    est_invoiced: 'accepted', est_sent: 'sent',
+  });
+
+  // The new CHECK, and the indexes the old table had plus project_id's.
+  assert.throws(() => db.prepare("UPDATE estimates SET status = 'approved' WHERE id = 'est_sent'").run(), /CHECK/);
+  const indexes = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'estimates'").all().map((r) => r.name);
+  for (const name of ['idx_estimates_updated', 'idx_estimates_client', 'idx_estimates_status', 'idx_estimates_project']) {
+    assert.ok(indexes.includes(name), name);
+  }
+  assert.equal(db.prepare("SELECT total_inc_gst AS t FROM estimates WHERE id = 'est_unique'").get().t, 1232.55);
+  db.close();
+});
+
+test('v13 makes one project per unique UPID and flags shared and blank ones, guessing nothing', () => {
+  const db = v12Fixture();
+  migrate(db);
+  const projectOf = (id) => db.prepare(`
+    SELECT p.* FROM projects p JOIN estimates e ON e.project_id = p.id WHERE e.id = ?`).get(id);
+
+  const unique = projectOf('est_unique');
+  assert.deepEqual([unique.upid, unique.needs_upid, unique.client_id, unique.accepted_at],
+    ['UP-100', 0, 'cl_acme', null]);
+
+  // A UPID two estimates share (case and spaces aside): each its own project,
+  // no UPID, flagged; each estimate keeps the old UPID the fix-up groups by.
+  const s1 = projectOf('est_shared1');
+  const s2 = projectOf('est_shared2');
+  assert.notEqual(s1.id, s2.id);
+  assert.deepEqual([s1.upid, s1.needs_upid, s2.upid, s2.needs_upid, s2.client_id], [null, 1, null, 1, null]);
+  assert.deepEqual(db.prepare("SELECT upid FROM estimates WHERE id IN ('est_shared1', 'est_shared2') ORDER BY id").all()
+    .map((r) => r.upid), ['UP-200', 'up-200']);
+
+  const blank = projectOf('est_blank');
+  assert.deepEqual([blank.upid, blank.needs_upid], [null, 1]);
+
+  // Accepted projects are accepted when their estimate was last touched.
+  for (const id of ['est_doc_inv', 'est_approved', 'est_paid', 'est_invoiced']) {
+    const p = projectOf(id);
+    assert.deepEqual([p.accepted_at, p.needs_upid], ['2026-09-21T02:00:00.000Z', 0], id);
+  }
+  assert.equal(projectOf('est_sent').accepted_at, null);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM projects').get().n, 10);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM projects WHERE needs_upid = 1').get().n, 3);
+
+  // UPIDs are unique, case-insensitively, and never blank or padded.
+  const insert = db.prepare("INSERT INTO projects (id, upid, created_at, updated_at) VALUES (?, ?, 'x', 'x')");
+  assert.throws(() => insert.run('prj_dupe', 'up-100'), /UNIQUE/);
+  assert.throws(() => insert.run('prj_blank', ''), /CHECK/);
+  assert.throws(() => insert.run('prj_pad', ' UP-900'), /CHECK/);
+  insert.run('prj_null_a', null);
+  insert.run('prj_null_b', null); // any number may wait for a UPID
+  db.close();
+});
+
+test('v13 turns each invoice-typed estimate into a legacy invoice, totals copied, never repriced', () => {
+  const db = v12Fixture();
+  const before = new Map(dump(db, 'estimates').map((r) => [r.id, r]));
+  migrate(db);
+  const invoices = db.prepare(`SELECT * FROM invoices ORDER BY estimate_id`).all();
+  assert.deepEqual(invoices.map((i) => [i.estimate_id, i.kind, i.number, i.status, i.issued_at, i.paid_at]), [
+    ['est_doc_inv', 'legacy', 'INV-0042', 'draft', '2026-09-01', null],
+    ['est_invoiced', 'legacy', null, 'sent', null, null],
+    ['est_paid', 'legacy', 'INV-0050', 'paid', null, null],
+    // Two old invoices printed with one number both survive: they went out.
+    ['est_paid_again', 'legacy', 'INV-0050', 'paid', null, null],
+  ]);
+  for (const inv of invoices) {
+    const was = before.get(inv.estimate_id);
+    const project = db.prepare('SELECT project_id FROM estimates WHERE id = ?').get(inv.estimate_id).project_id;
+    assert.equal(inv.project_id, project);
+    assert.equal(inv.totals_json, was.totals_json);
+    const snap = JSON.parse(inv.estimate_snapshot_json);
+    assert.deepEqual([snap.id, snap.status, snap.active_rows_json, snap.totals_json, snap.invoice_number],
+      [was.id, was.status, was.active_rows_json, was.totals_json, was.invoice_number]);
+    assert.deepEqual([inv.pct, inv.less_invoice_id, inv.extras_json], [null, null, '{}']);
+  }
+
+  // Numbers the app makes are unique (case aside); legacy ones are exempt.
+  const add = db.prepare(`INSERT INTO invoices (id, project_id, kind, number, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'x', 'x')`);
+  const project = invoices[0].project_id;
+  add.run('inv_d', project, 'deposit', 'INV-UP-300-D');
+  assert.throws(() => add.run('inv_d2', project, 'final', 'inv-up-300-d'), /UNIQUE/);
+  assert.throws(() => add.run('inv_k', project, 'quote', 'X'), /CHECK/);
+  db.close();
+});
+
+test('v13 run again changes nothing; deleting a project takes its estimates, days, invoices and activity', () => {
+  const db = v12Fixture();
+  migrate(db, { to: 13 });
+  const tables = ['projects', 'estimates', 'invoices', 'activity', 'production_days', 'rentals'];
+  const once = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+
+  db.prepare('DELETE FROM schema_version WHERE version >= 13').run();
+  assert.equal(migrate(db, { to: 13 }).applied, 1);
+  assert.deepEqual(Object.fromEntries(tables.map((t) => [t, dump(db, t)])), once);
+
+  const p = db.prepare("SELECT project_id FROM estimates WHERE id = 'est_unique'").get().project_id;
+  db.prepare("INSERT INTO activity (id, project_id, at, kind) VALUES ('act_1', ?, 'x', 'accepted')").run(p);
+  db.prepare('DELETE FROM projects WHERE id = ?').run(p);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM estimates WHERE id = 'est_unique'").get().n, 0);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM production_days WHERE estimate_id = 'est_unique'").get().n, 0);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM rentals").get().n, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM activity').get().n, 0);
+
+  const paid = db.prepare("SELECT project_id FROM estimates WHERE id = 'est_paid'").get().project_id;
+  db.prepare('DELETE FROM projects WHERE id = ?').run(paid);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM invoices WHERE project_id = ?').get(paid).n, 0);
+  db.close();
+});
+
+test('a migration that would leave a dangling reference is refused whole', () => {
+  const db = v12Fixture();
+  // A day pointing at no estimate, as if an older build had left one behind.
+  db.pragma('foreign_keys = OFF');
+  db.prepare("INSERT INTO production_days (id, estimate_id, status, created_at, updated_at) VALUES ('day_x', 'est_gone', 'proposed', 'x', 'x')").run();
+  db.pragma('foreign_keys = ON');
+  assert.throws(() => migrate(db), /pointing at nothing/);
+  assert.equal(db.prepare('SELECT MAX(version) AS v FROM schema_version').get().v, 12);
+  assert.ok(!db.prepare('PRAGMA table_info(estimates)').all().some((c) => c.name === 'project_id'), 'rolled back');
+  assert.equal(db.pragma('foreign_keys', { simple: true }), 1);
+  db.close();
+});
+
+/**
+ * MIGRATION v14 — sent versions, client links, signatures and the send queue
+ * (production-booking task 25). Additive: every v13 row is as it was, the
+ * links start unset, and running it again changes nothing.
+ */
+test('v14 adds the version, signature and send tables and an unset link, changing no row', () => {
+  const db = v12Fixture();
+  migrate(db, { to: 13 });
+  const tables = ['projects', 'estimates', 'invoices', 'activity', 'production_days', 'rentals'];
+  const before = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+
+  const result = migrate(db, { to: 14 });
+  assert.deepEqual([result.from, result.to, result.applied], [13, 14, 1]);
+  const after = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+  for (const t of ['estimates', 'invoices']) {
+    assert.ok(after[t].length && after[t].every((r) => r.public_token === null), t + ': every link unset');
+    assert.deepEqual(after[t].map(({ public_token: _t, ...rest }) => rest), before[t], t);
+  }
+  for (const t of ['projects', 'activity', 'production_days', 'rentals']) assert.deepEqual(after[t], before[t], t);
+  for (const t of ['estimate_versions', 'signatures', 'sends']) assert.deepEqual(dump(db, t), [], t);
+  assert.ok(!db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'payments'").get(), 'no payments table while cards are held (D101)');
+
+  // Run again: nothing moves, and no column is added twice.
+  db.prepare('DELETE FROM schema_version WHERE version >= 14').run();
+  assert.equal(migrate(db, { to: 14 }).applied, 1);
+  assert.deepEqual(dump(db, 'estimates'), after.estimates);
+
+  // A link is unique; a version is unique per estimate and goes with it.
+  const [a, b] = after.estimates;
+  db.prepare("UPDATE estimates SET public_token = 'tok' WHERE id = ?").run(a.id);
+  assert.throws(() => db.prepare("UPDATE estimates SET public_token = 'tok' WHERE id = ?").run(b.id), /UNIQUE/);
+  const ver = db.prepare(`INSERT INTO estimate_versions (id, estimate_id, n, snapshot_json, client_view_json, sent_at)
+                          VALUES (?, ?, ?, '{}', '{}', 'x')`);
+  ver.run('ver_1', a.id, 1);
+  assert.throws(() => ver.run('ver_dup', a.id, 1), /UNIQUE/);
+  assert.throws(() => ver.run('ver_0', a.id, 0), /CHECK/);
+  db.prepare(`INSERT INTO signatures (id, version_id, full_name, role, signed_at, agreement_text, agreement_sha256)
+              VALUES ('sig_1', 'ver_1', 'Sam', 'Director', 'x', 't', 'h')`).run();
+  assert.throws(() => db.prepare(`INSERT INTO signatures (id, version_id, full_name, role, signed_at, agreement_text, agreement_sha256)
+              VALUES ('sig_2', 'ver_1', 'Sam', 'Director', 'x', 't', 'h')`).run(), /UNIQUE/, 'one signature per version');
+  db.prepare('DELETE FROM estimates WHERE id = ?').run(a.id);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM estimate_versions').get().n, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM signatures').get().n, 0);
+  assert.deepEqual(db.pragma('foreign_key_check'), []);
+  db.close();
+});
+
+/**
+ * MIGRATION v15 — the account's email and password reset links
+ * (Project build archive/tracks/account-recovery/). Additive: the account keeps its login and reads
+ * its email as unset, and running it again changes nothing.
+ */
+test('v15 gives the account an unset email and an empty reset table, changing nothing else', () => {
+  const db = v12Fixture();
+  migrate(db, { to: 14 });
+  db.prepare(`INSERT INTO account (id, username, password_hash, created_at, updated_at)
+              VALUES (1, 'lachlan', 'hash', 'x', 'x')`).run();
+  const before = dump(db, 'account');
+
+  const result = migrate(db, { to: 15 });
+  assert.deepEqual([result.from, result.to, result.applied], [14, 15, 1]);
+  const after = dump(db, 'account');
+  assert.equal(after[0].email, '');
+  assert.deepEqual(after.map(({ email: _e, ...rest }) => rest), before);
+  assert.deepEqual(dump(db, 'password_resets'), []);
+
+  db.prepare('DELETE FROM schema_version WHERE version >= 15').run();
+  assert.equal(migrate(db, { to: 15 }).applied, 1);
+  assert.deepEqual(dump(db, 'account'), after);
+  db.close();
+});
+
+/**
+ * MIGRATION v16 — trips, call sheet links and the Google Calendar tables
+ * (Project build archive/tracks/trip-planner/ task 1). Additive: every v15 day reads as having no
+ * trip, every estimate as having no call sheet link (off), the three new
+ * tables start empty, and running it again changes nothing.
+ */
+test('v16 adds an unset trip to every day, an off call sheet link and three empty tables', () => {
+  const db = v12Fixture();
+  migrate(db, { to: 15 });
+  const tables = ['projects', 'estimates', 'invoices', 'production_days', 'rentals'];
+  const before = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+  assert.ok(before.production_days.length, 'the fixture has days to carry across');
+
+  const result = migrate(db, { to: 16 });
+  assert.deepEqual([result.from, result.to, result.applied], [15, 16, 1]);
+  const after = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+  assert.ok(after.production_days.every((r) => r.trip_json === null), 'no day has a trip');
+  assert.deepEqual(after.production_days.map(({ trip_json: _t, ...rest }) => rest), before.production_days);
+  assert.ok(after.estimates.every((r) => r.call_sheet_token === null && r.call_sheet_on === 0), 'every link unset and off');
+  assert.deepEqual(after.estimates.map(({ call_sheet_token: _t, call_sheet_on: _o, ...rest }) => rest), before.estimates);
+  for (const t of ['projects', 'invoices', 'rentals']) assert.deepEqual(after[t], before[t], t);
+  for (const t of ['google_account', 'google_event_sync', 'static_maps']) assert.deepEqual(dump(db, t), [], t);
+
+  // Run again: nothing moves, and no column is added twice.
+  db.prepare('DELETE FROM schema_version WHERE version >= 16').run();
+  assert.equal(migrate(db, { to: 16 }).applied, 1);
+  assert.deepEqual(dump(db, 'production_days'), after.production_days);
+  assert.deepEqual(dump(db, 'estimates'), after.estimates);
+
+  // A call sheet link is unique; there is only ever one Google account.
+  const [a, b] = after.estimates;
+  db.prepare("UPDATE estimates SET call_sheet_token = 'cs' WHERE id = ?").run(a.id);
+  assert.throws(() => db.prepare("UPDATE estimates SET call_sheet_token = 'cs' WHERE id = ?").run(b.id), /UNIQUE/);
+  const account = db.prepare("INSERT INTO google_account (id, refresh_token, connected_at) VALUES (?, 'r', 'x')");
+  account.run(1);
+  assert.throws(() => account.run(2), /CHECK/);
+
+  // A sync row outlives its day and its estimate: it is how the event gets
+  // deleted, and a save replaces the days whole.
+  const day = after.production_days.find((d) => d.estimate_id === a.id) || after.production_days[0];
+  db.prepare(`INSERT INTO google_event_sync (day_id, estimate_id, event_id, state, updated_at)
+              VALUES (?, ?, 'ev1', 'synced', 'x')`).run(day.id, day.estimate_id);
+  assert.throws(() => db.prepare(`INSERT INTO google_event_sync (day_id, estimate_id, state, updated_at)
+              VALUES ('d_other', 'e', 'lost', 'x')`).run(), /CHECK/);
+  db.prepare('DELETE FROM estimates WHERE id = ?').run(day.estimate_id);
+  assert.equal(db.prepare('SELECT event_id FROM google_event_sync WHERE day_id = ?').get(day.id).event_id, 'ev1');
+  assert.deepEqual(db.pragma('foreign_key_check'), []);
+  db.close();
+});
+
+/**
+ * MIGRATION v17 — asset recovery setting and day rate (own-kit K1). Additive:
+ * every asset already in the register reads 'rate' (the Overhead Floor, which
+ * is what it was doing) with no day rate, nothing else on the row moves, and
+ * running it again changes nothing.
+ */
+test('v17 reads every existing asset as Overhead Floor with no day rate, and guards both columns', () => {
+  const db = openDatabase(tempDbPath('v17-upgrade'), { migrate: false });
+  db.pragma('foreign_keys = ON');
+  migrate(db, { to: 16 });
+  const insert = db.prepare(`
+    INSERT INTO depreciation_assets
+      (id, name, category, purchase_date, start_date, cost_inc_gst, method, effective_life_years,
+       replacement_cycle_years, replacement_cost_estimate, created_at, updated_at)
+    VALUES (?, ?, 'camera', '2024-07-01', '2024-07-01', 6600, 'prime_cost', 5, 4, 7000, 'x', 'x')
+  `);
+  insert.run('da_old1', 'A7S III');
+  insert.run('da_old2', 'FX3');
+  const before = db.prepare('SELECT * FROM depreciation_assets ORDER BY id').all();
+  assert.ok(!('recovery' in before[0]) && !('day_rate' in before[0]), 'v16 has neither column');
+
+  const result = migrate(db, { to: 17 });
+  assert.deepEqual([result.from, result.to, result.applied], [16, 17, 1]);
+  const after = db.prepare('SELECT * FROM depreciation_assets ORDER BY id').all();
+  assert.deepEqual(after.map((r) => [r.recovery, r.day_rate]), [['rate', null], ['rate', null]]);
+  assert.deepEqual(after.map(({ recovery: _r, day_rate: _d, ...rest }) => rest), before);
+
+  // Run again: nothing moves, and no column is added twice.
+  db.prepare("UPDATE depreciation_assets SET recovery = 'kit_hire', day_rate = 150 WHERE id = 'da_old1'").run();
+  const edited = db.prepare('SELECT * FROM depreciation_assets ORDER BY id').all();
+  db.prepare('DELETE FROM schema_version WHERE version >= 17').run();
+  assert.equal(migrate(db, { to: 17 }).applied, 1);
+  assert.deepEqual(db.prepare('SELECT * FROM depreciation_assets ORDER BY id').all(), edited);
+
+  // The table refuses what the API would: an unknown recovery, a negative rate.
+  assert.throws(() => db.prepare("UPDATE depreciation_assets SET recovery = 'hire' WHERE id = 'da_old2'").run(), /CHECK/);
+  assert.throws(() => db.prepare("UPDATE depreciation_assets SET recovery = NULL WHERE id = 'da_old2'").run(), /NOT NULL/);
+  assert.throws(() => db.prepare('UPDATE depreciation_assets SET day_rate = -1 WHERE id = ?').run('da_old2'), /CHECK/);
+  db.prepare('UPDATE depreciation_assets SET day_rate = 0 WHERE id = ?').run('da_old2');
+  db.prepare('UPDATE depreciation_assets SET day_rate = NULL WHERE id = ?').run('da_old2');
+  assert.deepEqual(db.pragma('foreign_key_check'), []);
+  db.close();
+});
+
+/**
+ * MIGRATION v18 — goals.utilisation_pct, and the card moves once (pricing-floor
+ * PF2; P1, P2, P4). The existing row becomes 8 h worked at 65% billable with a
+ * 10% business profit whatever it held, the legacy weekly figure follows, and
+ * nothing else in the database moves: saved estimates keep every stored total.
+ */
+function v17WithGoals(goals) {
+  const db = v12Fixture();
+  migrate(db, { to: 17 });
+  db.prepare(`
+    INSERT INTO goals (id, desired_net_income, target_profit_margin_pct, billable_capacity_hrs_per_week,
+      billable_hours_per_day, working_days_per_week, leave_days_per_year, sick_days_per_year,
+      iawo_threshold, capacity_confirmed_at, super_pct, bad_debt_pct, vehicle_cost_per_km,
+      created_at, updated_at)
+    VALUES (1, @income, @markup, 25.62, 6, 5, 30, 8, 20000, '2026-10-01T00:00:00.000Z', 12, 2, 0.9,
+      '2026-09-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z')
+  `).run({ income: 90000, markup: 25, ...goals });
+  db.prepare("INSERT INTO pricing (id, data_json, updated_at) VALUES (1, '{\"labourSections\":[]}', 'x')").run();
+  return db;
+}
+const everyTableBut = (db, skip) => db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all()
+  .map((r) => r.name).filter((t) => !skip.includes(t)).sort();
+
+test('v18 moves the live row to 8 h / 65% / 10% and changes nothing else in the database', () => {
+  const db = v17WithGoals();
+  const tables = everyTableBut(db, ['goals', 'schema_version']);
+  const before = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+  const goalsBefore = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+  assert.ok(!('utilisation_pct' in goalsBefore), 'v17 has no utilisation column');
+  assert.ok(before.estimates.length > 5 && before.estimates.every((e) => e.totals_json), 'the fixture has priced estimates');
+
+  // To v18: v19 rewrites the card's Deliverable Types (its own tests below).
+  const result = migrate(db, { to: 18 });
+  assert.deepEqual([result.from, result.to, result.applied], [17, 18, 1]);
+  const g = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+  assert.deepEqual(
+    [g.billable_hours_per_day, g.utilisation_pct, g.target_profit_margin_pct],
+    [8, 65, 10],
+    'P2 and P4: whatever was stored'
+  );
+  // (5 × 52 − 30 − 8) × 8 × 65% = 1,154.4 ÷ 52 = 22.2, as a save would write it.
+  assert.equal(g.billable_capacity_hrs_per_week, 22.2);
+  assert.notEqual(g.updated_at, goalsBefore.updated_at);
+  const untouched = ({ billable_hours_per_day: _h, utilisation_pct: _u, target_profit_margin_pct: _m,
+    billable_capacity_hrs_per_week: _w, updated_at: _t, ...rest }) => rest;
+  assert.deepEqual(untouched(g), untouched(goalsBefore), 'income, the rest of capacity, super, bad debt, per-km, confirmation');
+
+  // Every other table, saved estimates' stored totals among them, is as it was.
+  for (const t of tables) assert.deepEqual(dump(db, t), before[t], t);
+
+  // Run again: the column isn't added twice and the same values are written.
+  db.prepare('DELETE FROM schema_version WHERE version >= 18').run();
+  assert.equal(migrate(db, { to: 18 }).applied, 1);
+  const again = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+  assert.deepEqual({ ...again, updated_at: null }, { ...g, updated_at: null });
+
+  // The table refuses what the API would.
+  for (const bad of [0, 0.9, 100.5, -1]) {
+    assert.throws(() => db.prepare('UPDATE goals SET utilisation_pct = ?').run(bad), /CHECK/, String(bad));
+  }
+  assert.throws(() => db.prepare('UPDATE goals SET utilisation_pct = NULL').run(), /NOT NULL/);
+  db.prepare('UPDATE goals SET utilisation_pct = 1').run();
+  db.prepare('UPDATE goals SET utilisation_pct = 100').run();
+  assert.deepEqual(db.pragma('foreign_key_check'), []);
+  db.close();
+});
+
+test('v18 leaves an unset profit unset, and a fresh database starts at 65% with no row', () => {
+  // Unset is the set-up prompt (v6): 10% is written over a markup, never over nothing.
+  const db = v17WithGoals({ markup: null, income: null });
+  migrate(db);
+  const g = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+  assert.deepEqual([g.target_profit_margin_pct, g.desired_net_income], [null, null]);
+  assert.deepEqual([g.billable_hours_per_day, g.utilisation_pct], [8, 65]);
+  db.close();
+
+  const fresh = openDatabase(tempDbPath('v18-fresh'));
+  assert.equal(fresh.prepare('SELECT COUNT(*) AS n FROM goals').get().n, 0, 'no row is invented');
+  fresh.prepare(`INSERT INTO goals (id, billable_capacity_hrs_per_week, created_at, updated_at)
+    VALUES (1, 0, 'x', 'x')`).run();
+  assert.equal(fresh.prepare('SELECT utilisation_pct AS u FROM goals').get().u, 65, 'P2: a new install defaults to 65');
+  fresh.close();
+});
+
+/**
+ * MIGRATION v19 — a multiplier on each post service (post-multipliers PM2;
+ * G4, G5, G9). Only the card's Deliverable Types change: each bare service
+ * name becomes `{ name, multiplier: 0 }` and the type-wide multiplier goes.
+ * Every other field of the card, and every saved estimate, is byte-identical.
+ */
+const V18_CARD = {
+  pricingShape: 'card-fee',
+  serviceDay: { fullHours: 8, halfHours: 4 },
+  labourSections: [
+    { id: 'prod', label: 'Production', rows: [{ id: 'r_cap', name: 'Video Capture', rate: 100, capture: true, prices: { hour: 140, half: null, full: 1120 } }] },
+    { id: 'post', label: 'Post-Production', rows: [
+      { id: 'r_edit', name: 'Edit', rate: 45, prices: { hour: 63, half: null, full: null } },
+      { id: 'r_grade', name: 'Grade', rate: 45, prices: { hour: 63, half: null, full: null } },
+    ] },
+  ],
+  travelRows: [{ name: 'Fuel', rate: 0, mu: 0, directCost: true }],
+  taxSetAsideRate: 0.35,
+  cardFeePct: 1.7,
+  surcharges: { shortNotice: 1.5, weekend: 1.5, afterHours: 1.25 },
+  deliverableTypes: [
+    { id: 'dt_brand', name: 'Brand Story', description: 'Hero film', services: ['Edit', 'Grade', 'Gone From The Card'], multiplier: 2.5 },
+    { id: 'dt_socials', name: 'Socials', description: '', services: [], multiplier: 0.5 },
+    { id: 'dt_bare', name: 'No services key', multiplier: 1 },
+  ],
+};
+/* A deliverable saved before v19: its snapshot multiplier, post lines tagged to
+   it with no postMultiplier. */
+const V18_ROWS = {
+  prod: [{ name: 'Video Capture', qty: 10, mu: 140, capture: true }],
+  deliverables: [{ id: 'dl1', name: 'Brand film', qty: 1, typeId: 'dt_brand', multiplier: 2.5 }],
+  post: [{ name: 'Edit', qty: 20, mu: 63, deliverableId: 'dl1' }, { name: 'Grade', qty: 5, mu: 63, deliverableId: 'dl1' }],
+};
+function v18WithTypes(card = V18_CARD) {
+  const db = v12Fixture();
+  migrate(db, { to: 18 });
+  db.prepare('INSERT INTO pricing (id, data_json, updated_at) VALUES (1, ?, ?)')
+    .run(JSON.stringify(card), '2026-10-19T00:00:00.000Z');
+  db.prepare('UPDATE estimates SET active_rows_json = ? WHERE id = ?').run(JSON.stringify(V18_ROWS), 'est_unique');
+  return db;
+}
+const storedCard = (db) => JSON.parse(db.prepare('SELECT data_json FROM pricing WHERE id = 1').get().data_json);
+
+test('v19 gives every post service a 0× multiplier, drops the type multiplier, and changes nothing else', () => {
+  const db = v18WithTypes();
+  const tables = everyTableBut(db, ['pricing', 'schema_version']);
+  const before = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+  assert.ok(before.estimates.some((e) => e.active_rows_json === JSON.stringify(V18_ROWS)), 'the fixture has a typed deliverable');
+
+  const result = migrate(db, { to: 19 });
+  assert.deepEqual([result.from, result.to, result.applied], [18, 19, 1]);
+  const card = storedCard(db);
+  assert.deepEqual(card.deliverableTypes, [
+    { id: 'dt_brand', name: 'Brand Story', description: 'Hero film',
+      services: [{ name: 'Edit', multiplier: 0 }, { name: 'Grade', multiplier: 0 }, { name: 'Gone From The Card', multiplier: 0 }] },
+    { id: 'dt_socials', name: 'Socials', description: '', services: [] },
+    { id: 'dt_bare', name: 'No services key', services: [] },
+  ], 'G5: every service at 0×, a missing one kept; G4: no type multiplier');
+  const { deliverableTypes: _a, ...rest } = card;
+  const { deliverableTypes: _b, ...restBefore } = V18_CARD;
+  assert.deepEqual(rest, restBefore, 'every other field of the card as it was');
+
+  // G9: saved estimates, days, rentals and the rest are byte-identical, and the
+  // typed deliverable plans exactly as it did: 10 h × its own 2.5 = 25 h.
+  for (const t of tables) assert.deepEqual(dump(db, t), before[t], t);
+  const { postPlan } = require('../src/calc');
+  const plan = postPlan(V18_ROWS, card);
+  assert.deepEqual(plan, postPlan(V18_ROWS, V18_CARD));
+  assert.deepEqual([plan.captureHours, plan.recommended, plan.lines], [10, 25, []]);
+
+  // Run again: a type already in the new shape reads back as itself.
+  db.prepare('DELETE FROM schema_version WHERE version >= 19').run();
+  assert.equal(migrate(db, { to: 19 }).applied, 1);
+  assert.deepEqual(storedCard(db), card);
+  db.close();
+});
+
+test('v19 keeps a multiplier already on a service, and leaves a card with no types, or no card, alone', () => {
+  // Written by a build that already had the new shape: kept, not reset to 0.
+  const mixed = { ...V18_CARD, deliverableTypes: [{ id: 'dt_m', name: 'M', services: [{ name: 'Edit', multiplier: 2 }, 'Grade'], multiplier: 3 }] };
+  const db = v18WithTypes(mixed);
+  migrate(db, { to: 19 });
+  assert.deepEqual(storedCard(db).deliverableTypes, [{ id: 'dt_m', name: 'M', services: [{ name: 'Edit', multiplier: 2 }, { name: 'Grade', multiplier: 0 }] }]);
+  db.close();
+
+  for (const card of [{ ...V18_CARD, deliverableTypes: [] }, (({ deliverableTypes: _d, ...c }) => c)(V18_CARD)]) {
+    const none = v18WithTypes(card);
+    const row = none.prepare('SELECT * FROM pricing').get();
+    migrate(none, { to: 19 });
+    assert.deepEqual(none.prepare('SELECT * FROM pricing').get(), row, 'not rewritten, not even its updated_at');
+    none.close();
+  }
+
+  const fresh = openDatabase(tempDbPath('v19-fresh'), { migrate: false });
+  migrate(fresh, { to: 19 });
+  assert.equal(fresh.prepare('SELECT COUNT(*) AS n FROM pricing').get().n, 0, 'no card is invented');
+  fresh.close();
+});
+
+/**
+ * MIGRATION v20 — where an invoice lives in Hnry (hnry-invoicing H2). Additive:
+ * four columns on invoices, one on clients, all unset. Every row of every table
+ * reads as it did, and every existing invoice reads as "not in Hnry".
+ */
+const HNRY_COLS = ['hnry_invoice_id', 'hnry_number', 'hnry_pushed_at', 'hnry_lines_done', 'hnry_error'];
+const withoutCols = (rows, cols) => rows.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => !cols.includes(k))));
+
+test('v20 adds the Hnry columns unset and changes no row of any table', () => {
+  const db = v18WithTypes();
+  migrate(db, { to: 19 });
+  const tables = everyTableBut(db, ['schema_version']);
+  const before = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+  assert.ok(before.invoices.length > 0 && before.clients.length > 0, 'the fixture has invoices and a client');
+  assert.ok(!db.prepare('PRAGMA table_info(invoices)').all().some((c) => c.name === 'hnry_number'), 'v19 has no Hnry column');
+
+  const result = migrate(db, { to: 20 });
+  assert.deepEqual([result.from, result.to, result.applied], [19, 20, 1]);
+
+  const inv = dump(db, 'invoices');
+  assert.equal(inv.length, before.invoices.length);
+  for (const r of inv) for (const c of HNRY_COLS) assert.equal(r[c], null, `${c} is unset`);
+  assert.deepEqual(withoutCols(inv, HNRY_COLS), before.invoices, 'no invoice value moved');
+  const cl = dump(db, 'clients');
+  assert.ok(cl.every((r) => r.hnry_client_id === null));
+  assert.deepEqual(withoutCols(cl, ['hnry_client_id']), before.clients);
+  for (const t of tables.filter((x) => !['invoices', 'clients'].includes(x))) assert.deepEqual(dump(db, t), before[t], t);
+  assert.deepEqual(db.pragma('foreign_key_check'), []);
+
+  // Run again: no column is added twice, and what a push stored is kept.
+  db.prepare("UPDATE invoices SET hnry_invoice_id = 'gid', hnry_number = 'INV-1', hnry_pushed_at = 'x', hnry_lines_done = 2, hnry_error = 'timeout' WHERE id = ?").run(inv[0].id);
+  db.prepare("UPDATE clients SET hnry_client_id = 'c1' WHERE id = 'cl_acme'").run();
+  const edited = [dump(db, 'invoices'), dump(db, 'clients')];
+  db.prepare('DELETE FROM schema_version WHERE version >= 20').run();
+  assert.equal(migrate(db, { to: 20 }).applied, 1);
+  assert.deepEqual([dump(db, 'invoices'), dump(db, 'clients')], edited);
+  db.close();
+});
+
+/**
+ * MIGRATION v21 — the Client Hub's tables (merge task M2, safeguard S15). New,
+ * empty tables only: every billing row reads exactly as it did.
+ */
+test('v21 adds the hub tables empty and changes no row of any table', () => {
+  const db = v18WithTypes();
+  migrate(db, { to: 20 });
+  const tables = everyTableBut(db, ['schema_version']);
+  const before = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+  const hubTables = ['records', 'private_auth', 'admin_sessions', 'deliverable_tokens',
+    'agreement_evidence', 'bunny_assets', 'bunny_collections'];
+  for (const t of hubTables) assert.ok(!tables.includes(t), `v20 has no ${t}`);
+
+  const result = migrate(db);
+  assert.deepEqual([result.from, result.to, result.applied], [20, 21, 1]);
+  for (const t of tables) assert.deepEqual(dump(db, t), before[t], t);
+  for (const t of hubTables) assert.deepEqual(dump(db, t), [], `${t} starts empty`);
+  assert.equal(everyTableBut(db, []).includes('meta'), false);
+  assert.deepEqual(db.pragma('foreign_key_check'), []);
+  db.close();
+});
+
+test('a fresh database has the Hnry columns, and invoiceJson reads them (null for a never-pushed invoice)', () => {
+  const db = openDatabase(tempDbPath('v20-fresh'));
+  const cols = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
+  for (const c of HNRY_COLS) assert.ok(cols('invoices').includes(c), c);
+  assert.ok(cols('clients').includes('hnry_client_id'));
+
+  const now = '2026-10-22T00:00:00.000Z';
+  db.prepare('INSERT INTO projects (id, upid, created_at, updated_at) VALUES (?,?,?,?)').run('p1', 'UP-1', now, now);
+  db.prepare("INSERT INTO invoices (id, project_id, kind, number, created_at, updated_at) VALUES ('i_old','p1','deposit','INV-UP-1-D',?,?)").run(now, now);
+  db.prepare(`INSERT INTO invoices (id, project_id, kind, number, hnry_invoice_id, hnry_number, hnry_pushed_at, hnry_lines_done, hnry_error, created_at, updated_at)
+              VALUES ('i_new','p1','final','INV-UP-1-F','gid64','INV-10670074',?,3,'timeout',?,?)`).run(now, now, now);
+  const { invoiceJson } = require('../src/invoices');
+  const get = (id) => invoiceJson(db, db.prepare('SELECT * FROM invoices WHERE id = ?').get(id));
+  const old = get('i_old');
+  assert.deepEqual([old.hnryInvoiceId, old.hnryNumber, old.hnryPushedAt, old.hnryLinesDone, old.hnryError], [null, null, null, null, null]);
+  const pushed = get('i_new');
+  assert.deepEqual([pushed.hnryInvoiceId, pushed.hnryNumber, pushed.hnryPushedAt, pushed.hnryLinesDone, pushed.hnryError], ['gid64', 'INV-10670074', now, 3, 'timeout']);
+  assert.equal(pushed.number, 'INV-UP-1-F', 'the app\'s own number is kept beside Hnry\'s');
+  db.close();
+});

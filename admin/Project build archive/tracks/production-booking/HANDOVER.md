@@ -1,0 +1,347 @@
+# Handover: Production Booking
+
+Read this first, then [`DESIGN_BRIEF.md`](DESIGN_BRIEF.md) and [`DECISIONS.md`](DECISIONS.md) (the
+user’s answers, D1–D104; don’t re-ask), then
+[`INFORMATION_ARCHITECTURE.md`](INFORMATION_ARCHITECTURE.md) (routes, screens, data model). This track replaces
+`estimate-accuracy` task 8 (expected booking rate, scrapped) and task 11 (loadings, superseded). It
+sits on top of every earlier track, and those stay the authority for anything this one doesn't
+overturn.
+
+## What this is
+
+The user asked for price adjustments that are simpler than a booking rate, and the request grew into
+five stages. Build them in this order (decision 1):
+
+- **A. Surcharges.** Short notice (a tick box), weekend/public holiday, and after hours. They apply
+  to Production-section items only and never show to the client. A user-only Cost Breakdown
+  explains them.
+- **B. Production Booking** in the estimate editor. Booked days are cards (date or TBC, status,
+  times, that day's production items) on a calendar shared across every estimate, with a warning or
+  lock on clashes.
+- **C. The home dashboard.** "LSC Creative" becomes a production calendar with month and week
+  views, a Coming-up list and Recent activity.
+- **D. Projects.** One per UPID, under its client, holding a deposit + final invoice pair with
+  `INV-<UPID>-D` / `-F` numbering. It is first triggered by an in-app "client accepted" action.
+- **E. Client pages.** A web page per sent estimate and invoice, a service agreement signed with a
+  typed name and tick, scheduled email sending through Google Workspace, and Stripe card payment
+  with the fee passed on.
+
+A and B ship together, because the weekend/holiday and after-hours surcharges need booked dates and
+times.
+
+## State as of 2026-10-04
+
+Design is complete: Grill Me (D1–D99, plus D100 at task 19), `DESIGN_BRIEF.md`, `INFORMATION_ARCHITECTURE.md` (hash routes,
+"Projects" replaces "Estimates" in the nav, unique UPIDs, Settings as a screen), and `TASKS.md`
+(33 tasks plus B2-1…B2-13). Migrations: v11 (A+B), v12 (B2 `rentals`), **v13 (Stage D)**, **v14 (E)**.
+
+**Built and committed on branch `production-booking`:**
+- **A+B, tasks 1–10** (surcharge maths, schema v11 days/holidays, holidays fetch, Rate Card
+  Surcharges block, shared calendar `web/js/calendar.js`, editor Production Booking block, live
+  surcharged pricing, estimate detail + client PDF + Cost Breakdown PDF, a11y pass, money review
+  fixes D67–D72). **Deployed 2026-10-02** (NAS v11, Pages, `main` `6074c3e`).
+- **B2, B2-1…B2-13** (`postPlan`, rentals v12, service menu and on-set kinds on day cards, drag/Move
+  to/Duplicate day, "On set, by day" summaries, gear rentals, rental bars, Rate Card Capture tick and
+  Deliverable Types, post-production planner, surcharge box, a11y pass). **Deployed 2026-10-03**
+  (NAS v12, then Pages, `main` `930249c`). The user still needs to tick Capture on real services and
+  add Deliverable Types on the Rate Card.
+- **C, tasks 11–13** (hash router `web/js/router.js`, Home calendar dashboard, deploy). **Live
+  2026-10-03** (Pages only, `main` `7910c53`). The user skipped the VoiceOver pass on Home.
+- **Stage C code-review fixes, 2026-10-03, committed `ff3f8fa`, not deployed** (Pages only, no server
+  change). The router also listens to `popstate`, so Back between two entries with the same
+  address (left by a replace: a deleted client's entry becoming the list, or a bad address
+  becoming Home) keeps its index in step. Before this, a refused Back could undo by the wrong
+  distance, and a `leaveTo()` could leave its skipped guard set. Estimate and client routes that
+  fetch now show "Loading…" at once, so the screen being left can't take edits after the guard
+  has asked. Home checks the router's ticket and no longer has its own `visit` counter, so a late
+  401 after leaving Home is dropped. Coming up reuses the month's reply when it covers the next 14
+  days, so a visit makes one fetch. Week tiles stop at midnight. `STATUS_WORD`, `MONTHS`,
+  `DAY_SHORT` and `upidOf` are exported from `calendar.js`. Checked in the browser against
+  `api-scratch`.
+
+Per-task detail (shapes, error codes, mutation lists, verification logs) was removed from here and
+`TASKS.md` to save tokens: the code and tests are the record, and
+`git log -p -- .design/production-booking/` has the old text. Commits are named
+`Production booking: <task>`.
+
+- **D, task 14** (invoice maths in `calc.js`: `depositAmount`, `extrasTotals`,
+  `finalInvoiceTotals`, `singleInvoiceTotals`; `accepted` counts as won). 2026-10-03, committed `bd85aa9`,
+  nothing to deploy alone. See its Done note in `TASKS.md`.
+
+- **D, task 15** (schema v13: `projects`, the draft/sent/accepted/declined rebuild, `invoices`
+  with legacy ones, `activity`; the estimate routes keep the UPID on the project and refuse
+  `upid_taken`; declined estimates leave the calendar and the lock). 2026-10-03, **not deployed**
+  (NAS v13 ships with task 23). Its decisions are in its Done note in `TASKS.md`.
+
+- **D, task 16** (the UPID fix-up `#/setup/upids` with `GET/POST /api/setup/upids`, the list
+  banner, Duplicate into the copy's editor). 2026-10-03, committed `ad63ac0`, **not deployed** (ships
+  with v13 at task 23). Its decisions are in its Done note in `TASKS.md`. The `api-scratch` DB is now
+  v13, with every group settled and one duplicate (`B28-COPY`).
+
+- **D, task 17** (the Projects list: `GET /api/projects`, `#/projects` with stage chips and search
+  in the address, one stage-line function, the client's projects as the same cards).
+  2026-10-04, committed `4cd0ed4`, **not deployed** (a new route: NAS before Pages, with v13 at
+  task 23). The `api-scratch` DB has a project at every stage (sent with valid-until, expired,
+  overdue deposit, deposit paid, single sent, legacy, paid, declined).
+
+- **D, task 18** (the project folder `#/projects/<id>`: `GET /api/projects/:id`, Mark sent,
+  Decline, Reopen with the clash check, Delete; the editor and a read-only view under
+  `…/estimate`; D62's doc-type controls gone from the editor and no longer written by the server;
+  calendar tiles and Coming up open the folder). 2026-10-04, committed `c278225`, **not deployed**
+  (new routes: NAS before Pages, with v13 at task 23). Its decisions are in its Done note in
+  `TASKS.md`.
+
+- **D, task 19** (`POST /api/projects/:id/accept` and `/invoices`: one transaction confirms the
+  days and flags clashes, makes the pair or single invoice from the stored totals, copies the
+  deposit %; the UPID lock; the folder's Mark accepted… / Create invoices… dialog).
+  2026-10-04, committed, **not deployed** (with v13 at task 23). Its decisions are in its Done
+  note in `TASKS.md`. `production_days.rebook` went into v13 (undeployed), so the `api-scratch` DB
+  was rewound to v12 and re-migrated; a backup of it from before is in this session's scratchpad
+  only. Scratch now has AUD-B accepted as a 40% pair with 16 Oct flagged (against a hand-added
+  confirmed day `d_t19_scratch` on B210-PLAN) and TST-001 as a single invoice.
+
+- **D, task 20** (the invoice screen `#/projects/<id>/invoices/<invoiceId>`, deposit / final /
+  single PDFs and per-invoice Cost Breakdowns, Mark sent, Mark paid, void and remake). 2026-10-04,
+  committed, **not deployed** (new routes and v13 columns: NAS before Pages, with v13 at task 23).
+  Its decisions are in its Done note in `TASKS.md`. `invoices.voided_at`, `void_reason` and
+  `replaces_id` went into v13 (undeployed); the `api-scratch` DB got them by `ALTER TABLE` (a
+  backup from before is in this session's scratchpad only). Scratch now has AUD-B with D void, D2
+  paid at 50%, and F a draft with 2 hrs of Overtime ($6,233.50 due).
+
+- **D, task 21** (Settings as a screen, `#/settings[/<section>]`; deposit %, valid-for days,
+  due-after days, the four messages, the service agreement with fill-in fields and "Preview with a
+  project…", the FAQ URL; Email and Card payments "Not set up yet"). 2026-10-04, committed, **not
+  deployed**. New `server/src/documents.js` (= `web/js/documents.js`, drift-tested), which
+  `routes/projects.js` now requires, so the NAS needs it before Pages (it ships with v13 at task
+  23). Its decisions are in its Done note in `TASKS.md`. The `api-scratch` settings row now holds
+  a full business/payment set, GST registered at 7% inclusive, and 40% / 21 days / 7 days (no
+  agreement text); the row from before is in this session's scratchpad only.
+
+- **D, task 22** (Recent activity on Home: `GET /api/activity`, `ProjectCard.activityText` shared
+  with the folder). 2026-10-04, committed, **not deployed** (a new route: NAS before Pages, with v13
+  at task 23). Its decisions are in its Done note in `TASKS.md`.
+
+- **D, task 23 polish** (a11y + responsive pass on Projects, the folder, invoice, Settings, fix-up
+  and their dialogs). 2026-10-04, committed, frontend only. New `LSCUtil.landFocus(root)` puts
+  focus on the new screen's `h1` when the old screen took it; dialog danger buttons lifted in
+  `a11y.css`. See its note in `TASKS.md`.
+
+**Task 23 deployed 2026-10-04** (`main` `2c7131b`). NAS first (backup `pre-v13-20261004-134122.db` in
+`data/exports` and `manual-backup`; dry run clean; code copied by tar over `ssh lsc-nas`, excluding
+`.env`, `data`, `docker-compose.yml`; boot log `v13: 1 project(s), 0 need a UPID`; `/api/projects`
+401 not 404), then Pages. No UPID fix-up is needed. rsync to the NAS is refused; use tar over ssh.
+
+**Stage E inputs (2026-10-04):** card payment is **held** (D101): skip task 31 and the card parts
+of 32. The service agreement came as `LSC-Service-Agreement-Template.pdf`. `LSC-Service-Agreement.txt`
+(both gitignored: personal details, public repo) is a Settings-ready draft that uses the existing
+fields, with "Quote" renamed to "Estimate" (D30), the fixed 50% replaced by `{deposit_pct}`, and the
+per-project scope boxes and signature block dropped (the Estimate and the signing dialog cover
+those). The user confirmed the GST sentence (still not registered). Commit `6764113` (not deployed) added
+fields `client_email`, `client_phone`, `signatory_role` (typed at signing, task 27 passes it),
+`deposit_amount`, `balance_amount` (the caller passes calc.js `depositAmount` / `finalInvoiceTotals`
+figures; `documents.js` stays free of money maths) and `due_days`. The draft uses them. A
+single-invoice project prints "Deposit (): ," (no conditional text yet). **In live Settings since 2026-10-04** (written over SSH;
+backup `data/exports/pre-agreement-20261004.db`). Until `6764113` is deployed (NAS then Pages), the
+six new fields read as "not a field" in the live preview. Email is **Resend over SMTP from `admin@lsccreative.studio`** (D102), not Gmail; the user still
+has to create the account, add its DNS records in Cloudflare and supply the key (needed at task 28).
+
+- **E, task 24** (the client page shell, `web/c/`, approved by the user) and **task 25** (v14, sent
+  versions, `/public/estimates/:token[/pdf]`, the editor's "Editing after vN was sent"). 2026-10-04,
+  committed, **not deployed** (v14 and new routes: NAS before Pages, with stage E at task 32).
+  See their notes in `TASKS.md`. `api-scratch` is now v14 with B210-PLAN sent as v1.
+
+- **E, task 26** (`c/#e/<token>` wired to the public route; "opened" logged by the GET, once a day
+  per version, on Home). 2026-10-04, committed, **not deployed** (with stage E at task 32). See its
+  note in `TASKS.md`. `api-scratch` has one `opened` row for B210-PLAN; a backup from before is in
+  this session's scratchpad only.
+
+- **E, task 27** (signing: the dialog, `POST /public/estimates/:token/accept`, the signature and
+  its PDF, the accept through the shared `acceptEstimate`, the folder's "Signed agreement").
+  2026-10-04, committed, **not deployed** (with stage E at task 32). Its decisions are in its note
+  in `TASKS.md`. `localToday` is now Sydney's date. `api-scratch` is as it was (a backup from
+  before is in this session's scratchpad only).
+
+**Settled 2026-10-05 (the user):** an accepted estimate's page reads its dated days as Confirmed
+(Date TBC days stay as sent) and drops the proposed-dates warning. Applied live in
+`publicEstimate`; the stored client view stays the version as sent.
+
+- **E, task 28** (`mail.js`, `sends.js` queue and outbox, `routes/email.js`, Settings → Email,
+  signing's two emails). 2026-10-05, committed, **not deployed**, **not ticked: no real email has
+  been sent yet.** See its note in `TASKS.md`.
+
+**Resend (2026-10-05):** `lsccreative.studio` is **Verified** in Resend. A key named
+"LSC Billing App SMTP" (Sending access, that domain only) was created in the user's account, but
+its value was never put in a file: the permission check refused reading it off the clipboard, and
+it is shown once. The two older keys ("Supabase SMTP", "Supabase SMTP v2") are not ours. So: **the
+key must be placed in `server/.env` as `SMTP_PASS`** (with `MAIL_FROM=admin@lsccreative.studio`,
+`MAIL_REPLY_TO=<the user's address>`, `APP_URL`; see `.env.example`), then Settings → Email → Send a test
+email, then tick task 28. If the dialog is gone, delete that key in Resend and make another.
+
+- **E, task 29** (the send panel: `POST /api/projects/:id/send` and `/api/invoices/:id/send`,
+  `web/js/send-panel.js`, each document row's email line, Copy link). 2026-10-05, committed, **not
+  deployed** (with stage E at task 32). Its decisions are in its note in `TASKS.md`. Checked
+  against the new launch.json **`api-scratch-mail`** (the scratch API with a mailer that prints
+  each email). The scratch DB was empty apart from `dev`; it now holds SEND-A (estimate sent up to
+  v4) and SEND-B (accepted 40%, both invoices emailed). A backup from before is in this session's
+  scratchpad only.
+
+- **E, task 30** (the client invoice page: `GET /public/invoices/:token[/pdf]`, `c/#i/<token>`
+  with the payment slip and Copy buttons). 2026-10-05, committed, **not deployed** (with stage E at
+  task 32). Its decisions are in its note in `TASKS.md`. Invoices (page and PDF) now read dated
+  days as Confirmed. `api-scratch` is as it was (restored from a backup).
+
+- **E, task 32 polish** (2026-10-05, committed; see its note in `TASKS.md`): the user's
+  revisions R1–R4 (no contact person's name on client documents, the signatory's name typed at
+  signing, the info block above the title) and the phone Accept bar. The user approved.
+
+- **Stage E deployed 2026-10-05** (NAS v14, then Pages, `main` `1cf0ded`; record in task 32's
+  note). `SMTP_PASS` is the Resend key **"LSC Billing App (NAS)"** (Sending access,
+  `lsccreative.studio` only), set 2026-10-05; boot log `[mail] connected as admin@lsccreative.studio`.
+  The older "LSC Billing App SMTP" key is unused (its value was never kept): the user may delete it.
+
+**Tasks 28 and 32 ticked 2026-10-05** (the live test email arrived; the live end-to-end run on
+PVLSC01 passed, see task 32's note). PVLSC01 (live test project) was voided and **deleted 2026-10-05**. Task 31 (Stripe) is held (D101). Live Settings' business email is blank:
+the client pages' "contact us" and (since C1) the quote PDF's sign-off need it.
+
+**Task 33 code review fixes done (2026-10-05): C1–C15 all ticked in `TASKS.md`, each committed
+(`cbf6bdc` … `b5e8881`), none deployed.** 540 tests. What changed for the user:
+- **D104 (the user's answer at C2/C3):** a sent quote can't be changed without the client being
+  sent the change. Saving an edit the client would see opens "Save and send the update" and
+  emails a "Quote update: <project> (<UPID>)" to the same link (new version); owner-only edits
+  save as before. A replacement invoice's email is an "Invoice update". This closed C2 and C3.
+- C4 an invoice paid before it went out is dated; C5 the signed email names flagged clashes;
+  C6 a sent quote's taken proposed date shows on the card and folder; C7 a bad `APP_URL` stops
+  link emails; C8 failed emails can't go once the document moved on; C9 void dialog says the
+  client sees the reason; C10 extras charge GST as the job did (`calc.js jobGstSettings`); C11
+  editor banner on accepted estimates; C12 the signed copy greets the signer; C13 Mark sent
+  routes are test-only; C14 real due dates; C15 the owner's own look at a link isn't logged.
+
+**Deployed 2026-10-05 (NAS, then Pages, `main` `df0bd3c`):** backup `data/exports/pre-c-dr-20261005-193427.db`; code by tar over ssh; boot log healthy, `[mail] connected`; Pages run 37284686925 success, live `calendar.js?v=df0bd3c4`; `/api/projects` and `/api/email/status` 401, `/public/*` 404. (Was: NAS, then Pages. No migration, no new table; server and web both
+changed (the editor needs the server's `resend_required`). Live `APP_URL` is already absolute.
+
+**For the user to decide (not blocking):** C9 the void reason could be hidden from the client
+instead; C12 signing could ask for the signer's email; D104's subject says "Quote update" where
+they wrote "Estimate/Invoice update" (D103). The live Settings texts the user wrote still say
+"estimate" (Service agreement, and the estimate email message if ever saved): point them at it.
+Live Settings' business email is blank (the client pages' "contact us" and the quote PDF's
+sign-off need it).
+
+**Traps:** `test-public.js` "a wrong, short or malformed link is the same 404" is timing-based and
+failed once under load (passes on rerun). Data saved before D104 could already differ from its
+sent version; live has no sent quote, so none. `api-scratch` was restored to its state before
+these checks (backup `scratch-before-c2.db` in that session's scratchpad only).
+
+**Task 33's design review done (2026-10-05):** [`DESIGN_REVIEW.md`](DESIGN_REVIEW.md), 17 findings.
+**DR1–DR17 all fixed and committed (`3a810d9` … `e3ba242`), not deployed; task 33 ticked.** Each
+fix's one-line outcome is in `TASKS.md`. Decisions made there:
+- **DR11 (the user):** new estimates have no Date field; one with a stored date keeps it.
+- DR5's quiet gear is Home only (`quietGear`); the editor's calendar keeps its solid own-rental bars.
+- DR15: healthy invoiced = half-filled green square, every alert = red diamond (shape + colour).
+- DR14 added `acceptedOn` to `GET /public/estimates/:token` (the only server change; tested).
+After deploying, **the user should fill Settings → Business → Email and Phone** (live's are blank).
+Review screenshots are in `screenshots/` (local only, not committed).
+
+**Scratch now holds a review dataset** (fictional): SEND-A (signed through the dialog), SEND-B
+(deposit overdue), NBK-014 (draft with deliverables, a post plan and a Lemac rental), FLW-002 (sent;
+Sun 11 Oct taken by HCC-031), HCC-031 (deposit paid, final scheduled 13 Oct), KTL-007 (single,
+paid), MRL-003 (declined) and RVR-011 (expired). The Rate Card has Capture ticks and two Deliverable
+Types; the agreement is placeholder text. The DB from before is
+`/tmp/lsc-billing-scratch/exports/scratch-before-review.db`. Use `api-scratch-mail`, so a send
+prints instead of going out.
+
+**Live Rate Card section ids fixed (2026-10-05).** The user's live card had built its own
+categories (`cat1`/`cat2`/`cat3`), so nothing keyed to `prod` (Capture column, day-card Production
+menu, surcharges, ON SET) or `post` (Deliverable Types' services, the planner) found them. Renamed
+over SSH to `preprod`/`prod`/`post` on the card and the one live (test) estimate; labels, services
+and prices untouched, invoice snapshot left frozen. Backup `data/exports/pre-section-ids-20261005.db`.
+**Trap:** any section the app keys on must keep its id; a deleted-and-re-added one gets `catN`.
+So **`post` is now undeletable too** (the user's call; a "Post" tag like ON SET; Rate Card screen
+only, as `prod` is), **deployed 2026-10-05** (Pages, `main` `137b98f`, run 37298681866). The user still has to tick Capture
+and add post services to their five Deliverable Types.
+
+**Exact next item: nothing queued; C1–C15 + DR1–DR17 are live.** Open items: Stripe (task 31, held, D101) and a VoiceOver pass by a person.
+
+**Scratch after the DR checks:** Settings' business ABN is now a valid example (`51824753556`),
+email `studio@example.test`, phone `02 9000 0000`. The headless checks opened SEND-A's and two
+invoice client pages, which may have logged `opened` rows.
+
+**Seams left for later tasks:**
+- **Stage E reads its settings through `documents.js`:** `docSettings(settings)` for the
+  messages (send panel), `validDays` (send), `faqUrl` ('' hides the button) and the agreement
+  text; signing fills the text with `agreementValues` + `fillAgreement` from the frozen version
+  (its client snapshot, stored `totalIncGst`, days) and stores the result (D39). That is the same
+  call the Settings preview makes, so the two can't differ. Card payments' surcharge % (D49) and
+  Email's status/test button go into the two "Not set up yet" sections.
+- **Stage E's public pages:** `calc.js` `costBreakdown` and `pdf.js`'s `daysWithItems` are the
+  two readers of a booked estimate. The client page lists days as the client PDF does, with
+  stored prices, never `costBreakdown`'s figures. Its Cost Breakdown stays owner-only.
+- **A VoiceOver pass by a person** (tasks 9 and B2-12 did everything short of it; skipped for Home
+  by the user at task 13): the detail's
+  day groups are `<tbody>` with a `scope="rowgroup"` head. Check how they read. B2-12's Done
+  note lists the B2 parts to hear; one of them is whether a silently added gear rental is
+  missed.
+- **Holidays in the editor:** fetched once, the first time the estimate has a dated day. Until it
+  arrives, or if it fails, new dates price as non-holidays. The server always prices with the real
+  list on save, and the detail screen shows what was stored.
+- **Any later rebuild of `estimates` or `projects`:** flag the migration `foreignKeysOff: true`
+  (`db.js`). `production_days`, `rentals`, `invoices` and (v14) `estimate_versions` hang off
+  `estimates`, and `signatures` off `estimate_versions`; estimates, invoices and activity hang off
+  `projects`.
+- **Before deploying v13 (task 23):** run the migration on a copy of the live backup first. Its
+  `foreign_key_check` refuses the whole migration (and the boot) if the live DB already holds a row
+  pointing at nothing. The boot log line `[db] v13: N project(s) … M need a UPID …` gives the fix-up
+  count.
+- **The invoice snapshot is owner-only:** `estimate_snapshot_json` is the whole estimate, including
+  its `totals` with internal figures. A public invoice page (E) must print from it through the
+  client PDF's fields, never send it whole.
+- **Stage E's client events** (opened since task 26, signed since 27) are in `HOME_KINDS`
+  (`routes/projects.js`) and `ProjectCard.activityText`; a new one needs both.
+- **An invoice's public page** (task 30) reads `invoiceJson` only through `public.js
+  invoiceView`'s allow-list; `invoiceJson` itself goes only to `buildInvoiceDocHtml` (its
+  `estimate` is the owner-only snapshot). A new field on an invoice must reach both.
+- **Activity says what the owner confirmed, not what the queue did** (task 29): `sent` is logged on
+  Confirm ("Scheduled v1 to email …"), and a later change or cancel of that email isn't logged; the
+  row's email line is the truth. An invoice's `invoice_sent` is logged when its email actually goes.
+- **Delete (task 18)** is refused while a non-legacy invoice is scheduled, sent or paid, and so is
+  deleting that project's billed or last estimate in the editor (task 19). Voiding (task 20) leaves
+  a draft replacement, so a project whose only sent invoice is voided can be deleted again.
+- **A paid invoice can't be un-marked** (D100: corrected by a credit note, not built).
+- **Sends:** `freezeVersion` is called by Confirm / Copy link (`POST /send`) inside its transaction.
+  Stage D's `POST …/sent` routes still exist for tests; nothing in the app calls them.
+
+**For review at task 8 (Cost Breakdown); settled 2026-10-02, the user approved the sample:** how attribution splits money between surcharges is an
+implementation choice, not a user decision. For example, under "multiply", after hours is charged
+on the weekend price. The totals are fixed by the brief; only the row labels depend on it. Show the
+user one Cost Breakdown before calling it done.
+
+## Things a fresh agent will want to argue with
+
+- **Surcharges are hidden from the client** (decision 8). That's deliberate: the price is folded into
+  each item and rounded up to the dollar, and the reasons live in the Cost Breakdown.
+- **"Estimate" is the only name** (30). There's no "quote" object. A sent estimate is a frozen
+  version (34).
+- **Only the section with id `prod` is on set** (24), whatever it's called, and it becomes
+  undeletable. The user turned down a per-section flag.
+- **A confirmed day locks the whole date**, but a required note overrides it (16), because a
+  subcontractor may shoot the second job.
+- **Accept is paused, not flagged, when a proposed date is taken** (41). This narrows decision 18
+  for the client page.
+- **The card fee is always passed on** (49), capped by law at the cost of acceptance, so it's a %
+  setting.
+- **The security bar is low by choice** (root `CLAUDE.md`). Client pages are public by unguessable
+  link. Don't re-raise it, but keep internal figures (floors, tax set-aside, take-home, the Cost
+  Breakdown) off every public route.
+
+## Money rules that carry over (from the codebase, not re-decided)
+
+- Surcharges are income: taxed, no extra hours, and no change to the floors or Minimum Job Price.
+- Saved estimates never move. Lines snapshot their surcharged price. The estimate snapshots the
+  multipliers, the stacking mode and each day's weekend/holiday status.
+- `calc.js` is two byte-identical copies. Any surcharge maths lives there, with worked-example
+  tests, and mutations are checked.
+
+## How to verify your work
+
+As for the earlier tracks: `npm test` in `server/`; the `calc.js` drift test; for money maths, break
+the line and confirm a test fails. Anything a person sees is checked in the browser against
+`api-scratch` at 1280 / 800 / 375.

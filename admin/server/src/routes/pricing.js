@@ -1,0 +1,198 @@
+'use strict';
+
+const { nowIso } = require('../db');
+const { DEFAULT_PRICING } = require('../defaults');
+const { readPricing } = require('../ratecard');
+const { SERVICE_UNITS, cardShapeOutdated, serviceDayOk } = require('../calc');
+
+/**
+ * The money-bearing fields of a rate card, checked before it is stored
+ * (2026-09-28 audit — this route used to store any JSON). The screen checks
+ * the same things; this is the rule, the screen the courtesy. The trap it
+ * matters most for is units: taxSetAsideRate is a FRACTION, and a 35 stored
+ * here would set aside 35× every job's income.
+ *
+ * pricing_shape_outdated (v9, Project build archive/tracks/service-rate-tiers/). This route writes
+ * the card as one whole document, so a browser still running the web build from
+ * before v9 — a cached Pages copy, a tab left open over the deploy — would read
+ * the new card, not understand it, and save the old shape back over it. Any
+ * labour row carrying `mu`, `hoursPerUnit` or `dayUnit`, or lacking `prices`,
+ * and any card without `serviceDay` (which no old build sends) — calc.js
+ * cardShapeOutdated — is refused with this code, checked FIRST so an old
+ * build always gets it and not some other complaint. The screen tells the user
+ * to reload. Since task 6a the card also has to carry calc.js PRICING_SHAPE
+ * as `pricingShape`: a build before it would save an auto travel price back
+ * as a typed $0.
+ * @returns {string|null} an error code, or null.
+ */
+function pricingProblem(body) {
+  const nonNeg = (v) => v === undefined || v === null || v === '' || (Number.isFinite(Number(v)) && Number(v) >= 0);
+  const sections = Array.isArray(body.labourSections) ? body.labourSections : [];
+  const labourRows = [];
+  for (const sec of sections) {
+    for (const r of (sec && Array.isArray(sec.rows)) ? sec.rows : []) labourRows.push(r);
+  }
+
+  if (cardShapeOutdated(body)) return 'pricing_shape_outdated';
+
+  const { fullHours, halfHours } = body.serviceDay;
+  if (!serviceDayOk(fullHours) || !serviceDayOk(halfHours)) return 'service_day_out_of_range';
+  if (halfHours > fullHours) return 'service_day_half_over_full';
+
+  if (body.taxSetAsideRate !== undefined) {
+    const t = Number(body.taxSetAsideRate);
+    if (!Number.isFinite(t) || t < 0 || t >= 1) return 'tax_set_aside_rate_not_a_fraction';
+  }
+  /* Card fees (pricing-floor P7): a PERCENT, 1.65 is 1.65%, built into every
+     auto price for every client (never a card-only surcharge). Unlike the tax
+     reserve it is not a fraction, so a 0.0165 typed by mistake is caught by the
+     screen's hint, not here; what is refused is a fee no card scheme charges
+     (over 10%), a negative one, and anything that isn't a number. Absent or
+     null is no fee. */
+  if (body.cardFeePct !== undefined && body.cardFeePct !== null) {
+    const f = body.cardFeePct;
+    if (typeof f !== 'number' || !Number.isFinite(f) || f < 0 || f > 10) return 'card_fee_out_of_range';
+  }
+  for (const r of labourRows) {
+    for (const unit of SERVICE_UNITS) {
+      if (!(unit in r.prices)) return 'labour_prices_incomplete';
+      const p = r.prices[unit];
+      // A number set by the user, or null for auto. A typed $0 is a price.
+      if (p === null) continue;
+      if (typeof p !== 'number' || !Number.isFinite(p)) return 'labour_price_not_a_number';
+      if (p < 0) return 'labour_price_negative';
+    }
+    if (!nonNeg(r.rate)) return 'labour_price_negative';
+    // The Capture tick (B2-1, D89): a flag or nothing, never "yes" or 1.
+    if (r.capture !== undefined && typeof r.capture !== 'boolean') return 'labour_capture_not_a_flag';
+  }
+  for (const r of Array.isArray(body.travelRows) ? body.travelRows : []) {
+    if (!nonNeg(r.mu) || !nonNeg(r.rate)) return 'travel_price_negative';
+    /* No price is auto on an own-time row (task 6a), and nothing anywhere
+       else: a resold row saved blank would quote at $0 (calc.js reads a
+       legacy blank that way). A Direct row's price prices nothing, so it may
+       be blank. */
+    /* The car's row (task 6b) takes its price from Overhead, and is never
+       also Your time or Direct: each of those would bill it a different way. */
+    if (r.perKm === true && (r.ownTime === true || r.directCost === true)) return 'travel_per_km_flags';
+    const blank = r.mu === undefined || r.mu === null || r.mu === '';
+    if (blank && !(r.ownTime === true || r.directCost === true || r.perKm === true)) return 'travel_price_missing';
+  }
+  if (body.surcharges !== undefined) {
+    const problem = surchargesProblem(body.surcharges);
+    if (problem) return problem;
+  }
+  if (body.deliverableTypes !== undefined && !deliverableTypesOk(body.deliverableTypes)) return 'deliverable_types_invalid';
+  return null;
+}
+
+/**
+ * The card's Deliverable Types (production-booking B2-1, D91; per-service
+ * multipliers since post-multipliers PM2, v19): a list of
+ * `{ id, name, description, services: [{ name, multiplier }…] }`. Only what
+ * the planner would otherwise have to guess at is checked: an id to tag
+ * deliverables by, and each service a post row's name with its multiplier, a
+ * real number of post hours per capture hour, not below 0 and to at most two
+ * decimals (what the Rate Card can type; calc.js typeServices and postPlan
+ * read it). A service no longer on the card is allowed; the editor skips it
+ * (the IA's B2 data model).
+ *
+ * The shape before v19 is refused: a service as a bare name, or a type-wide
+ * `multiplier`. A build that still writes it is refused first as
+ * pricing_shape_outdated (calc.js PRICING_SHAPE); this is the backstop.
+ * @returns {boolean}
+ */
+const twoDecimals = (n) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6;
+function serviceOk(s) {
+  return s && typeof s === 'object' && !Array.isArray(s) &&
+    typeof s.name === 'string' &&
+    typeof s.multiplier === 'number' && Number.isFinite(s.multiplier) && s.multiplier >= 0 && twoDecimals(s.multiplier);
+}
+function deliverableTypesOk(types) {
+  if (!Array.isArray(types)) return false;
+  return types.every((t) =>
+    t && typeof t === 'object' && !Array.isArray(t) &&
+    typeof t.id === 'string' && t.id !== '' &&
+    (t.services === undefined || (Array.isArray(t.services) && t.services.every(serviceOk))) &&
+    t.multiplier === undefined
+  );
+}
+
+/**
+ * The card's surcharge settings (production-booking task 2). A card without
+ * them is fine — calc.js surchargeSettings reads the defaults — but one that
+ * has them must say something calc.js won't have to guess at: a multiplier
+ * below ×1 would be a discount (calc.js reads it as ×1, which would quietly
+ * not be what was typed), and office hours that end before they start have no
+ * "after". A field left out takes its default.
+ * @returns {string|null}
+ */
+const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
+function surchargesProblem(s) {
+  if (!s || typeof s !== 'object' || Array.isArray(s)) return 'surcharges_invalid';
+  for (const f of ['shortNotice', 'weekend', 'afterHours']) {
+    if (s[f] === undefined) continue;
+    if (typeof s[f] !== 'number' || !Number.isFinite(s[f]) || s[f] < 1 || s[f] > 10) return 'surcharge_multiplier_out_of_range';
+  }
+  if (s.shortNoticeHintDays !== undefined &&
+      !(Number.isInteger(s.shortNoticeHintDays) && s.shortNoticeHintDays >= 0 && s.shortNoticeHintDays <= 365)) {
+    return 'surcharge_hint_days_out_of_range';
+  }
+  if (s.officeStart !== undefined || s.officeEnd !== undefined) {
+    if (!CLOCK.test(String(s.officeStart)) || !CLOCK.test(String(s.officeEnd)) || s.officeEnd <= s.officeStart) {
+      return 'surcharge_office_hours_invalid';
+    }
+  }
+  if (s.workingWeekdays !== undefined) {
+    const d = s.workingWeekdays;
+    if (!Array.isArray(d) || !d.length || d.some((n) => !Number.isInteger(n) || n < 0 || n > 6) ||
+        new Set(d).size !== d.length) {
+      return 'surcharge_weekdays_invalid';
+    }
+  }
+  if (s.mode !== undefined && ['higher', 'multiply', 'highest'].indexOf(s.mode) === -1) return 'surcharge_mode_invalid';
+  return null;
+}
+
+function registerPricingRoutes(app, db) {
+  app.get('/api/pricing', (_req, res) => {
+    const row = db.prepare('SELECT updated_at FROM pricing WHERE id = 1').get();
+    res.json({ ok: true, pricing: readPricing(db), updatedAt: row ? row.updated_at : null });
+  });
+
+  // Whole-document write — this is the fix for the desktop app's fake
+  // "Save Rates" button. The row is upserted rather than requiring a
+  // separate seed step, so a fresh database just works on first save.
+  app.put('/api/pricing', (req, res) => {
+    const problem = pricingProblem(req.body || {});
+    if (problem === 'pricing_shape_outdated') {
+      // In words as well: the build this refuses knows no codes from after it
+      // was built, and shows the server's message.
+      return res.status(400).json({
+        error: problem,
+        message: 'This page is out of date — the rate card has changed shape since it was opened. ' +
+          'Reload the page, then make your changes again.',
+      });
+    }
+    if (problem) return res.status(400).json({ error: problem });
+    const now = nowIso();
+    const json = JSON.stringify(req.body || {});
+    db.prepare(`
+      INSERT INTO pricing (id, data_json, updated_at) VALUES (1, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET data_json = excluded.data_json, updated_at = excluded.updated_at
+    `).run(json, now);
+    res.json({ ok: true, pricing: JSON.parse(json), updatedAt: now });
+  });
+
+  app.post('/api/pricing/reset', (_req, res) => {
+    const now = nowIso();
+    const json = JSON.stringify(DEFAULT_PRICING);
+    db.prepare(`
+      INSERT INTO pricing (id, data_json, updated_at) VALUES (1, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET data_json = excluded.data_json, updated_at = excluded.updated_at
+    `).run(json, now);
+    res.json({ ok: true, pricing: DEFAULT_PRICING, updatedAt: now });
+  });
+}
+
+module.exports = { registerPricingRoutes, pricingProblem };

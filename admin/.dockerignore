@@ -1,0 +1,12 @@
+# The Docker build context is admin/ (server/Dockerfile, merge task M4). Only
+# what the image needs goes in: the server's code and the admin's pages. Never
+# data, .env, node_modules, the build archive or a local web/js/config.js.
+*
+!server/package.json
+!server/package-lock.json
+!server/src
+!server/scripts
+!web
+web/js/config.js
+web/README.md
+**/.DS_Store

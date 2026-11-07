@@ -1,0 +1,1239 @@
+'use strict';
+
+const crypto = require('crypto');
+const path = require('path');
+const Database = require('better-sqlite3');
+const { snapshotSync } = require('./backup');
+
+/**
+ * Schema migrations, applied in order. Each entry's `version` becomes the value
+ * in schema_version once it has run. Never edit a migration that has shipped —
+ * add a new one, so an existing billing.db upgrades the same way a fresh one is
+ * built.
+ */
+const MIGRATIONS = [
+  {
+    version: 1,
+    name: 'initial schema',
+    up(db) {
+      db.exec(`
+        -- The single account. No roles, no second user; the CHECK keeps it that
+        -- way rather than relying on the app to remember.
+        CREATE TABLE account (
+          id            INTEGER PRIMARY KEY CHECK (id = 1),
+          username      TEXT NOT NULL,
+          password_hash TEXT NOT NULL,
+          created_at    TEXT NOT NULL,
+          updated_at    TEXT NOT NULL
+        );
+
+        -- Session tokens are stored hashed, so a stolen copy of billing.db does
+        -- not hand over a live session.
+        CREATE TABLE sessions (
+          id           TEXT PRIMARY KEY,
+          created_at   TEXT NOT NULL,
+          expires_at   TEXT NOT NULL,
+          last_seen_at TEXT NOT NULL,
+          user_agent   TEXT,
+          ip           TEXT
+        );
+        CREATE INDEX idx_sessions_expires ON sessions (expires_at);
+
+        -- The CRM.
+        CREATE TABLE clients (
+          id            TEXT PRIMARY KEY,
+          business_name TEXT NOT NULL DEFAULT '',
+          contact_name  TEXT NOT NULL DEFAULT '',
+          email         TEXT NOT NULL DEFAULT '',
+          phone         TEXT NOT NULL DEFAULT '',
+          abn           TEXT NOT NULL DEFAULT '',
+          address       TEXT NOT NULL DEFAULT '',
+          notes         TEXT NOT NULL DEFAULT '',
+          created_at    TEXT NOT NULL,
+          updated_at    TEXT NOT NULL
+        );
+        CREATE INDEX idx_clients_business ON clients (business_name COLLATE NOCASE);
+
+        CREATE TABLE estimates (
+          id              TEXT PRIMARY KEY,
+          upid            TEXT NOT NULL DEFAULT '',
+          name            TEXT NOT NULL DEFAULT '',
+          date            TEXT NOT NULL DEFAULT '',
+          status          TEXT NOT NULL DEFAULT 'draft'
+                            CHECK (status IN ('draft','sent','approved','invoiced','paid')),
+          doc_type        TEXT NOT NULL DEFAULT 'estimate'
+                            CHECK (doc_type IN ('estimate','invoice')),
+          invoice_number  TEXT NOT NULL DEFAULT '',
+          -- Link to the CRM record, kept loose on purpose: deleting a client
+          -- must never delete or rewrite the estimates they appear on.
+          client_id       TEXT REFERENCES clients(id) ON DELETE SET NULL,
+          -- The client details as they were when this estimate was saved. This
+          -- is what the PDF renders from, so an old quote never changes when a
+          -- client's address is edited later.
+          client_json     TEXT NOT NULL DEFAULT '{}',
+          notes           TEXT NOT NULL DEFAULT '',
+          active_rows_json TEXT NOT NULL DEFAULT '{}',
+          totals_json     TEXT NOT NULL DEFAULT '{}',
+          created_at      TEXT NOT NULL,
+          updated_at      TEXT NOT NULL,
+          -- Derived from totals_json rather than stored twice, so the list view
+          -- can sort by value without a second source of truth to keep in sync.
+          total_inc_gst   REAL GENERATED ALWAYS AS
+                            (json_extract(totals_json, '$.totalIncGst')) VIRTUAL
+        );
+        CREATE INDEX idx_estimates_updated ON estimates (updated_at DESC);
+        CREATE INDEX idx_estimates_client  ON estimates (client_id);
+        CREATE INDEX idx_estimates_status  ON estimates (status);
+
+        -- Pricing and settings are each one JSON document with one row. They
+        -- are edited whole, read whole, and their shape belongs to the UI.
+        CREATE TABLE pricing (
+          id         INTEGER PRIMARY KEY CHECK (id = 1),
+          data_json  TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE settings (
+          id         INTEGER PRIMARY KEY CHECK (id = 1),
+          data_json  TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+      `);
+    },
+  },
+  {
+    version: 2,
+    name: 'snapshot labour category labels onto estimates',
+    up(db) {
+      // The labour category label is printed as a heading on the client-facing
+      // PDF (see serviceItemsHtml in pdf.js). Until now it was read from the
+      // live rate card at render time, so renaming a category silently
+      // re-headed every quote already sent under the old name, and deleting one
+      // re-headed them "Archived Services". The label belongs to the estimate
+      // for the same reason client_json does: the document was sent, and it
+      // must not change afterwards.
+      //
+      // Existing rows default to '{}' and fall back to the live card, which is
+      // the behaviour they have today — no estimate changes when this runs.
+      db.exec(`
+        ALTER TABLE estimates
+          ADD COLUMN section_labels_json TEXT NOT NULL DEFAULT '{}';
+      `);
+    },
+  },
+  {
+    version: 3,
+    name: 'per-estimate GST-free flag',
+    up(db) {
+      // Being GST-registered does not make every job GST-bearing. Until now GST
+      // was all-or-nothing per business (settings.gst.registered), so a GST-free
+      // job could only be quoted by switching GST off account-wide, which would
+      // have re-priced every other estimate saved afterwards.
+      //
+      // It lives on the estimate rather than being worked out at render time for
+      // the same reason client_json and section_labels_json do: the tax
+      // treatment of a document that has already gone to a client must not
+      // change underneath it.
+      //
+      // Existing rows default to 0, which is the behaviour they have today — no
+      // estimate's totals change when this runs.
+      db.exec(`
+        ALTER TABLE estimates
+          ADD COLUMN gst_free INTEGER NOT NULL DEFAULT 0;
+      `);
+    },
+  },
+  {
+    version: 4,
+    name: 'overhead items, overhead snapshots, and goals',
+    up(db) {
+      // Foundation for the Finance area (Project build archive/tracks/overhead-finance/): an
+      // Overhead page tracking real recurring costs, a Goals page stating
+      // income/margin targets, and a computed Overhead Rate/hr that replaces
+      // the Pricing screen's manually-guessed per-row `rate`. See
+      // DESIGN_BRIEF.md for the full rationale. Schema only — nothing here
+      // changes what an existing estimate bills.
+      db.exec(`
+        -- One row per recurring cost. 'category' is a fixed list by design
+        -- (the brief's Out of Scope explicitly rules out making it
+        -- user-editable), enforced here rather than trusted to the UI alone.
+        -- 'frequency' has no list specified anywhere in the brief or its
+        -- superseded predecessor as of this migration — weekly/monthly/
+        -- quarterly/annual/one_off is this migration's own choice, covering
+        -- every recurrence a subscription or annual fee could have. If the
+        -- Overhead route/view lands on a different set, add a new migration
+        -- to change it rather than editing this one.
+        CREATE TABLE overhead_items (
+          id         TEXT PRIMARY KEY,
+          name       TEXT NOT NULL,
+          category   TEXT NOT NULL
+                       CHECK (category IN
+                         ('software', 'admin_legal', 'marketing', 'hosting', 'tax', 'other')),
+          cost       REAL NOT NULL,
+          frequency  TEXT NOT NULL
+                       CHECK (frequency IN
+                         ('weekly', 'monthly', 'quarterly', 'annual', 'one_off')),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX idx_overhead_items_category ON overhead_items (category);
+
+        -- Append-only history, one row per overhead add/edit/delete, written by
+        -- the CRUD handlers in routes/overhead.js — not its own write route.
+        -- Feeds the Overhead tab's trend chart. No update/delete route by
+        -- design: it's a log, not editable state.
+        CREATE TABLE overhead_snapshots (
+          id               TEXT PRIMARY KEY,
+          ts               TEXT NOT NULL,
+          total_annual     REAL NOT NULL,
+          by_category_json TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE INDEX idx_overhead_snapshots_ts ON overhead_snapshots (ts);
+
+        -- Singleton, same pattern as pricing/settings: no row is seeded here.
+        -- GET /api/goals falls back to defaults with updatedAt: null until the
+        -- first PUT, matching the "a never-saved row is not an empty one"
+        -- convention pricing/settings already use.
+        --
+        -- Deliberately no tax column: Tax Reserve Target reads/writes
+        -- pricing.taxSetAsideRate via the existing /api/pricing route. A
+        -- second tax field here would violate "one number, one truth" — see
+        -- the brief's Design Principles.
+        CREATE TABLE goals (
+          id                             INTEGER PRIMARY KEY CHECK (id = 1),
+          desired_net_income             REAL NOT NULL,
+          target_profit_margin_pct       REAL NOT NULL,
+          billable_capacity_hrs_per_week REAL NOT NULL,
+          created_at                     TEXT NOT NULL,
+          updated_at                     TEXT NOT NULL
+        );
+      `);
+    },
+  },
+  {
+    version: 5,
+    name: 'capacity fields, depreciation assets and lodgement locks',
+    up(db) {
+      // Foundation for Finance & Price (Project build archive/tracks/price-calculator/): real
+      // working-days capacity in place of an assumed 48-week year, and a
+      // capital-asset register that feeds both the accountant's depreciation
+      // schedule and the gear replacement reserve inside the overhead rate.
+      // Schema only — nothing here changes what an existing estimate bills.
+      //
+      // FOUR DECISIONS THIS MIGRATION MAKES ON ITS OWN, because no design doc
+      // specifies them. Each follows v4's precedent for `frequency`: the choice
+      // is made here, recorded here, and changed by a NEW migration if a route
+      // or view later lands somewhere else.
+      //
+      //   1. `business_use_pct` STORES A PERCENT (100 means 100%), not a
+      //      fraction. The IA doc writes the arithmetic as
+      //      `decline × business_use_pct`, which reads like a fraction, but
+      //      `goals.target_profit_margin_pct` already establishes the
+      //      convention that a _pct column holds 0–100 and calc.js divides. A
+      //      fraction here would be the only _pct column in the schema that
+      //      isn't. THE DEPRECIATION CHAIN MUST DIVIDE BY 100 — getting this
+      //      wrong is a silent 100× error on every deduction, which is exactly
+      //      the units trap calc.js's header warns about.
+      //   2. `category` needs an enum and none is specified. The list below is
+      //      this migration's own, chosen for a videography business.
+      //      `vehicle` is not optional: step 2 of the depreciation chain caps
+      //      cars at the car limit, and without the category nothing can tell
+      //      which assets that applies to.
+      //   3. `car_limit` is a column even though the task's field list omits
+      //      it. Step 2 of the chain needs a user-entered limit, and it is
+      //      per-asset rather than global because the limit that applies is the
+      //      one in force for the FY the car was first used — a 2019 car and a
+      //      2026 car are capped differently and always will be. A nullable
+      //      column now is cheaper than a second migration during the
+      //      depreciation task.
+      //   4. `depreciation_locks` has NO unique constraint on `fy_label`. A
+      //      re-lodgement is an amendment, and amendments are exactly what an
+      //      append-only log should keep. READERS MUST TAKE THE MOST RECENT ROW
+      //      PER FY (`ORDER BY locked_at DESC LIMIT 1`), not assume one.
+      db.exec(`
+        -- ── Capacity ────────────────────────────────────────────────────────
+        -- The four fields that replaced the assumed 48-week year. Annual
+        -- billable hours are DERIVED from these by calc.js's
+        -- annualBillableHours(), never stored: a stored copy would be a second
+        -- truth to keep in sync.
+        --
+        -- SEEDED WITH THE REFERENCE DEFAULTS (8 / 5 / 30 / 8), not derived from
+        -- billable_capacity_hrs_per_week. Leave and sick days cannot be
+        -- recovered from a single weekly figure, and splitting one into the
+        -- other two would be inventing the user's leave. The Capacity screen
+        -- flags these as defaults to confirm, which is the honest version of
+        -- not knowing.
+        --
+        -- LEAVE AND SICK DAYS ARE WORKING DAYS, NOT CALENDAR DAYS. Four weeks
+        -- off is 20, not 28. The entry labels carry that burden; nothing here
+        -- can tell the difference.
+        ALTER TABLE goals ADD COLUMN billable_hours_per_day  REAL NOT NULL DEFAULT 8;
+        ALTER TABLE goals ADD COLUMN working_days_per_week   REAL NOT NULL DEFAULT 5;
+        ALTER TABLE goals ADD COLUMN leave_days_per_year     REAL NOT NULL DEFAULT 30;
+        ALTER TABLE goals ADD COLUMN sick_days_per_year      REAL NOT NULL DEFAULT 8;
+
+        -- The instant-asset-write-off threshold, used only to decide when the
+        -- Overhead form should ask "is this actually a capital asset?".
+        --
+        -- NULLABLE ON PURPOSE, AND NOT DEFAULTED. This figure moves with the
+        -- federal budget, so a schema default would be the hardcoded ATO
+        -- threshold the design explicitly refuses — the screen shows the
+        -- current figure as a placeholder with a confirm-with-your-accountant
+        -- note, and NULL means the user has not confirmed one. A default of 0
+        -- would be worse than NULL: every one-off expense exceeds 0, so the
+        -- double-count hint would fire on all of them and be trained away.
+        ALTER TABLE goals ADD COLUMN iawo_threshold REAL;
+
+        -- billable_capacity_hrs_per_week (added in v4) IS DELIBERATELY KEPT.
+        -- LEGACY, DISPLAY-ONLY: recomputed on save as annualBillableHours ÷ 52,
+        -- read by nothing, safe to drop in a later migration. Dropping it here
+        -- would mean a table rebuild and a migration that cannot infer the
+        -- leave and sick values it would have to replace it with. It is NOT an
+        -- input to any rate any more — do not start computing from it, and do
+        -- not delete it mid-feature. calc.js's annualBillableHoursFromGoals()
+        -- reads it only through a transitional branch that the Capacity screen
+        -- task removes.
+
+        -- ── Capital assets ──────────────────────────────────────────────────
+        -- One row per item of gear. Depreciation schedules are COMPUTED ON READ
+        -- from these rows and never stored, so they cannot drift from the
+        -- assets they describe; the only stored figures are the lodgement
+        -- snapshots below.
+        CREATE TABLE depreciation_assets (
+          id                        TEXT PRIMARY KEY,
+
+          -- Identity
+          name                      TEXT NOT NULL,
+          category                  TEXT NOT NULL
+                                      CHECK (category IN
+                                        ('camera', 'lens', 'lighting', 'audio',
+                                         'computer', 'drone', 'vehicle', 'other')),
+          serial_number             TEXT NOT NULL DEFAULT '',
+          supplier                  TEXT NOT NULL DEFAULT '',
+
+          -- Acquisition. TWO DATES, BOTH REQUIRED, AND THEY ARE NOT THE SAME:
+          -- purchase_date is when it was bought; start_date is the ATO "start
+          -- time", when it was first used or installed ready for use, and it is
+          -- the one daysHeld runs from. A camera bought in June and first used
+          -- in July belongs to the next financial year.
+          purchase_date             TEXT NOT NULL,
+          start_date                TEXT NOT NULL,
+
+          -- cost_inc_gst is what was paid. The cost base subtracts gst_amount
+          -- only when the credit was actually claimed, which is why the flag is
+          -- per asset rather than read from settings.gst: registration status
+          -- changes over time and an asset's cost base is fixed at acquisition.
+          cost_inc_gst              REAL NOT NULL,
+          gst_amount                REAL NOT NULL DEFAULT 0,
+          gst_credit_claimed        INTEGER NOT NULL DEFAULT 0
+                                      CHECK (gst_credit_claimed IN (0, 1)),
+
+          -- ATO treatment. The two pool methods are POOL-LEVEL: such a row
+          -- contributes its cost base to a pool balance rather than having a
+          -- decline of its own, and the schedule renders pool rows separately.
+          method                    TEXT NOT NULL
+                                      CHECK (method IN
+                                        ('diminishing_value', 'prime_cost', 'instant_writeoff',
+                                         'small_business_pool', 'low_value_pool')),
+          effective_life_years      REAL,
+          -- 0–100, A PERCENT — see decision 1 in the comment above. Divide by
+          -- 100 before multiplying anything by it.
+          business_use_pct          REAL NOT NULL DEFAULT 100
+                                      CHECK (business_use_pct >= 0 AND business_use_pct <= 100),
+          -- NULL means "this asset starts at its cost base". A value is for
+          -- gear that was already part-depreciated when it was entered, so the
+          -- schedule does not restart a three-year-old camera at full value.
+          opening_adjustable_value  REAL,
+          -- Vehicles only; NULL for everything else. See decision 3.
+          car_limit                 REAL,
+
+          -- Pricing. These drive the replacement reserve inside the overhead
+          -- rate and have nothing to do with tax. replacement_cost_estimate is
+          -- deliberately NOT historical cost: pricing has to recover what the
+          -- NEXT body costs.
+          replacement_cycle_years   REAL,
+          replacement_cost_estimate REAL,
+
+          -- Disposal. NULL disposal_date is the "still held" signal, and it is
+          -- what replacementReserveTotal() filters on — sold gear must stop
+          -- inflating overhead immediately, while staying on its disposal FY's
+          -- schedule for the balancing adjustment.
+          disposal_date             TEXT,
+          disposal_proceeds         REAL,
+          disposal_reason           TEXT NOT NULL DEFAULT '',
+
+          notes                     TEXT NOT NULL DEFAULT '',
+          created_at                TEXT NOT NULL,
+          updated_at                TEXT NOT NULL
+        );
+        -- The register sorts by category then start date, and the schedule
+        -- filters by held-in-FY, which is start_date plus disposal_date.
+        CREATE INDEX idx_depreciation_assets_category ON depreciation_assets (category, start_date);
+        CREATE INDEX idx_depreciation_assets_start ON depreciation_assets (start_date);
+        CREATE INDEX idx_depreciation_assets_disposal ON depreciation_assets (disposal_date);
+
+        -- ── Lodgement locks ─────────────────────────────────────────────────
+        -- Append-only, one row per "Mark FY as lodged". Same discipline and the
+        -- same reasoning as overhead_snapshots: it is a log, not editable
+        -- state, so there is no update route and no delete route.
+        --
+        -- Why it exists at all: schedules are recomputed from the assets on
+        -- every read, so editing an asset's effective life in 2027 would
+        -- silently rewrite what was filed in 2026. figures_json is that year's
+        -- computed figures frozen at lodgement; the schedule shows them with a
+        -- badge and FLAGS DIVERGENCE if live recomputation now disagrees,
+        -- rather than quietly adopting the new numbers.
+        --
+        -- No UNIQUE on fy_label — see decision 4. Take the latest row per FY.
+        CREATE TABLE depreciation_locks (
+          id           TEXT PRIMARY KEY,
+          fy_label     TEXT NOT NULL,
+          locked_at    TEXT NOT NULL,
+          figures_json TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE INDEX idx_depreciation_locks_fy ON depreciation_locks (fy_label, locked_at);
+      `);
+    },
+  },
+  {
+    version: 6,
+    name: 'goals: income and margin may be unset, capacity confirmation',
+    up(db) {
+      // Two changes the Capacity screen needs, both about telling "not set"
+      // apart from a real number.
+      //
+      // 1. desired_net_income AND target_profit_margin_pct BECOME NULLABLE.
+      //    v4 made them NOT NULL because one screen (Goals) wrote all three
+      //    fields at once. Capacity is now a second writer to the same
+      //    singleton row, and it can be the FIRST — the IA doc's first-run flow
+      //    goes Dashboard → Capacity → save before Profit Goals is ever opened.
+      //    With NOT NULL, that first insert has to invent an income and a
+      //    margin, and the only candidate is 0. A 0% margin is not an empty
+      //    state: minimumJobPrice() accepts it as "break even" and the floor
+      //    renders as a real figure that nobody chose. NULL keeps the em-dash
+      //    set-up prompt, which is what an unset margin already means
+      //    everywhere else (GET returns nulls for a row that doesn't exist).
+      //
+      // 2. capacity_confirmed_at IS NEW. v5 seeded 8 / 5 / 30 / 8 onto every
+      //    row, and the Capacity screen must flag those as defaults until the
+      //    user confirms them. Comparing against 8/5/30/8 can't answer that —
+      //    they are the user's own reference-spreadsheet figures, so a person
+      //    who genuinely works them would be nagged forever. So the route
+      //    stamps this when a PUT carries all four capacity fields (only the
+      //    Capacity screen does), and NULL means "never confirmed".
+      //
+      // SQLite cannot drop a NOT NULL constraint in place, so the table is
+      // rebuilt. Every column and value is carried across unchanged, including
+      // the legacy billable_capacity_hrs_per_week (still NOT NULL: the route
+      // always computes it) and v5's seeded capacity fields. No foreign key
+      // references goals, so the drop is safe with foreign_keys = ON.
+      db.exec(`
+        CREATE TABLE goals_v6 (
+          id                             INTEGER PRIMARY KEY CHECK (id = 1),
+          desired_net_income             REAL,
+          target_profit_margin_pct       REAL,
+          billable_capacity_hrs_per_week REAL NOT NULL,
+          created_at                     TEXT NOT NULL,
+          updated_at                     TEXT NOT NULL,
+          billable_hours_per_day         REAL NOT NULL DEFAULT 8,
+          working_days_per_week          REAL NOT NULL DEFAULT 5,
+          leave_days_per_year            REAL NOT NULL DEFAULT 30,
+          sick_days_per_year             REAL NOT NULL DEFAULT 8,
+          iawo_threshold                 REAL,
+          capacity_confirmed_at          TEXT
+        );
+        INSERT INTO goals_v6 (
+          id, desired_net_income, target_profit_margin_pct, billable_capacity_hrs_per_week,
+          created_at, updated_at, billable_hours_per_day, working_days_per_week,
+          leave_days_per_year, sick_days_per_year, iawo_threshold, capacity_confirmed_at
+        )
+        SELECT
+          id, desired_net_income, target_profit_margin_pct, billable_capacity_hrs_per_week,
+          created_at, updated_at, billable_hours_per_day, working_days_per_week,
+          leave_days_per_year, sick_days_per_year, iawo_threshold, NULL
+        FROM goals;
+        DROP TABLE goals;
+        ALTER TABLE goals_v6 RENAME TO goals;
+      `);
+    },
+  },
+  {
+    version: 7,
+    name: 'money-math audit: tax years, super, bad debt, resale, opening-value FY',
+    up(db) {
+      // From the 2026-09-28 money-math audit (Project build archive/tracks/price-calculator/
+      // HANDOVER.md, "What landed — audit fixes"). All additive: nullable
+      // columns and one new table, no rebuild.
+      //
+      // 1. tax_years — the ATO resident income-tax brackets and Medicare levy,
+      //    one row per financial year, ENTERED AND CONFIRMED BY THE USER. They
+      //    change with the federal budget, so nothing here seeds them: the
+      //    Profit Goals screen prefills placeholders the user saves as theirs,
+      //    the same rule as effective lives and the write-off threshold.
+      //    brackets_json is [{ from, ratePct }, …], ascending, PERCENT (15 is
+      //    15%), matching how a tax table is printed. medicare_levy_pct is a
+      //    percent too.
+      //
+      // 2. goals.super_pct / goals.bad_debt_pct — PERCENT, nullable (unset is
+      //    0, and says so on screen). Super is the personal concessional
+      //    contribution the owner wants on top of their pay; bad debt is the
+      //    share of invoices expected never to be paid.
+      //
+      // 3. depreciation_assets.expected_resale_value — what the old body will
+      //    sell for at replacement. The reserve recovers replacement cost LESS
+      //    this. Nullable: unset is 0.
+      //
+      // 4. depreciation_assets.opening_value_fy — the FY an
+      //    opening_adjustable_value applies FROM. Without it the override was
+      //    applied at start_date's FY and then declined again for every year
+      //    since, double-depreciating gear entered part-way through its life.
+      //    Backfilled from created_at for every row that already carries an
+      //    override, because the form described it as the value "when you
+      //    entered it here".
+      db.exec(`
+        CREATE TABLE tax_years (
+          fy_label          TEXT PRIMARY KEY,
+          brackets_json     TEXT NOT NULL,
+          medicare_levy_pct REAL NOT NULL CHECK (medicare_levy_pct >= 0 AND medicare_levy_pct < 100),
+          updated_at        TEXT NOT NULL
+        );
+        ALTER TABLE goals ADD COLUMN super_pct REAL;
+        ALTER TABLE goals ADD COLUMN bad_debt_pct REAL;
+        ALTER TABLE depreciation_assets ADD COLUMN expected_resale_value REAL;
+        ALTER TABLE depreciation_assets ADD COLUMN opening_value_fy TEXT;
+      `);
+
+      const { fyLabel } = require('./calc');
+      const rows = db.prepare(
+        'SELECT id, created_at FROM depreciation_assets WHERE opening_adjustable_value IS NOT NULL'
+      ).all();
+      const set = db.prepare('UPDATE depreciation_assets SET opening_value_fy = ? WHERE id = ?');
+      for (const r of rows) set.run(fyLabel(String(r.created_at || '').slice(0, 10)), r.id);
+    },
+  },
+  {
+    version: 8,
+    name: 'overhead_items: five more operating-cost categories',
+    up(db) {
+      // Asked for by the user 2026-09-28: Motor vehicle expenses, Mobile phone
+      // and internet, Home office, Advertising and marketing, Training and
+      // education. "Advertising and marketing" is the existing 'marketing'
+      // value with a new label (views/overhead.js) — a second marketing
+      // category beside the first would split one kind of cost across two
+      // slices of the donut. So four new values, and no row changes category.
+      //
+      // SQLite can't alter a CHECK in place, so the table is rebuilt — the same
+      // pattern as v6. Every column and row is carried across unchanged, and
+      // nothing references overhead_items, so the drop is safe with
+      // foreign_keys = ON. overhead_snapshots keys its by_category_json on
+      // these same values and needs no change.
+      db.exec(`
+        CREATE TABLE overhead_items_v8 (
+          id         TEXT PRIMARY KEY,
+          name       TEXT NOT NULL,
+          category   TEXT NOT NULL
+                       CHECK (category IN
+                         ('software', 'admin_legal', 'marketing', 'hosting', 'tax', 'other',
+                          'motor_vehicle', 'phone_internet', 'home_office', 'training')),
+          cost       REAL NOT NULL,
+          frequency  TEXT NOT NULL
+                       CHECK (frequency IN
+                         ('weekly', 'monthly', 'quarterly', 'annual', 'one_off')),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO overhead_items_v8 (id, name, category, cost, frequency, created_at, updated_at)
+          SELECT id, name, category, cost, frequency, created_at, updated_at FROM overhead_items;
+        DROP TABLE overhead_items;
+        ALTER TABLE overhead_items_v8 RENAME TO overhead_items;
+        CREATE INDEX idx_overhead_items_category ON overhead_items (category);
+      `);
+    },
+  },
+  {
+    version: 9,
+    name: 'rate card: each service priced per hour, half day and full day',
+    up(db) {
+      // Project build archive/tracks/service-rate-tiers/ (2026-09-28). No table changes: this
+      // rewrites the JSON in pricing.data_json and estimates.active_rows_json.
+      // Snapshot every legacy estimate line against the OLD card first, then
+      // reshape the card (labour rows' mu / hoursPerUnit / dayUnit become
+      // prices: { hour, half, full }, and the card gains serviceDay), then log
+      // every row whose unit of work changed length. The steps, and why that
+      // order, are in migrations/v9-service-units.js.
+      require('./migrations/v9-service-units').migrateV9(db);
+    },
+  },
+  {
+    version: 10,
+    name: 'goals: what the car costs to run, per km',
+    up(db) {
+      // .design/estimate-accuracy/ task 6b (2026-09-30). The car's full
+      // running cost per km — fuel, servicing, tyres, rego, insurance, wear —
+      // entered once on Overhead and billed at cost on a quote's km line
+      // (calc.js travelRowDef). Deliberately NOT part of any overhead total:
+      // the car is recovered per km, not across every hour. Dollars per km,
+      // GST-exclusive like every Overhead cost. Nullable: unset is "no km
+      // price yet", never $0.
+      //
+      // Only if it isn't there: safe to run twice, as v9 is, because the
+      // upgrade tests rewind schema_version past a column that already exists.
+      const has = db.prepare('PRAGMA table_info(goals)').all().some((c) => c.name === 'vehicle_cost_per_km');
+      if (!has) db.exec('ALTER TABLE goals ADD COLUMN vehicle_cost_per_km REAL;');
+    },
+  },
+  {
+    version: 11,
+    name: 'production days, public holidays, and the surcharge snapshot',
+    up(db) {
+      // Project build archive/tracks/production-booking/ task 2 (2026-10-02; IA "Data Model",
+      // Stage A + B). All additive, and safe to run twice (the upgrade tests
+      // rewind schema_version past it).
+      //
+      // 1. production_days — a TABLE, not estimate JSON, because the calendar
+      //    is a range query across every estimate. date NULL is a Date TBC day
+      //    (D9). Times are 'HH:MM'; an end before the start is overnight and
+      //    belongs to the start date (D21). override_note is the specification
+      //    note that lets a day onto a date another estimate has confirmed
+      //    (D16). A production line points at its day with `dayId` inside
+      //    active_rows_json. ON DELETE CASCADE: deleting an estimate removes
+      //    its days (D22).
+      //
+      //    TRAP FOR STAGE D'S MIGRATION (v13, after B2 took v12): rebuilding
+      //    `estimates` (its status CHECK) by DROP TABLE with foreign_keys = ON
+      //    would cascade-delete every production day, and every rental (v12)
+      //    too. Turn foreign keys off for that rebuild, or copy both tables
+      //    out and back.
+      //
+      // 2. holidays — national + NSW public holidays (D6, D7). `hidden` is a
+      //    fetched date the owner removed, kept so a re-fetch never brings it
+      //    back. `fetched_at` (task 3) is when a fetch last confirmed a
+      //    fetched row; the newest one is the Rate Card's "last fetched".
+      //
+      // 3. estimates.short_notice (the tick, D19) and estimates.surcharges_json
+      //    (calc.js surchargeSnapshot: the settings it was priced under and
+      //    each dated day's kind). '{}' on every existing row, which prices
+      //    exactly as before: an estimate with no days has nothing surcharged.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS production_days (
+          id            TEXT PRIMARY KEY,
+          estimate_id   TEXT NOT NULL REFERENCES estimates(id) ON DELETE CASCADE,
+          date          TEXT,
+          status        TEXT NOT NULL CHECK (status IN ('confirmed', 'pencilled', 'proposed')),
+          start_time    TEXT,
+          end_time      TEXT,
+          override_note TEXT NOT NULL DEFAULT '',
+          sort          INTEGER NOT NULL DEFAULT 0,
+          created_at    TEXT NOT NULL,
+          updated_at    TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_production_days_date ON production_days (date);
+        CREATE INDEX IF NOT EXISTS idx_production_days_estimate ON production_days (estimate_id);
+
+        CREATE TABLE IF NOT EXISTS holidays (
+          date   TEXT PRIMARY KEY,
+          name   TEXT NOT NULL DEFAULT '',
+          source TEXT NOT NULL CHECK (source IN ('fetched', 'added')),
+          hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1)),
+          fetched_at TEXT
+        );
+      `);
+      // A holidays table made by v11 before task 3 has no fetched_at.
+      if (!db.prepare('PRAGMA table_info(holidays)').all().some((c) => c.name === 'fetched_at')) {
+        db.exec('ALTER TABLE holidays ADD COLUMN fetched_at TEXT;');
+      }
+      const cols = db.prepare('PRAGMA table_info(estimates)').all().map((c) => c.name);
+      if (!cols.includes('short_notice')) {
+        db.exec('ALTER TABLE estimates ADD COLUMN short_notice INTEGER NOT NULL DEFAULT 0;');
+      }
+      if (!cols.includes('surcharges_json')) {
+        db.exec("ALTER TABLE estimates ADD COLUMN surcharges_json TEXT NOT NULL DEFAULT '{}';");
+      }
+      moveOvertimeOffSet(db);
+    },
+  },
+  {
+    version: 12,
+    name: 'gear rentals',
+    up(db) {
+      // Project build archive/tracks/production-booking/ B2-2 (2026-10-03; IA "Data Model: Stage
+      // B2"). One new table, so nothing already stored moves. Safe to run
+      // twice (the upgrade tests rewind schema_version past it).
+      //
+      // rentals — when one vendor's hire on an estimate goes out and comes
+      // back (D82, D84). A TABLE, like production_days, because the calendar
+      // range-queries it across every estimate. It belongs to the estimate's
+      // equipment lines by vendor name (trimmed, case-insensitive; rentals.js),
+      // never by id, and prices nothing (D83). Either date may be blank; one
+      // with neither is on no calendar. ON DELETE CASCADE: deleting an
+      // estimate removes its rentals.
+      //
+      // The same TRAP FOR STAGE D'S MIGRATION as production_days (v11 above):
+      // rebuilding `estimates` by DROP TABLE with foreign_keys = ON would
+      // cascade-delete every rental too.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS rentals (
+          id          TEXT PRIMARY KEY,
+          estimate_id TEXT NOT NULL REFERENCES estimates(id) ON DELETE CASCADE,
+          vendor      TEXT NOT NULL,
+          out_date    TEXT,
+          out_method  TEXT CHECK (out_method IN ('pickup', 'postage')),
+          back_date   TEXT,
+          back_method TEXT CHECK (back_method IN ('return', 'postage')),
+          note        TEXT NOT NULL DEFAULT '',
+          sort        INTEGER NOT NULL DEFAULT 0,
+          created_at  TEXT NOT NULL,
+          updated_at  TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_rentals_estimate ON rentals (estimate_id);
+        CREATE INDEX IF NOT EXISTS idx_rentals_out_date ON rentals (out_date);
+        CREATE INDEX IF NOT EXISTS idx_rentals_back_date ON rentals (back_date);
+      `);
+    },
+  },
+  {
+    version: 13,
+    name: 'projects, estimate statuses, invoices and activity',
+    // Rebuilds `estimates` (its status CHECK). With foreign keys on, that
+    // DROP TABLE would cascade-delete every production day and rental (the
+    // trap v11 and v12 warn about), so this one runs with them off and is
+    // checked with foreign_key_check before it commits. See migrate().
+    foreignKeysOff: true,
+    up(db) {
+      // Project build archive/tracks/production-booking/ task 15 (2026-10-03; IA "Data Model",
+      // Stage D). The steps, and why, are in migrations/v13-projects.js.
+      require('./migrations/v13-projects').migrateV13(db);
+    },
+  },
+  {
+    version: 14,
+    name: 'sent versions, client links, signatures and the send queue',
+    up(db) {
+      // Project build archive/tracks/production-booking/ task 25 (IA "Stage E (v14)"). Additive
+      // only: new tables and two nullable columns, so no rebuild and no
+      // foreign_keys dance.
+      //
+      // A sent estimate is frozen as a version (D34). `snapshot_json` is the
+      // whole estimate as sent (owner-only: its totals carry the internal
+      // figures) plus the rate-card sections its PDF reads; `client_view_json`
+      // is what the client page shows, built once at send time by
+      // public.js's serializer, so a public route only ever reads that.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS estimate_versions (
+          id               TEXT PRIMARY KEY,
+          estimate_id      TEXT NOT NULL REFERENCES estimates(id) ON DELETE CASCADE,
+          n                INTEGER NOT NULL CHECK (n >= 1),
+          snapshot_json    TEXT NOT NULL,
+          client_view_json TEXT NOT NULL,
+          sent_at          TEXT NOT NULL,
+          valid_until      TEXT,
+          superseded_at    TEXT,
+          UNIQUE (estimate_id, n)
+        );
+        CREATE INDEX IF NOT EXISTS idx_estimate_versions_estimate ON estimate_versions(estimate_id);
+
+        -- One signature per version (D40, D66): the accept is idempotent per
+        -- version, and the signed PDF's bytes live here so the backup has them.
+        CREATE TABLE IF NOT EXISTS signatures (
+          id               TEXT PRIMARY KEY,
+          version_id       TEXT NOT NULL UNIQUE REFERENCES estimate_versions(id) ON DELETE CASCADE,
+          full_name        TEXT NOT NULL,
+          role             TEXT NOT NULL,
+          ip               TEXT NOT NULL DEFAULT '',
+          user_agent       TEXT NOT NULL DEFAULT '',
+          signed_at        TEXT NOT NULL,
+          agreement_text   TEXT NOT NULL,
+          agreement_sha256 TEXT NOT NULL,
+          pdf_blob         BLOB
+        );
+
+        -- The send queue (task 28, D43, D47). doc_id points at an estimate or
+        -- an invoice by doc_kind, so it carries no foreign key.
+        CREATE TABLE IF NOT EXISTS sends (
+          id            TEXT PRIMARY KEY,
+          doc_kind      TEXT NOT NULL CHECK (doc_kind IN ('estimate', 'invoice')),
+          doc_id        TEXT NOT NULL,
+          -- 'document' is the estimate or invoice going to the client; the two
+          -- signing emails (the owner's notice, the client's signed copy) use
+          -- doc_kind 'estimate' with the signed version's id.
+          purpose       TEXT NOT NULL DEFAULT 'document'
+                        CHECK (purpose IN ('document', 'owner_signed', 'client_signed_copy')),
+          version_id    TEXT REFERENCES estimate_versions(id) ON DELETE SET NULL,
+          to_email      TEXT NOT NULL DEFAULT '',
+          message       TEXT NOT NULL DEFAULT '',
+          scheduled_for TEXT NOT NULL,
+          status        TEXT NOT NULL DEFAULT 'scheduled'
+                        CHECK (status IN ('scheduled', 'sending', 'sent', 'failed', 'cancelled')),
+          sent_at       TEXT,
+          late          INTEGER NOT NULL DEFAULT 0,
+          error         TEXT,
+          created_at    TEXT NOT NULL,
+          updated_at    TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_sends_due ON sends(status, scheduled_for);
+        CREATE INDEX IF NOT EXISTS idx_sends_doc ON sends(doc_kind, doc_id);
+      `);
+      // One unguessable link per estimate, resolved to its latest version, so
+      // a re-send keeps the link (IA). Invoices get theirs at task 30.
+      ['estimates', 'invoices'].forEach((table) => {
+        const has = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === 'public_token');
+        if (!has) db.exec(`ALTER TABLE ${table} ADD COLUMN public_token TEXT;`);
+        db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_${table}_public_token ON ${table}(public_token)
+                   WHERE public_token IS NOT NULL;`);
+      });
+      // No `payments` table: card payment is held (D101). It's a new table,
+      // so whoever picks Stripe up adds it in its own migration.
+    },
+  },
+  {
+    version: 15,
+    name: 'account email and password reset links',
+    up(db) {
+      // Project build archive/tracks/account-recovery/. Additive only. The account's email is where
+      // a "forgot password" link goes; '' means none is set, and then no link
+      // can be sent. A reset link's token is stored as its HMAC, as a
+      // session's is, so a copy of billing.db holds no usable link.
+      const has = db.prepare('PRAGMA table_info(account)').all().some((c) => c.name === 'email');
+      if (!has) db.exec("ALTER TABLE account ADD COLUMN email TEXT NOT NULL DEFAULT '';");
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS password_resets (
+          id         TEXT PRIMARY KEY,
+          created_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          used_at    TEXT,
+          ip         TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_password_resets_expires ON password_resets (expires_at);
+      `);
+    },
+  },
+  {
+    version: 16,
+    name: 'trips, call sheet links and the Google Calendar tables',
+    up(db) {
+      // Project build archive/tracks/trip-planner/ task 1 (IA "Data & API" appendix). Additive
+      // only: nullable or defaulted columns and new tables, so no rebuild.
+      //
+      // A day's planned trip (days.js parseTrip); null is no trip.
+      const addColumn = (table, column, ddl) => {
+        const has = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+        if (!has) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl};`);
+      };
+      addColumn('production_days', 'trip_json', 'trip_json TEXT');
+      // One call sheet link per estimate (T12, T13): a token made the first
+      // time the link is turned on, kept when it is turned off, so turning it
+      // back on gives the same link.
+      addColumn('estimates', 'call_sheet_token', 'call_sheet_token TEXT');
+      addColumn('estimates', 'call_sheet_on', 'call_sheet_on INTEGER NOT NULL DEFAULT 0');
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_estimates_call_sheet_token ON estimates(call_sheet_token)
+          WHERE call_sheet_token IS NOT NULL;
+
+        -- The one Google account the NAS writes the calendar with (G1). The
+        -- refresh token is stored plain (I3) and never leaves the NAS.
+        CREATE TABLE IF NOT EXISTS google_account (
+          id                INTEGER PRIMARY KEY CHECK (id = 1),
+          email             TEXT NOT NULL DEFAULT '',
+          refresh_token     TEXT NOT NULL,
+          access_token      TEXT,
+          access_expires_at TEXT,
+          calendars_json    TEXT NOT NULL DEFAULT '[]',
+          connected_at      TEXT NOT NULL
+        );
+
+        -- Which Google event each booked day is (G4). NO FOREIGN KEYS, on
+        -- purpose: an estimate save replaces its days whole (days.js
+        -- replaceDays), so a cascade from production_days would forget every
+        -- event on every save, and a deleted day or estimate still needs its
+        -- row to find the event to delete.
+        CREATE TABLE IF NOT EXISTS google_event_sync (
+          day_id      TEXT PRIMARY KEY,
+          estimate_id TEXT NOT NULL,
+          event_id    TEXT,
+          pushed_hash TEXT,
+          state       TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('synced', 'pending', 'error')),
+          error       TEXT,
+          attempts    INTEGER NOT NULL DEFAULT 0,
+          next_try_at TEXT,
+          updated_at  TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_google_event_sync_estimate ON google_event_sync(estimate_id);
+        CREATE INDEX IF NOT EXISTS idx_google_event_sync_due ON google_event_sync(state, next_try_at);
+
+        -- The call sheet's route images (Maps Static), cached by what they
+        -- show. No foreign key, for the same reason as above: the hash decides
+        -- whether a cached image still fits its day.
+        CREATE TABLE IF NOT EXISTS static_maps (
+          day_id     TEXT PRIMARY KEY,
+          hash       TEXT NOT NULL,
+          png        BLOB NOT NULL,
+          fetched_at TEXT NOT NULL
+        );
+      `);
+    },
+  },
+  {
+    version: 17,
+    name: 'asset recovery setting and day rate',
+    up(db) {
+      // .design/own-kit/ K1 (decisions K-D4, K-D5). Additive only: two columns
+      // on depreciation_assets, so no rebuild.
+      //
+      // recovery — how the business gets this asset's cost back. 'rate' (the
+      // register's "Overhead Floor", every existing row) keeps it in the
+      // replacement reserve that feeds the hourly rate; 'kit_hire' (On-Set
+      // Kit) takes it out of the reserve so it is billed per job as a kit line
+      // instead. Every row already in the register reads 'rate', which is what
+      // it was doing before the column existed.
+      //
+      // day_rate — what one day of the asset's own hire is billed at. Null is
+      // "no rate set yet" (a kit asset can be saved without one; it just can't
+      // be added to an estimate), never $0. Kept even when recovery is 'rate',
+      // so switching an asset back and forth doesn't lose the figure.
+      const addColumn = (column, ddl) => {
+        const has = db.prepare('PRAGMA table_info(depreciation_assets)').all().some((c) => c.name === column);
+        if (!has) db.exec(`ALTER TABLE depreciation_assets ADD COLUMN ${ddl};`);
+      };
+      addColumn('recovery', "recovery TEXT NOT NULL DEFAULT 'rate' CHECK (recovery IN ('rate', 'kit_hire'))");
+      addColumn('day_rate', 'day_rate REAL CHECK (day_rate IS NULL OR day_rate >= 0)');
+    },
+  },
+  {
+    version: 18,
+    name: 'goals: share of hours you can bill, and the card moves to 8 h / 65% / 10%',
+    up(db) {
+      // .design/pricing-floor/ PF2 (decisions P1, P2, P4). Additive: one
+      // column, no rebuild.
+      //
+      // utilisation_pct — the share of the hours worked that can be billed, a
+      // PERCENT (65 is 65%). Annual billable hours become days × hours worked ×
+      // this (calc.js annualBillableHours). NOT NULL DEFAULT 65, like the other
+      // capacity columns: a new install starts at 65 (P2).
+      //
+      // Then, on the existing row only, the card moves once and knowingly:
+      // hours worked 8 and 65% whatever was stored (the old billable-hours
+      // figure was already averaged down for admin, so keeping it would count
+      // admin twice), and the markup, now Business profit, 10% (P4). A NULL
+      // profit stays NULL: unset is the set-up prompt, never a number nobody
+      // chose (see v6). Saved estimates are untouched; their lines are
+      // snapshots and their stored totals stay as they were.
+      //
+      // Safe to run twice (the upgrade tests rewind schema_version): the column
+      // is added only if missing, and the same three values are written again.
+      const has = db.prepare('PRAGMA table_info(goals)').all().some((c) => c.name === 'utilisation_pct');
+      if (!has) {
+        db.exec(
+          'ALTER TABLE goals ADD COLUMN utilisation_pct REAL NOT NULL DEFAULT 65 ' +
+          'CHECK (utilisation_pct >= 1 AND utilisation_pct <= 100);'
+        );
+      }
+      const row = db.prepare('SELECT * FROM goals WHERE id = 1').get();
+      if (!row) return; // a fresh database: the first save writes the defaults
+
+      const { annualBillableHours } = require('./calc');
+      const capacity = {
+        billableHoursPerDay: 8,
+        workingDaysPerWeek: row.working_days_per_week,
+        leaveDaysPerYear: row.leave_days_per_year,
+        sickDaysPerYear: row.sick_days_per_year,
+        utilisationPct: 65,
+      };
+      // The legacy weekly figure follows, as the route recomputes it on every
+      // save (routes/goals.js), so the two never disagree.
+      const annualHours = annualBillableHours(capacity);
+      const legacyHrsPerWeek = annualHours === null
+        ? row.billable_capacity_hrs_per_week
+        : Math.round((annualHours / 52) * 100) / 100;
+      const profit = row.target_profit_margin_pct === null ? null : 10;
+      db.prepare(`
+        UPDATE goals SET billable_hours_per_day = 8, utilisation_pct = 65,
+          target_profit_margin_pct = ?, billable_capacity_hrs_per_week = ?, updated_at = ?
+        WHERE id = 1
+      `).run(profit, legacyHrsPerWeek, nowIso());
+      console.log(
+        `[db] v18: capacity ${row.billable_hours_per_day} h/day at 100% → 8 h/day at 65%; ` +
+        `markup ${row.target_profit_margin_pct === null ? 'unset' : row.target_profit_margin_pct + '%'} → ` +
+        `business profit ${profit === null ? 'unset' : '10%'}`
+      );
+    },
+  },
+  {
+    version: 19,
+    name: 'deliverable types: a multiplier on each post service',
+    up(db) {
+      // .design/post-multipliers/ PM2 (decisions G4, G5). The card only: no
+      // table changes.
+      //
+      // Each Deliverable Type's services, bare Post-Production row names before
+      // v19, become `{ name, multiplier: 0 }` (G5: the owner re-enters every
+      // multiplier; a service added from now on starts at 1×, on screen), and
+      // the type-wide `multiplier` goes (G4). calc.js typeServices is the one
+      // reader of the shape, so it makes the new list: a name reads as 0×, an
+      // entry that is neither a name nor a named object is no service. Every
+      // other field of the card is left exactly as it was.
+      //
+      // Saved estimates are NOT touched (G9): a deliverable keeps its snapshot
+      // `multiplier` and its post lines carry no `postMultiplier`, so postPlan
+      // recommends what it did before, and a line bills its own qty as ever.
+      //
+      // Safe to run twice: a type already in the new shape reads back as itself.
+      const row = db.prepare('SELECT data_json FROM pricing WHERE id = 1').get();
+      if (!row) return; // a fresh database takes DEFAULT_PRICING, which has no types
+      const card = JSON.parse(row.data_json);
+      if (!Array.isArray(card.deliverableTypes) || !card.deliverableTypes.length) return;
+
+      const { typeServices } = require('./calc');
+      let services = 0;
+      card.deliverableTypes = card.deliverableTypes.map((t) => {
+        if (!t || typeof t !== 'object' || Array.isArray(t)) return t;
+        const { multiplier: _dropped, ...rest } = t;
+        const list = typeServices(t);
+        services += list.length;
+        return { ...rest, services: list };
+      });
+      db.prepare('UPDATE pricing SET data_json = ?, updated_at = ? WHERE id = 1').run(JSON.stringify(card), nowIso());
+      console.log(
+        `[db] v19: ${card.deliverableTypes.length} deliverable type(s), ${services} post service(s) ` +
+        'now at 0× each; the type multiplier is gone'
+      );
+    },
+  },
+  {
+    version: 20,
+    name: 'hnry invoices: where an invoice lives in Hnry',
+    up(db) {
+      // .design/hnry-invoicing/ H2. Additive, no rebuild. Invoices are created in
+      // Hnry as drafts and sent from there; the app keeps one row per invoice
+      // and records where it went. `number` stays the app's own reference (it is
+      // what Hnry's PO field carries); `hnry_number` is the number Hnry gave it
+      // and what the screens show once it is set.
+      //
+      //   invoices.hnry_invoice_id  Hnry's invoice id, as Zapier returns it (an
+      //                             opaque base64 gid); NULL = not in Hnry.
+      //   invoices.hnry_number      Hnry's `INV-…` number.
+      //   invoices.hnry_pushed_at   when the WHOLE invoice was in Hnry (ISO): NULL
+      //                             with an id set means some lines are still to go.
+      //   invoices.hnry_lines_done  how many of its lines Hnry has (a deposit or
+      //                             single is one; a final is its balance line,
+      //                             its extras and "less deposit"). A retry adds
+      //                             only the rest.
+      //   invoices.hnry_error       why the last push failed, a short code; NULL
+      //                             once it works. A failed push never blocks an
+      //                             acceptance (H3).
+      //   clients.hnry_client_id    the Hnry client this client was matched to,
+      //                             so a second job doesn't search again.
+      //
+      // Every existing invoice reads as "not in Hnry" and nothing about it
+      // changes. Safe to run twice (each column is added only when missing).
+      const addColumn = (table, name, type) => {
+        const has = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === name);
+        if (!has) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type};`);
+      };
+      addColumn('invoices', 'hnry_invoice_id', 'TEXT');
+      addColumn('invoices', 'hnry_number', 'TEXT');
+      addColumn('invoices', 'hnry_pushed_at', 'TEXT');
+      addColumn('invoices', 'hnry_lines_done', 'INTEGER');
+      addColumn('invoices', 'hnry_error', 'TEXT');
+      addColumn('clients', 'hnry_client_id', 'TEXT');
+      console.log('[db] v20: invoices and clients can now record their Hnry ids; nothing existing changes');
+    },
+  },
+  {
+    version: 21,
+    name: 'client hub tables',
+    up(db) {
+      require('./migrations/v21-hub').migrateV21(db);
+    },
+  },
+];
+
+/**
+ * 4. (amended 2026-10-02, after the money review) OVERTIME LEAVES PRODUCTION.
+ * Every production line now sits on a booked day and takes its day's rates,
+ * so an Overtime row left in Production (every live card: D14 left the move
+ * to the user) would put a weekend or after-hours rate on top of overtime's
+ * own premium. D14 says Overtime is never surcharged; the user gave the
+ * go-ahead to move it. Rows named "Overtime…" go, unchanged (id, prices and
+ * all), to the `additional` section, which is made if the card lacks one.
+ *
+ * Only the card moves. A saved estimate's Overtime lines keep their own
+ * snapshot prices in `prod`, off any day, so they total as before. Safe to
+ * run twice: the second time there is nothing left in Production to move.
+ */
+function moveOvertimeOffSet(db) {
+  const row = db.prepare('SELECT data_json FROM pricing WHERE id = 1').get();
+  if (!row) return; // a fresh database takes DEFAULT_PRICING, which already has it right
+  const card = JSON.parse(row.data_json);
+  const sections = Array.isArray(card.labourSections) ? card.labourSections : [];
+  const prod = sections.find((sec) => sec && sec.id === 'prod');
+  if (!prod || !Array.isArray(prod.rows)) return;
+  const isOvertime = (r) => r && /^\s*overtime\b/i.test(String(r.name || ''));
+  const moving = prod.rows.filter(isOvertime);
+  if (!moving.length) return;
+  prod.rows = prod.rows.filter((r) => !isOvertime(r));
+  let additional = sections.find((sec) => sec && sec.id === 'additional');
+  if (!additional) {
+    additional = { id: 'additional', label: 'Additional work', rows: [] };
+    sections.push(additional);
+  }
+  additional.rows = (Array.isArray(additional.rows) ? additional.rows : []).concat(moving);
+  db.prepare('UPDATE pricing SET data_json = ?, updated_at = ? WHERE id = 1').run(JSON.stringify(card), nowIso());
+  console.log(`[db] v11: moved ${moving.length} Overtime row(s) from Production to Additional work`);
+}
+
+const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+/** Short, readable, collision-resistant ids: est_9f3a1c2b. */
+function newId(prefix) {
+  return `${prefix}_${crypto.randomBytes(4).toString('hex')}`;
+}
+
+function currentVersion(db) {
+  const row = db.prepare('SELECT MAX(version) AS v FROM schema_version').get();
+  return row && row.v ? row.v : 0;
+}
+
+/**
+ * Applies any migrations newer than the file's recorded version. Safe to run on
+ * a fresh file and on an existing one; running it twice does nothing the second
+ * time.
+ *
+ * `options.to` stops at that version. Only the tests use it, to build a
+ * database exactly as an older build left it before upgrading it.
+ */
+function migrate(db, options = {}) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_version (
+      version    INTEGER PRIMARY KEY,
+      applied_at TEXT NOT NULL
+    );
+  `);
+
+  const from = currentVersion(db);
+  if (from > LATEST_VERSION) {
+    throw new Error(
+      `billing.db is at schema version ${from}, but this build only knows up to ` +
+      `${LATEST_VERSION}. Refusing to run against a newer database.`
+    );
+  }
+
+  const to = options.to === undefined ? LATEST_VERSION : options.to;
+  const pending = MIGRATIONS.filter((m) => m.version > from && m.version <= to);
+  const record = db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)');
+
+  for (const migration of pending) {
+    // A migration that rebuilds a parent table turns foreign keys off around
+    // its transaction (SQLite ignores the pragma inside one), as SQLite's own
+    // "making other kinds of table schema changes" procedure does: otherwise
+    // DROP TABLE runs the children's ON DELETE actions. Before it commits,
+    // foreign_key_check must come back empty, so a rebuild can't leave a row
+    // pointing at nothing.
+    const fkOff = migration.foreignKeysOff === true;
+    const fkWas = db.pragma('foreign_keys', { simple: true });
+    if (fkOff) db.pragma('foreign_keys = OFF');
+    try {
+      // Each migration lands whole or not at all.
+      db.transaction(() => {
+        migration.up(db);
+        if (fkOff) {
+          const broken = db.pragma('foreign_key_check');
+          if (broken.length) {
+            throw new Error(
+              `migration v${migration.version} would leave ${broken.length} row(s) pointing at ` +
+              `nothing (first: ${broken[0].table} row ${broken[0].rowid} → ${broken[0].parent}). ` +
+              'Nothing was changed.'
+            );
+          }
+        }
+        record.run(migration.version, nowIso());
+      })();
+    } finally {
+      if (fkOff) db.pragma(`foreign_keys = ${fkWas ? 'ON' : 'OFF'}`);
+    }
+    console.log(`[db] migrated to v${migration.version} — ${migration.name}`);
+  }
+
+  return { from, to: currentVersion(db), applied: pending.length };
+}
+
+/**
+ * Opens billing.db, verifies it, and brings the schema up to date.
+ *
+ * A file that fails its integrity check is left exactly as it is: the server
+ * refuses to start rather than writing over damaged data that a backup could
+ * still be recovered from.
+ *
+ * options.migrate   false opens without migrating.
+ * options.backupDir where the copy before migrating goes; defaults to the
+ *                   backups folder beside the file, false skips it.
+ */
+function openDatabase(file, options = {}) {
+  const db = new Database(file, { fileMustExist: false });
+
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
+  // WAL + NORMAL is durable across process crashes; only a host power-cut can
+  // lose the last transaction, which the nightly backup covers.
+  db.pragma('synchronous = NORMAL');
+  db.pragma('busy_timeout = 5000');
+
+  const check = db.pragma('quick_check', { simple: true });
+  if (check !== 'ok') {
+    db.close();
+    throw new Error(
+      `billing.db failed its integrity check (${check}). The file has NOT been ` +
+      `modified. Restore the most recent copy from the backups directory before ` +
+      `starting the server again.`
+    );
+  }
+
+  if (options.migrate !== false) {
+    const backupDir = options.backupDir === undefined ? defaultBackupDir(file) : options.backupDir;
+    if (backupDir) backupBeforeMigrating(db, backupDir);
+    migrate(db);
+  }
+
+  return db;
+}
+
+/**
+ * The backups folder beside the database (config.backupDir for billing.db), so
+ * every caller that opens a file gets the copy before migrating: the server,
+ * and the scripts run by hand on the NAS. `backupDir: false` opts out.
+ */
+function defaultBackupDir(file) {
+  if (!file || file === ':memory:') return null;
+  return path.join(path.dirname(path.resolve(file)), 'backups');
+}
+
+/**
+ * Copies an existing database before any migration touches it (merge safeguard
+ * S15), so an upgrade that goes wrong is one file away from undone. A fresh
+ * file or one already up to date takes no copy. If the copy can't be made the
+ * server refuses to start, with nothing changed: migrating without it is the
+ * risk the copy is there to cover.
+ */
+function backupBeforeMigrating(db, backupDir) {
+  const tracked = db.prepare(
+    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'"
+  ).get();
+  if (!tracked) return null;
+  const from = currentVersion(db);
+  if (from === 0 || from >= LATEST_VERSION) return null;
+  try {
+    const file = snapshotSync(db, backupDir, 'premigrate');
+    console.log(`[db] copied v${from} to ${file} before migrating to v${LATEST_VERSION}`);
+    return file;
+  } catch (err) {
+    db.close();
+    throw new Error(
+      `Couldn't back up billing.db before migrating it from v${from} (${err.message}). ` +
+      'Nothing was changed. Check the backups directory has space and can be written, then start again.'
+    );
+  }
+}
+
+module.exports = { openDatabase, migrate, backupBeforeMigrating, newId, nowIso, LATEST_VERSION };

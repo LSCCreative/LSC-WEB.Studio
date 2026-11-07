@@ -1,187 +1,199 @@
 # Build Plan
 
-## Feature: Client Review-Flow Fixes — Revision Panel + Photo Thumbnails
+## Feature: Bunny Delivery Layer — NAS → Bunny → Client Hub
 
-Slices 1-3 and 5-8 are in `client-hub-app/index.html` (**[WEB]**). Slice 4 is
-in `nas/client-hub-api/` (**[API]**) and needs a deploy to the NAS container
-before Slices 5+ can be verified live. Work strictly top-to-bottom; don't skip
-ahead. Full context: `feature-spec.md`.
+Full context and decisions: `feature-spec.md`. Work strictly top-to-bottom.
+
+> **PAUSED (2026-11-03): this plan resumes AFTER the Billing App / Client Hub
+> merge.** Agreed order is merge → Bunny → payment (see `.design/merged-admin/
+> DESIGN_BRIEF.md` and `scratchpad.md`). Do not start Slice 2 or later until
+> the merge lands. When resuming, first re-check against the merged codebase:
+> file paths (the hub API moved to `admin/server/src/hub/` in merge task M2;
+> `client-hub-app/` may move), the admin
+> login (the billing account replaces the hub PIN, so `requireAdmin`, the
+> editor's admin calls and Slice 10's widget sign-in all change), and the data
+> model (hub projects move from `localStorage` to one server-side project, so
+> the "link by NAS path" decision and Slice 4's editor work need rethinking).
+> Slice 0, Slice 1 and the Slice 2 code (committed, 57/57 against a fake
+> Bunny, real-Bunny lookup proven 2026-11-03) carry over.
+>
+> **Active plan until then: `.design/merged-admin/TASKS.md`.** It's gitignored,
+> so it isn't in a fresh clone or a worktree; it lives in this project folder.
+
+Tags: **[USER]** = only the user can do it (dashboards, keys, NAS shell).
+**[WEB]** = `client-hub-app/index.html`. **[API]** = `nas/client-hub-api/` (on the
+`merged-admin` branch: `admin/server/src/hub/`)
+(needs a NAS redeploy, `docker compose up -d --build`, before anything
+downstream can be checked live). **[DESKTOP]** = new `desktop-publisher/`.
+
+**Player guardrail:** every [WEB] slice ends by re-running the 6-point
+player contract in `feature-spec.md` (desktop Chrome, desktop Safari,
+≤768px), and isn't done until it passes. The pause → timestamp → revision
+field flow is the part the user cares most about.
+
+The previous feature (Client Review-Flow Fixes, Slices 1-17) is complete and
+in git history. Slice 18 (moving the DB to Bunny) was dropped: the NAS stays
+the backend, and Bunny is for media delivery only.
 
 ## Task Slices
 
-### Part A — Revision panel (defects 1-3)
+### Part A — Foundation
 
-- [x] Slice 1: Extract the asset screen's interaction zone so revision
-      interactions stop destroying the `<video>`. In `renderClientAsset`,
-      wrap `gateway` + `commentLog` in `<div id="asset-interaction">` and
-      move their markup into a new `renderAssetInteraction(a)`. Add
-      `refreshAssetInteraction()` which rewrites only that container's
-      `innerHTML` and rebinds the buttons inside it (`want-revisions`,
-      `approve-asset`, `submit-revision`, `cancel-revision`, `photo-select`,
-      `[data-photo]`) — factor those bindings out of `bindClientAsset` into
-      a `bindAssetInteraction()` that both callers use. Then repoint
-      `want-revisions`, `submit-revision` and `cancel-revision` at
-      `refreshAssetInteraction()` instead of `setState()`, and make
-      `submit-revision` keep `state.revisionOpen === true` while clearing
-      `state.revisionDraft` (fixes defect 2: panel stays open, playhead
-      preserved, new comment appears in the log). The `<video>` and the
-      `#pause-pill` must sit OUTSIDE `#asset-interaction`. `approve-asset`
-      and the approve modal still go through `setState()` — they
-      intentionally leave the screen. | Model: Claude Code | Effort: Medium
+- [x] Slice 0: **[USER]** Bunny setup, with Claude guiding step by step. Create
+      a Stream library (MP4 fallback not needed — masters download from
+      Edge Storage, Slice 8; set the webhook URL to
+      `https://hub-api.lsccreative.studio/hub/bunny-webhook`, leave token
+      auth OFF for now), an Edge Storage zone, and a pull zone on it with
+      Optimizer + Dynamic Image API enabled (token auth OFF for now). Add the
+      `BUNNY_*` variables listed in `feature-spec.md` to a 1Password
+      Environment and to the NAS `.env` (never to tracked files). Upload ONE
+      test video by hand in the Stream dashboard and note its HLS
+      `playlist.m3u8` URL for Slice 1. Also check
+      `client-hub-docs/Bunny.Net Storage zone & Pull Zone Details.rtf`: if it
+      contains keys or passwords, move them to 1Password, delete them from
+      the file, and rotate them. | Model: Sonnet 5.5 | Effort: Low
 
-- [x] Slice 2: Gate the timestamp on the revision panel (defect 1). In
-      `bindClientAsset`, `video.onpause` only writes `state.pausedAt` /
-      reveals `#pause-pill` when `state.revisionOpen` is true. In
-      `want-revisions`' handler, when opening the panel, read the live
-      `video.currentTime` and set `state.pausedAt` from it (so pause-then-
-      ask-for-revisions keeps the timestamp the client cares about); when
-      closing/cancelling, clear `state.pausedAt` and hide the pill. Keep
-      `video.onplay` clearing it as today. Video assets only — photo assets
-      have no player. | Model: Claude Code | Effort: Medium
+- [x] Slice 1: **[WEB]** HLS in the existing review player. This is the riskiest
+      slice and the user's top priority, so it comes first. Add hls.js (pinned exact
+      version, CDN) and `attachReviewSource(video, url)`: native HLS on
+      Safari/iOS, hls.js elsewhere, and a plain `src` for non-`.m3u8` links so
+      NAS-linked projects still work. `renderVideoCanvas` renders
+      `#asset-video` with the URL in `data-src`. `bindClientAsset`
+      attaches it. Keep one module-level `Hls` instance, destroyed before
+      re-attach and when leaving the asset screen. Map fatal hls errors
+      (after one recovery attempt) to the existing `videoFailed` path. Leave
+      `onplay`/`onpause`/`setPausePill`/`refreshAssetInteraction`
+      untouched. Test with Slice 0's hand-uploaded video pasted into a test
+      asset's review link. Run the full player contract, plus scrubbing,
+      seeking while the revision panel is open, and submitting 3 notes in
+      a row without the video reloading. | Model: Opus 5.5 | Effort: High
+      _Status 2026-11-03: code done. Chromium verified (2026-10-21), real
+      desktop Safari 27 passes the full contract 81/81 at 1280 + 375px, iPhone
+      Simulator (iOS 27.2) 44/44 plus a real-tap run. Ticked on the Simulator
+      pass with the user's OK; the physical iPhone check is in Slice 5 — see
+      `scratchpad.md`._
 
-- [x] Slice 3: Hide `APPROVE CONTENT` while revising (defect 3).
-      `renderAssetInteraction` omits the `#approve-asset` button from the
-      markup entirely (not disabled — absent) when `state.revisionOpen`.
-      Check the flex row still looks right with only `REVISION FORM OPEN` in
-      it, at desktop and ≤768px. | Model: Claude Code | Effort: Low
+### Part B — Video publishing
 
-### Part B — Photo libraries (defect 4)
+- [ ] Slice 2: **[API]** `src/bunny.js` (the only Bunny caller, native
+      `fetch`, reads `BUNNY_*` env, fails loudly at boot if they're missing)
+      + `bunny_assets` and `bunny_collections` tables in `db.js` + `POST
+      /hub/publish-asset` (`credentialedCors` + `requireAdmin`) taking
+      `{ path, kind:'video' }`. Steps: resolve the path with the existing
+      guards → reuse/mint the `/hub/files/<token>` URL → get or create the
+      Stream collection for the top-level project folder → Stream
+      fetch-from-URL into it → store the row. Idempotent per path. Re-publishing
+      returns the existing row, unless `force:true` is passed. Returns
+      `{ status, videoId, hlsUrl, posterUrl }`. Plus `GET
+      /hub/publish-status?path=` (admin). First confirm fetch's
+      parameters against Bunny's OpenAPI. Never log keys.
+      | Model: Opus 5.5 | Effort: High
+      _Status 2026-11-03: code done, passes 57/57 against a fake Bunny. Left
+      unticked: no real Bunny call yet, and fetch returns no video id, so the
+      lookup by title tag is unproven. Add the BUNNY_ vars to the NAS `.env`
+      before deploying — see `scratchpad.md`._
 
-- [x] Slice 4: **[API]** New `POST /hub/deliverable-folder` in
-      `nas/client-hub-api/src/hubRoutes.js` (`credentialedCors` +
-      `requireAdmin`, placed next to `/hub/deliverable-url`). Add
-      `resolveDeliverableDir()` to `deliverables.js` — same traversal guards
-      as `resolveDeliverablePath` (reject leading `/`, `\0`, anything
-      resolving outside `DELIVERABLES_DIR`) but `isDirectory()`. The route
-      reads the folder non-recursively, keeps only image extensions
-      (`.jpg/.jpeg/.png/.webp`), sorts by filename, caps the count, and for
-      each image mints both tokens via the existing
-      `insertDeliverableToken`/`findDeliverableTokenByPath` (no schema
-      change). Returns `{ photos:[{ name, reviewUrl, downloadUrl }] }`; 404
-      for a missing/non-directory path, and a distinct error for a folder
-      with no images. | Model: Claude Code | Effort: Medium
+- [ ] Slice 3: **[API]** `POST /hub/bunny-webhook`, mounted with
+      `express.raw()` so the HMAC is computed over the exact bytes. Verify
+      `X-BunnyStream-Signature` (HMAC-SHA256, library read-only key,
+      `safeEqual`), reject anything unsigned. Then map the status onto
+      `bunny_assets`: 3 → ready, 4 → playable, 5 → failed with an error,
+      0-2 → processing. Unknown video ids → 200 and ignore. Add a
+      `/hub/publish-status` fallback that asks Stream directly when a row
+      has been "processing" for over 30 min (in case a webhook was missed).
+      | Model: Sonnet 5.5 | Effort: Medium
 
-- [x] Slice 5: Editor + data model for photo folders. Add
-      `hubApi.deliverableFolder(path)` (live-only, same as
-      `deliverableUrl`). `newAsset('photo')` gains `photos: []`. In
-      `renderEditor`, photo assets label the field "NAS SERVER PHOTO FOLDER"
-      (video keeps "NAS SERVER VIDEO LINK") and show how many photos are
-      currently linked. The `[data-gen-link]` handler branches on
-      `asset.type`: photo → `toRelativeDeliverablePath` then
-      `deliverableFolder`, writing `asset.photos` and `asset.deliverablePath`
-      (leave `reviewLink`/`downloadLink` empty for photo assets); video →
-      unchanged. Carry `photos` through `buildPublishedRecord` (it drops
-      unnamed fields — without this the client gets nothing) and default it
-      to `[]` in `loadProjects`'s asset normaliser. Errors surface via the
-      existing `toast`/`reportAdminError` path. | Model: Claude Code |
-      Effort: Medium
+- [ ] Slice 4: **[WEB]** Editor + data model. For video assets, add a `PUBLISH
+      TO BUNNY` button next to `NAS LINK`, using the same path field and the
+      same `toRelativeDeliverablePath`. It calls `/hub/publish-asset`, then
+      polls `/hub/publish-status` and shows Processing / Ready / Failed
+      (with the reason). On Ready it fills `reviewLink` (HLS),
+      `posterLink`, `bunnyVideoId` and `publishStatus`. Carry the new fields
+      through `buildPublishedRecord` and the `loadProjects` normaliser. The
+      landing-card thumbnail uses `posterLink` as an `<img>` when present,
+      and keeps the old `#t=1` `<video>` for NAS links. Update the `?` SOP
+      modal (`renderNasLinkHelpModal`) for the new button. Player guardrail
+      applies. | Model: Sonnet 5.5 | Effort: Medium
 
-- [x] Slice 6: Real thumbnails on the client page. Rewrite
-      `renderPhotoCanvas` to render `a.photos` — `<img>` per photo from
-      `reviewLink` (`object-fit:cover`, `loading="lazy"`), click-to-select
-      keyed to the real index, `#photo-select` options labelled with the
-      real filenames, and an explicit empty state when `a.photos` is empty
-      (replacing the eight hardcoded blank frames). `submit-revision` also
-      stores `photoName` on the comment; the activity log shows the filename
-      when present, falling back to `PHOTO #n` for older comments. Check the
-      grid at ≤768px per the responsive rules in `CLAUDE.md`. | Model:
-      Claude Code | Effort: Medium
+- [ ] Slice 5: Verify video end to end and deploy. Deploy the API to the
+      NAS. Drop a real deliverable on the NAS → PUBLISH → Ready → publish
+      the project → client logs in on another device → full player contract
+      on desktop Chrome, desktop Safari and a real iPhone → approve →
+      agreement → final screen. Also check that an old NAS-linked project
+      still plays. Log the results in `scratchpad.md`.
+      | Model: Opus 5.5 | Effort: Medium
 
-- [x] Slice 7: Final delivery screen for photo libraries. In
-      `renderClientFinal`, a photo asset lists a download link per photo
-      (from each `downloadLink`) instead of the single `DOWNLOAD CONTENT`
-      button; video assets unchanged. Handle the no-photos case without
-      rendering an empty row. | Model: Claude Code | Effort: Low
+### Part C — Photos & masters
 
-- [x] Slice 8: Update the "?" SOP modal (`renderNasLinkHelpModal`) to cover
-      both cases: video assets take a file path, photo libraries take a
-      folder path, same copy-the-absolute-path-and-click-NAS-LINK flow.
-      | Model: Claude Code | Effort: Low
+- [ ] Slice 6: **[API]** Photo folders → Edge Storage. `POST
+      /hub/publish-asset` with `kind:'photo'` reuses
+      `listDeliverableFolderImages` (same cap and extensions), then streams
+      each image from the read-only mount to Edge Storage with `PUT` at
+      `/<project folder>/<asset folder>/<file>`, 4 at a time. It skips files
+      already there at the same size, and runs as a background job, so the
+      route returns at once and `/hub/publish-status` reports `n/total`. When
+      done it returns `photos:[{ name, reviewLink, downloadLink }]` (CDN
+      URLs, no size params). Re-running only uploads new or changed files.
+      | Model: Opus 5.5 | Effort: Medium
 
-### Part C — Verification
+- [ ] Slice 7: **[WEB]** Photos from Bunny. The editor's photo assets get the
+      same PUBLISH button with progress (`n/total`). Add a `photoSrc(ph,
+      width)` helper that appends Optimizer params only to Bunny CDN URLs.
+      Grid `?width=600`, lightbox `?width=2400`, and the landing-card strip
+      uses the grid size. Downloads stay the original. NAS-linked photo
+      libraries render exactly as today. Check the lightbox per-photo
+      comments and keyboard nav still work.
+      | Model: Sonnet 5.5 | Effort: Medium
 
-- [x] Slice 9: Full verification pass. Revision panel: no pill before
-      clicking revisions; pill correct after; submit keeps the panel open,
-      clears the textarea, appends to the log, and leaves the playhead
-      untouched; no approve button while revising; cancel restores it and
-      clears the pill. Photos: a real NAS folder yields real thumbnails,
-      selection + filename-stamped revisions work, per-photo downloads work
-      on the final screen, empty state shows for an unlinked photo asset,
-      and bad/empty/outside-prefix folder paths toast loudly. Regression:
-      video review playback, approve → agreement → final still work. Check
-      desktop + 375px. Note in `scratchpad.md` anything that needs the live
-      NAS (Slices 4-7 can't be fully proven in the sandbox — the folder
-      endpoint is live-only, same constraint as `deliverableUrl`). | Model:
-      Claude Code | Effort: Low
+- [ ] Slice 8: **[API + WEB]** Video master downloads. Publishing a video also
+      `PUT`s the untouched master to Edge Storage (`kind:'master'` row,
+      same background-job pattern as Slice 6), and `downloadLink` becomes
+      that CDN URL, so 4K masters download at full resolution. The final
+      screen and the ungated review-screen download use it. NAS
+      `downloadLink`s on old projects still work.
+      | Model: Sonnet 5.5 | Effort: Medium
 
-### Part D — Card thumbnails + icon set (added after the Part A-C review)
+### Part D — Lock it down
 
-- [x] Slice 10: Replace the emoji glyph on each client-landing deliverable
-      card with a real media preview. New `renderAssetThumb(a)` + `.asset-thumb`
-      CSS (16:9, `object-fit:cover`). Video → the real file with a `#t=1`
-      fragment so the browser Range-fetches just enough to paint the frame at
-      1s as a still poster (`preload="metadata"`, muted, never plays). Photo →
-      first three images as a filmstrip. A hairline SVG icon sits underneath as
-      the fallback, so an unlinked/slow/broken thumbnail degrades to the icon
-      instead of a blank box. | Model: Claude Code | Effort: Medium
+- [ ] Slice 9: **[USER + API + WEB]** Signed, expiring media URLs. The user
+      turns on token auth for the Stream pull zone and the storage pull zone,
+      and adds `BUNNY_CDN_TOKEN_KEY`. `GET /hub/records/:projectId` signs every Bunny URL in
+      the record on the way out (HLS uses a path token covering
+      `/<videoId>/` so segments load), and **omits** `downloadLink`s of
+      gated assets until the agreement is signed. Unsigned URLs stay stored
+      in the DB. TTL is long enough for a review session (start at 6h). In
+      the player, a 403 from hls.js re-fetches the record, re-attaches at the same
+      `currentTime` and paused state, and keeps the revision draft and pill.
+      Test by forcing a short TTL. The player guardrail applies.
+      | Model: Opus 5.5 | Effort: High
 
-- [x] Slice 11: Drop every colour emoji for a stroke-based inline SVG set
-      (`ICONS` + `icon(name, size, cls)`): video, photo, doc, play, clock,
-      check, download. Replaces 🎬 🖼 📄 ✅ ⏱️ across the landing cards, editor
-      asset headings, invoice rows, activity-log timestamps, the pause pill,
-      the approved badge, the agreement badge and the final screen. Status
-      dots (🟡🟠🟢) become a `.status-dot` CSS circle that inherits each
-      badge's own colour. `setPausePill` now rewrites only `#pause-pill-time`
-      so the static icon survives. | Model: Claude Code | Effort: Medium
+### Part E — Desktop widget
 
-### Part E — Per-photo lightbox review + simplified review actions
+- [ ] Slice 10: **[DESKTOP]** macOS menu-bar publisher in `desktop-publisher/`
+      (SwiftUI `MenuBarExtra`, no third-party deps). Sign in with the admin
+      email + PIN through `/hub/admin-auth`; the session cookie is kept by
+      URLSession, the PIN is never stored, and the app sends the
+      `Origin` header that `credentialedCors` expects. Drag a file or folder
+      onto it. If it's already under the mounted NAS share, convert the path
+      (same prefix rule as `toRelativeDeliverablePath`). If not, pick a
+      project folder and copy it in first. Call `/hub/publish-asset`, show
+      live progress, and copy the NAS path to the clipboard for the editor.
+      It holds no Bunny key. Add a README with build/run steps.
+      | Model: Opus 5.5 | Effort: High
 
-- [x] Slice 12: Remove the asset-level revision feature from PHOTO libraries.
-      `renderAssetInteraction` branches on `a.type`: photo assets get only
-      APPROVE CONTENT + the download link, no `want-revisions` button and no
-      `renderRevisionForm`. `renderRevisionForm` is now video-only (its
-      photo-selection guard and the `#photo-select` dropdown are both gone).
-      | Model: Claude Code | Effort: Medium
+### Part F — Cost control & close-out
 
-- [x] Slice 13: Photo lightbox (`renderPhotoLightbox` + `bindPhotoLightbox` +
-      `refreshLightbox`). Clicking a contact-sheet frame opens a full-screen
-      scrim: the photo large on the left, a notes rail on the right (stacked
-      below it under 768px), hairline arrow buttons on either edge of the
-      image, disabled at the ends. Escape closes; ArrowLeft/Right step
-      through, but are ignored while the client is typing. Only
-      `#lightbox-host` repaints on navigation, so the contact sheet and its
-      thumbnails are never reloaded. | Model: Claude Code | Effort: Medium
+- [ ] Slice 11: **[API]** Cleanup. Record `delivered_at` when a publish
+      first flips `delivered` on. A daily in-process timer deletes that
+      project's Stream videos, collection and Edge Storage files after
+      `BUNNY_RETENTION_DAYS` (default 90), marks the rows `expired`, and
+      logs what it removed. The NAS copies are never touched. Add a
+      dry-run flag for the first deploy.
+      | Model: Sonnet 5.5 | Effort: Medium
 
-- [x] Slice 14: Per-photo comment isolation — the correctness requirement.
-      `commentsForPhoto(a,i)` filters the rail to `c.photoIdx === i`, and
-      drafts live in `state.photoDrafts` keyed by `photoDraftKey()`
-      (`assetId::filename`, falling back to index) instead of the single
-      shared `state.revisionDraft`. Arrowing to an untouched photo therefore
-      always shows an empty box and an empty note list; arrowing back
-      restores that photo's own draft. Submitting clears only that photo's
-      key. Commented thumbnails carry a terracotta count badge.
-      | Model: Claude Code | Effort: Medium
-
-- [x] Slice 15: Simplify the video review actions to `COMMENT REVISIONS`
-      (secondary, 12px) and `APPROVE CONTENT` (primary, 16px), with a quiet
-      `Download` link (10px, muted) underneath the row. Photo libraries get
-      the same approve + download pair. Download renders disabled when the
-      asset has no valid `downloadLink`. | Model: Claude Code | Effort: Low
-
-- [x] Slice 16: Verify. Draft and comment isolation across photos, keyboard
-      nav, approved-library lock, button hierarchy and sizes, mobile stacking
-      with 44px touch targets, and no regression to the video revision flow
-      (timestamp arming, playhead retention, approve hidden while revising).
-      | Model: Claude Code | Effort: Low
-
-- [x] Slice 17: Per-asset "GATE DELIVERABLE BEHIND AGREEMENT" checkbox in the
-      editor, resolving the policy question Slice 15's review-screen Download
-      link opened. `asset.gated` defaults to **true** — on `newAsset()`, in
-      `loadProjects()`'s normaliser (`a.gated !== false`, so stored projects
-      that predate the field stay locked rather than becoming downloadable on
-      ship) and through `buildPublishedRecord`. `downloadUnlocked(p, a)` is
-      the single gate: ungated → always available; gated → only once
-      `p.agreement.accepted`. Applied to the review-screen download and to the
-      per-photo download in the lightbox rail. The generic `[data-field]`
-      asset binding now handles checkboxes (`change` + `.checked`).
-      | Model: Claude Code | Effort: Medium
+- [ ] Slice 12: Full verification + docs. Run every acceptance criterion in
+      `feature-spec.md` live. Grep the repo, the client app and the widget
+      for key-shaped strings. Update `client-hub-docs/NAS-DELIVERABLES.md`
+      ("No upload path exists" no longer holds; document the publish flow,
+      the tables, the webhook and the retention) and the SOP modal copy.
+      | Model: Opus 5.5 | Effort: Medium

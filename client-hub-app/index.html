@@ -193,7 +193,7 @@ const HUB_CONFIG = {
   mainSiteUrl:    '../index.html',                         // back-link to host site
   assetBase:      '../assets/',                            // fonts/images root (font @font-face derives from this)
   basePath:       './',                                    // hub's own base (for building client links)
-  edgeBase:       'https://hub-api.lsccreative.studio',    // self-hosted NAS API (routes /hub/*), see nas/client-hub-api/
+  edgeBase:       'https://hub-api.lsccreative.studio',    // self-hosted NAS API (routes /hub/*), see admin/server/src/hub/
 };
 /* mode:'simulate' uses localStorage and skips every /hub/* call — useful for
    local UI work without a NAS connection. 'live' talks to edgeBase for real. */
@@ -218,6 +218,7 @@ const AUTH_KEY = 'lsc_hub_auth_v1';
 const uid = () => Math.random().toString(36).slice(2, 9);
 const nowStr = () => new Date().toLocaleString('en-AU', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
 const isValidUrl = (v) => /^https:\/\/.+/i.test((v||'').trim());
+const isHlsUrl = (v) => /\.m3u8(?:[?#]|$)/i.test(v||'');
 
 /* ---------------- Sprint C: accounts / persistence layer ---------------- */
 const CLIENT_TOKEN_SS = 'lsc_hub_client_token'; // client session token from /hub/auth
@@ -1189,7 +1190,9 @@ function renderAssetThumb(a){
       </div>`;
   }
 
-  if(!a.reviewLink || !isValidUrl(a.reviewLink)) return `<div class="asset-thumb">${fallback}</div>`;
+  // HLS links get the icon: a <video> thumb can't play them without hls.js, and where it
+  // can (native HLS) it would pull a playlist + segments per card. Slice 4 adds posterLink.
+  if(!a.reviewLink || !isValidUrl(a.reviewLink) || isHlsUrl(a.reviewLink)) return `<div class="asset-thumb">${fallback}</div>`;
   return `
     <div class="asset-thumb" aria-hidden="true">
       ${fallback}
@@ -1347,7 +1350,9 @@ function refreshAssetInteraction(){
 }
 
 function renderVideoCanvas(a){
-  if(state.videoFailed){
+  // No review link at all goes straight to the fallback card (the old `src=""` reached it
+  // through an error event; with data-src there's no source to fail).
+  if(state.videoFailed || !a.reviewLink){
     const hasBackup = a.driveLink && isValidUrl(a.driveLink);
     return `
     <div class="card rounded-xl p-10 text-center mb-2">
@@ -1358,10 +1363,111 @@ function renderVideoCanvas(a){
 
   return `
     <div class="aspect-video bg-[var(--lsc-surface)] rounded-xl overflow-hidden mb-2">
-      <video id="asset-video" class="w-full h-full" controls controlsList="nodownload" disablePictureInPicture oncontextmenu="return false" preload="metadata" src="${escapeAttr(a.reviewLink)}"></video>
+      <video id="asset-video" class="w-full h-full" controls controlsList="nodownload" disablePictureInPicture oncontextmenu="return false" preload="metadata" data-src="${escapeAttr(a.reviewLink)}"></video>
     </div>
     <div id="pause-pill" class="timestamp-pill mono text-[10px] bg-[var(--lsc-terra)] text-white px-2 py-1 rounded-full inline-flex items-center gap-1.5 mb-2" ${state.pausedAt ? '' : 'style="display:none"'}>${icon('clock', 12)}<span id="pause-pill-time">${state.pausedAt || ''}</span></div>
   `;
+}
+
+// The ONE live hls.js instance and the <video> it (or a native/plain src) is attached to.
+// render() calls detachReviewSource() before it rebuilds root.innerHTML, so leaving or
+// re-rendering the asset screen never leaks an instance or a stale error handler.
+let reviewHls = null;
+let reviewVideo = null;
+
+function detachReviewSource(){
+  if(reviewVideo){
+    // The old element is about to be thrown away — its late error/pause events must not
+    // reach state (a stale onerror would flip videoFailed on the NEXT asset).
+    reviewVideo.onerror = null; reviewVideo.onplay = null; reviewVideo.onpause = null;
+    reviewVideo = null;
+  }
+  if(reviewHls){ reviewHls.destroy(); reviewHls = null; }
+}
+
+// hls.js for Bunny Stream review links (light build: no subtitles/alt-audio/DRM), pinned
+// exact version + SRI. Loaded on demand, only when a non-Apple browser opens an HLS asset,
+// so login/tracker/editor/agreement never wait on it. A failed load resolves anyway
+// (window.Hls stays undefined → plain src fallback) and is retried on the next attach.
+const HLS_JS = {
+  src: 'https://cdn.jsdelivr.net/npm/hls.js@1.7.3/dist/hls.light.min.js',
+  integrity: 'sha384-y8wQxRLtNclrHbMBLBLTEkgUrdFu6uWzZiobE1wBE09nt2wHIZlBPvPepdZU4+MM',
+};
+let hlsJsLoading = null;
+function loadHlsJs(){
+  if(window.Hls) return Promise.resolve();
+  if(!hlsJsLoading){
+    hlsJsLoading = new Promise(resolve => {
+      const s = document.createElement('script');
+      s.src = HLS_JS.src; s.integrity = HLS_JS.integrity; s.crossOrigin = 'anonymous';
+      s.onload = () => resolve();
+      s.onerror = () => { s.remove(); hlsJsLoading = null; resolve(); };
+      document.head.appendChild(s);
+    });
+  }
+  return hlsJsLoading;
+}
+
+// Attach a review link to the existing <video>. Only the byte source changes: every pause /
+// timestamp / revision behaviour stays on the element's own events and currentTime.
+//  - .m3u8 on Apple WebKit (Safari, every iOS browser) → native HLS via src
+//  - .m3u8 elsewhere → hls.js (MSE), native src only if hls.js is unavailable
+//  - anything else (NAS /hub/files/ links, mp4, webm) → plain src, exactly as before
+// This function owns video.onerror: onFail directly for native/plain src, routed through
+// one recovery attempt for hls.js. Callers must not set onerror themselves.
+function attachReviewSource(video, url, onFail){
+  // Re-attaching to the SAME element (e.g. a refreshed URL) only swaps the hls instance;
+  // a full detach would also strip the element's onplay/onpause pill handlers.
+  if(reviewVideo !== video) detachReviewSource();
+  else if(reviewHls){ reviewHls.destroy(); reviewHls = null; }
+  reviewVideo = video;
+  video.onerror = onFail;
+  if(!url) return;
+  const native = !!video.canPlayType('application/vnd.apple.mpegurl');
+  const appleWebKit = navigator.vendor === 'Apple Computer, Inc.';
+  if(!isHlsUrl(url) || (native && appleWebKit)){ video.src = url; return; }
+  loadHlsJs().then(() => {
+    if(reviewVideo !== video) return; // asset left or re-rendered while hls.js loaded
+    if(!(window.Hls && Hls.isSupported())){ video.src = url; return; }
+    attachHls(video, url, onFail);
+  });
+}
+
+function attachHls(video, url, onFail){
+  // Buffer ~one segment until the client presses play: enough for the first frame and the
+  // duration (what preload="metadata" gives a plain src), without pulling footage from
+  // Bunny for every asset opened, switched to or re-rendered. Both caps are needed —
+  // maxBufferLength is only a floor; hls.js grows the target from maxBufferSize up to
+  // maxMaxBufferLength (600s), i.e. the whole video. Seeking while paused still loads the
+  // frame at the new position. On first play the defaults come back.
+  // (Already playing = play was pressed while hls.js was still loading.)
+  const preview = video.paused ? { maxBufferLength: 2, maxMaxBufferLength: 2 } : {};
+  const hls = new Hls({ capLevelToPlayerSize: true, ...preview });
+  video.addEventListener('play', () => {
+    if(hls !== reviewHls) return;
+    hls.config.maxBufferLength = Hls.DefaultConfig.maxBufferLength;
+    hls.config.maxMaxBufferLength = Hls.DefaultConfig.maxMaxBufferLength;
+  }, { once: true });
+  let recoveryUsed = false;
+  let manifestParsed = false;
+  // One recovery attempt, then give up to the Drive fallback card. Before the manifest has
+  // parsed there's nothing to recover (startLoad can't re-fetch a playlist that never
+  // loaded — a bad link would just hang), and hls.js has already done its own retries.
+  const fatal = (type) => {
+    if(hls !== reviewHls) return;
+    if(manifestParsed && !recoveryUsed && type === Hls.ErrorTypes.MEDIA_ERROR){ recoveryUsed = true; hls.recoverMediaError(); return; }
+    if(manifestParsed && !recoveryUsed && type === Hls.ErrorTypes.NETWORK_ERROR){ recoveryUsed = true; hls.startLoad(); return; }
+    detachReviewSource();
+    onFail();
+  };
+  hls.on(Hls.Events.MANIFEST_PARSED, () => { manifestParsed = true; });
+  hls.on(Hls.Events.ERROR, (_evt, data) => { if(data.fatal) fatal(data.type); });
+  // hls.js doesn't watch the element's own 'error' (e.g. a decode failure under MSE), so
+  // route it through the same single recovery instead of failing straight away.
+  video.onerror = () => fatal(Hls.ErrorTypes.MEDIA_ERROR);
+  reviewHls = hls;
+  hls.loadSource(url);
+  hls.attachMedia(video);
 }
 
 // Is this asset's download available yet? A gated deliverable unlocks only once the
@@ -1691,6 +1797,7 @@ function toast(msg){
 
 /* ================= RENDER ROOT ================= */
 function render(){
+  detachReviewSource(); // every branch below replaces the DOM, including any <video>
   const root = document.getElementById('app');
   if(state.clientMode){
     // Public client entry point (?project=) — never shows the admin PIN or tracker.
@@ -1994,7 +2101,6 @@ function bindClientAsset(){
   if(video){
     // Drive the pill through setPausePill (no render()) — a full re-render would replace
     // the <video> element wholesale via root.innerHTML and restart playback from 0.
-    video.onerror = () => setState({ videoFailed:true });
     video.onplay = () => setPausePill(null);
     video.onpause = () => {
       if(video.ended) return;
@@ -2003,6 +2109,8 @@ function bindClientAsset(){
       if(!state.revisionOpen) return;
       setPausePill(fmtVideoTime(video.currentTime));
     };
+    // attachReviewSource owns video.onerror (incl. the hls.js recovery routing).
+    attachReviewSource(video, video.dataset.src, () => setState({ videoFailed:true }));
   }
 
   document.querySelectorAll('[data-photo]').forEach(el => {

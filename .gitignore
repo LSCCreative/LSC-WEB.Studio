@@ -34,3 +34,16 @@ nas/**/data/
 *.db
 *.db-shm
 *.db-wal
+
+# Billing, merged in under admin/ (safeguard S2). admin/.gitignore carries billing's
+# own rules too; these stay here so they hold whatever the folder layout becomes.
+admin/server/data/
+admin/server/.env
+admin/web/js/config.js
+BILLING.csv
+LSC-Service-Agreement*
+Visual Design/
+.credentials.local.md
+
+# Billing's working docs are tracked; the .design/ rule above is for this repo's own.
+!admin/.design/

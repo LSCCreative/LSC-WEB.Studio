@@ -1,0 +1,889 @@
+/* The client pages (production-booking stage E, D46, D50, D54, D57).
+ *
+ * A document on warm paper, in lsccreative.studio's own tokens, which are
+ * tokens.css's light palette; nothing else from the app's CSS. The estimate's one bold move is the production days, set like
+ * a call sheet: each date hangs in a left gutter, drawn large. The invoice's
+ * is the payment slip: the bank details behind a tear-off rule, as on a paper
+ * invoice, set large enough to type from. Everything else stays quiet:
+ * sentence-case headings over a rule, figures in mono on the right, terra
+ * spent once on the masthead rule and once on the button.
+ *
+ * Contrast on paper #F0EDE8 / panel #E8E2D9 (checked at build, task 24):
+ *   ink #0E0E0E 16.5 / 15.0   muted #625C58 5.64 / 5.11   terra-dk #8C4832 5.82 / 5.28
+ *   paper on terra-dk 5.82 (button)   terra #C0603C is never text, except the
+ *   wordmark (large and bold: 3.61 against a 3:1 floor).
+ * The site's own --lsc-mid #7A7470 is 3.94 on paper, so it isn't used for text.
+ */
+
+@font-face {
+  font-family: 'Delight';
+  src: url('../fonts/Delight-400.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Delight';
+  src: url('../fonts/Delight-700.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'CS Felice Mono';
+  src: url('../fonts/CSFeliceMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  /* tokens.css's light palette (<html data-theme="light">), which is
+     lsccreative.studio's own; these names are the page's shorthand for it. */
+  --paper: var(--color-bg-page);         /* --lsc-white */
+  --panel: var(--color-bg-inset);        /* --lsc-surface-lt */
+  --ink: var(--color-text-primary);      /* --lsc-black */
+  --muted: var(--color-text-secondary);  /* --lsc-mid, darkened to pass 4.5:1 */
+  --terra: var(--color-accent-mark);     /* --lsc-terra: fills and rules only */
+  --terra-dk: var(--color-accent-text);  /* --lsc-terra-dk: accent as text, and the button */
+  --hair: var(--color-border-subtle);
+
+  --serif: var(--font-family-display);
+  --mono: var(--font-family-mono);
+
+  --measure: 680px;
+  --gutter: 76px;        /* the date column */
+  --radius: var(--radius-md);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  background: var(--paper);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1.55;
+  font-kerning: normal;
+  -webkit-font-smoothing: antialiased;
+}
+
+#doc {
+  max-width: calc(var(--measure) + 40px);
+  margin: 0 auto;
+  padding: 28px 20px 56px;
+}
+#doc:focus { outline: none; }
+
+h1, h2, h3, p, ul, dl, dd, table { margin: 0; padding: 0; }
+ul { list-style: none; }
+
+a { color: var(--terra-dk); text-underline-offset: 0.18em; text-decoration-thickness: 1px; }
+a:hover { color: var(--ink); }
+
+:focus-visible {
+  outline: 3px solid var(--terra-dk);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip {
+  position: absolute;
+  left: 12px; top: -60px;
+  padding: 10px 14px;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: var(--radius);
+  z-index: 2;
+}
+.skip:focus { top: 12px; }
+
+.loading { color: var(--muted); padding: 40px 0; }
+
+/* ── Masthead ─────────────────────────────────────────────────────────────── */
+
+.mast {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 3px solid var(--terra);
+}
+
+.wordmark {
+  font-weight: 700;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+.wordmark span { color: var(--terra); }
+
+.kicker {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.title {
+  margin-top: 40px;
+  font-weight: 700;
+  font-size: clamp(34px, 8.5vw, 54px);
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.lede {
+  margin-top: 18px;
+  text-wrap: pretty;
+  max-width: 34em;
+  font-size: 19px;
+  line-height: 1.5;
+}
+
+.meta {
+  margin-top: 32px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px 24px;
+}
+.meta dt {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+}
+.meta dd {
+  margin-top: 2px;
+  font-size: 17px;
+}
+.meta-sub {
+  display: block;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+}
+@media (min-width: 640px) {
+  .meta { grid-template-columns: repeat(4, auto); justify-content: start; column-gap: 40px; }
+}
+
+/* ── Sections ─────────────────────────────────────────────────────────────── */
+
+.block { margin-top: 56px; }
+
+.sec {
+  padding-top: 12px;
+  border-top: 2px solid var(--ink);
+  font-weight: 700;
+  font-size: 21px;
+  line-height: 1.25;
+  letter-spacing: -0.005em;
+  margin-bottom: 4px;
+}
+
+.block-text { margin-top: 10px; max-width: 34em; }
+
+.fig {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Deliverables: one tile each, in its own frame shape */
+.deliv {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+@media (min-width: 560px) {
+  .deliv { grid-template-columns: 1fr 1fr; }
+}
+.deliv-item {
+  padding: 8px 20px 18px;
+  background: var(--panel);
+  border-radius: var(--radius);
+}
+.deliv-frame {
+  display: block;
+  height: 46px;
+  max-width: 100%;
+  margin: 18px 0 16px;   /* room above for a stack, so every title lines up */
+  border: 2px solid var(--ink);
+  border-radius: 2px;
+}
+/* The stacked frames behind it: a panel-coloured gap, then an ink edge. */
+.deliv-stack-2 { box-shadow: 6px -6px 0 -2px var(--panel), 6px -6px 0 0 var(--ink); }
+.deliv-stack-3 {
+  box-shadow: 6px -6px 0 -2px var(--panel), 6px -6px 0 0 var(--ink),
+    12px -12px 0 -2px var(--panel), 12px -12px 0 0 var(--ink);
+}
+.deliv-name {
+  font-weight: 700;
+  font-size: 21px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.deliv-spec {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  margin-top: 12px;
+}
+.deliv-spec dt {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.deliv-spec dd {
+  font-family: var(--mono);
+  font-size: 15px;
+}
+
+/* ── Production days: the call sheet ──────────────────────────────────────── */
+
+.day {
+  display: grid;
+  grid-template-columns: var(--gutter) 1fr;
+  column-gap: 16px;
+  padding: 22px 0 20px;
+  border-bottom: 1px solid var(--hair);
+}
+
+.day-when {
+  display: grid;
+  grid-template-columns: auto;
+  align-content: start;
+  line-height: 1;
+}
+.day-num {
+  font-weight: 700;
+  font-size: 52px;
+  letter-spacing: -0.04em;
+  line-height: 0.86;
+  font-variant-numeric: lining-nums;
+}
+.day-num.day-tbc { font-size: 26px; letter-spacing: 0; line-height: 1.1; }
+.day-wd, .day-mo {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 6px;
+}
+.day-mo { margin-top: 1px; }
+
+.day-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+.day-date {
+  font-weight: 700;
+  font-size: 17px;
+  line-height: 1.3;
+}
+.day-times {
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.lines {
+  width: 100%;
+  margin-top: 12px;
+  border-collapse: collapse;
+}
+.lines th, .lines td {
+  padding: 7px 0;
+  vertical-align: baseline;
+  text-align: left;
+  font-weight: 400;
+}
+.lines tr + tr th, .lines tr + tr td { border-top: 1px dotted var(--hair); }
+.lines th { width: 100%; }
+/* .lines td would otherwise out-rank .fig and pull the prices left. */
+.lines td.fig { padding-left: 16px; text-align: right; }
+.line-name { display: block; }
+.line-qty {
+  display: block;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Status is always a word (D63); the fill and edge only repeat it. */
+.chip {
+  display: inline-block;
+  padding: 3px 8px 2px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.4;
+  border: 1.5px solid var(--ink);
+  white-space: nowrap;
+}
+.chip-confirmed { background: var(--ink); color: var(--paper); }
+.chip-pencilled {
+  background: repeating-linear-gradient(135deg, rgba(14, 14, 14, 0.13) 0 2px, transparent 2px 6px), var(--paper);
+}
+.chip-proposed { border-style: dashed; }
+.chip-gone { border-color: var(--terra-dk); color: var(--terra-dk); }
+
+/* Muted, not faded: an opacity would take the text under 4.5:1. */
+.day.is-gone .day-num,
+.day.is-gone .lines,
+.day.is-gone .line-qty { color: var(--muted); }
+.day.is-gone .day-date { text-decoration: line-through; text-decoration-thickness: 1.5px; }
+
+.note {
+  margin-top: 18px;
+  padding-left: 14px;
+  border-left: 3px solid var(--ink);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* ── Also included ────────────────────────────────────────────────────────── */
+
+.incl {
+  display: grid;
+  gap: 22px 32px;
+  margin-top: 14px;
+}
+@media (min-width: 560px) {
+  .incl { grid-template-columns: 1fr 1fr; }
+}
+.incl-label {
+  font-family: var(--mono);
+  font-weight: 400;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.incl li { padding: 3px 0; }
+.incl-tag { color: var(--muted); }
+
+/* ── Your investment ──────────────────────────────────────────────────────── */
+
+.sums div {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--hair);
+}
+.sums dt { color: var(--muted); }
+.sums-q { font-size: 14px; }
+.sums-strong dt { color: var(--ink); font-weight: 700; }
+.sums-strong dd { font-weight: 700; }
+
+.total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 18px 0 16px;
+  border-bottom: 2px solid var(--ink);
+}
+.total-label { font-size: 19px; }
+.total-fig {
+  font-weight: 700;
+  font-size: clamp(36px, 9vw, 48px);
+  line-height: 1;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* A void invoice's total is a record, not a request. */
+.total.is-void .total-fig {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+}
+
+.fine {
+  margin-top: 12px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* ── How to pay: the slip ─────────────────────────────────────────────────── */
+
+/* The tear-off line. */
+.perf {
+  margin: 56px 0 0;
+  border: 0;
+  border-top: 2px dashed var(--ink);
+}
+
+.slip { padding-top: 22px; }
+.slip-title {
+  font-weight: 700;
+  font-size: 24px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.slip-how { margin-top: 8px; max-width: 34em; }
+.slip-rows { margin-top: 18px; }
+.slip-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  padding: 10px 0;
+  border-bottom: 1px dotted var(--hair);
+}
+.slip-row:first-child { border-top: 1px solid var(--ink); }
+.slip-row dt {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+}
+.slip-row dd {
+  display: flex;
+  align-items: center;
+  min-height: 44px;   /* a row with no Copy button keeps the rhythm */
+  justify-content: space-between;
+  gap: 16px;
+}
+/* Big enough to read off the screen while typing it into a bank's app. */
+.slip-val {
+  font-family: var(--mono);
+  font-size: 21px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.copy {
+  flex: none;
+  min-width: 84px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 14px;
+  cursor: pointer;
+}
+.copy:hover { background: var(--ink); color: var(--paper); }
+.copy.is-copied { background: var(--ink); color: var(--paper); }
+.copy:focus-visible { outline-color: var(--ink); }
+.slip-terms {
+  margin-top: 14px;
+  font-size: 15px;
+  color: var(--muted);
+  max-width: 36em;
+}
+@media (min-width: 560px) {
+  .slip-row { grid-template-columns: 160px 1fr; align-items: center; column-gap: 16px; }
+}
+
+/* ── Accept, or the notice in its place ───────────────────────────────────── */
+
+.panel {
+  margin-top: 48px;
+  padding: 26px 22px 24px;
+  background: var(--panel);
+  border-radius: var(--radius);
+}
+.panel-title {
+  font-weight: 700;
+  font-size: 24px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  margin-bottom: 8px;
+}
+.panel p { max-width: 36em; }
+.panel .btn { margin-top: 20px; }
+.panel-aside { margin-top: 10px; font-size: 15px; }
+.panel-aside a { display: inline-block; padding: 12px 0; }  /* a 44px target */
+
+.panel-notice { border-left: 4px solid var(--ink); }
+.panel-done { border-left-color: var(--terra-dk); }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 24px;
+  border-radius: var(--radius);
+  font: inherit;
+  font-weight: 700;
+  font-size: 17px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.btn-primary {
+  background: var(--terra-dk);
+  color: var(--paper);
+  border: 0;
+  width: 100%;
+}
+.btn-primary:hover { background: var(--ink); }
+.btn-quiet {
+  background: transparent;
+  color: var(--ink);
+  border: 1.5px solid var(--ink);
+}
+.btn-quiet:hover { background: var(--ink); color: var(--paper); }
+.btn:focus-visible { outline-color: var(--ink); }
+.btn:disabled { cursor: progress; opacity: 0.7; }
+.btn-quiet:disabled:hover { background: transparent; color: var(--ink); }
+.lede-btn { margin-top: 24px; }
+@media (min-width: 560px) {
+  .btn-primary { width: auto; min-width: 240px; }
+}
+
+/* A status line under a panel's button (the signed agreement's download). */
+.panel-msg:not(:empty) { margin-top: 10px; font-size: 15px; color: var(--muted); }
+
+/* ── Signing (task 27) ────────────────────────────────────────────────────────
+   Full screen on a phone, a sheet of paper over the page from 560px. The
+   agreement scrolls in its own box, so the fields and Sign & submit stay in
+   view under it (brief, Responsive). */
+
+.is-signing, .is-signing body { overflow: hidden; }
+
+.sign {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+  overflow-y: auto;   /* a short phone with its keyboard up: the form scrolls, never clips */
+}
+.sign::backdrop { background: rgba(14, 14, 14, 0.5); }
+.sign-form {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px 20px max(20px, env(safe-area-inset-bottom));
+}
+.sign-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--terra);
+}
+.sign-title {
+  font-weight: 700;
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  padding-top: 10px;
+}
+.sign-close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-right: -10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+.sign-close:hover { background: var(--panel); }
+.sign-intro { margin-top: 12px; font-size: 15px; color: var(--muted); }
+.sign-text {
+  flex: 1 1 auto;
+  min-height: 140px;
+  margin-top: 12px;
+  padding: 16px 18px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--panel);
+  border-radius: var(--radius);
+  font-size: 15px;
+  line-height: var(--line-height-relaxed);
+  overflow-wrap: anywhere;
+}
+.sign-text:focus-visible { outline: 3px solid var(--terra-dk); outline-offset: 2px; }
+
+/* The agreement as it reads (ui-clarity task 7): documents.js agreementLayout
+   gives each block its type, and these set it as a document. The characters
+   are the signed text's own, so nothing here adds any (no generated content,
+   no text-transform: the heads are capitals in the text). Each block keeps
+   its own line ends; the box doesn't, so the blank lines between blocks
+   become the space below.
+     title    SERVICE AGREEMENT, Delight, tracked
+     head     PARTIES … TERMS, mono over a hairline, the page's label voice
+     clause   "3. Payment", the number quieter than its title
+     sub      (a) at one hang, (i) a hang further in, each hanging from its
+              mark; a second paragraph of either keeps its depth
+     signed   the signing line, set off below a hairline */
+.sign-text { --ag-hang: 2.4em; }
+.sign-text > * { margin: 0; white-space: pre-wrap; }   /* h4, h5 included */
+.sign-text > * + * { margin-top: var(--space-5); }
+.ag-title {
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-lg);
+  line-height: var(--line-height-tight);
+  letter-spacing: 0.06em;
+}
+.sign-text > .ag-head {
+  margin-top: var(--space-7);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--hair);
+  font-family: var(--mono);
+  font-weight: var(--font-weight-normal);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.sign-text > .ag-clause {
+  margin-top: var(--space-7);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-snug);
+}
+.ag-num { font-weight: var(--font-weight-normal); color: var(--muted); }
+.sign-text > .ag-head + *,
+.sign-text > .ag-clause + * { margin-top: var(--space-2); }
+.ag-sub {
+  padding-left: var(--ag-hang);
+  text-indent: calc(-1 * var(--ag-hang));
+}
+.ag-mark {
+  display: inline-block;
+  min-width: var(--ag-hang);
+  text-indent: 0;
+  white-space: pre;      /* its space counts, so a long mark never touches its text */
+  color: var(--muted);
+}
+.ag-l2 { margin-left: var(--ag-hang); }
+.ag-p.ag-l1, .ag-p.ag-l2 { padding-left: var(--ag-hang); }
+.sign-text > .ag-signed {
+  margin-top: var(--space-7);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--hair);
+}
+/* The role, as typed, wherever the agreement names it. Until it's typed, a
+   marked gap that reads as one. */
+.sign-slot { font-weight: 700; }
+.sign-slot.is-empty {
+  font-weight: 400;
+  font-style: italic;
+  color: var(--muted);
+  border-bottom: 1px dashed var(--muted);
+}
+.sign-faq { font-size: 15px; }
+.sign-faq a { display: inline-block; padding: 11px 0 3px; }   /* a 44px target with the line above */
+.sign-fields {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+.sign-field label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.sign-field input {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: #FBFAF7;
+  color: var(--ink);
+  font: inherit;
+  font-size: 17px;     /* 16px or more, or iOS zooms in on focus */
+}
+.sign-field input:focus-visible { outline: 3px solid var(--terra-dk); outline-offset: 1px; }
+.sign-agree {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  margin-top: 6px;
+  cursor: pointer;
+}
+.sign-agree input {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  accent-color: var(--terra-dk);
+  cursor: pointer;
+}
+.sign-msg:not(:empty) {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-left: 4px solid var(--terra-dk);
+  background: var(--panel);
+  font-size: 15px;
+}
+.sign-form .btn-primary { margin-top: 12px; flex: none; }
+.sign-form .btn-primary:disabled { cursor: not-allowed; background: var(--muted); opacity: 1; }
+.sign-form .btn-primary[aria-busy="true"] { cursor: progress; background: var(--terra-dk); }
+.sign-hint { margin-top: 8px; font-size: 14px; color: var(--muted); min-height: 1.4em; }
+
+/* A phone, or any short screen, has no room for the agreement as a box of
+   its own: it would shrink to a few lines that scroll inside a form that
+   scrolls too. There it runs at full length, and the one scroll takes the
+   client through it to the fields and Sign (ui-clarity task 18 added the
+   phone's width; below 560 the dialog is the whole screen). */
+@media (max-width: 559px), (max-height: 699px) {
+  .sign-form { height: auto; min-height: 100%; }
+  .sign-text { flex: none; min-height: 0; overflow: visible; }
+}
+
+@media (min-width: 560px) {
+  .sign {
+    width: min(720px, calc(100% - 48px));
+    height: min(860px, calc(100% - 48px));
+    margin: auto;
+    border-radius: var(--radius);
+    box-shadow: 0 24px 64px rgba(14, 14, 14, 0.28);
+  }
+  .sign-form { padding: 22px 28px 24px; }
+  .sign-title { font-size: 26px; }
+  .sign-fields { grid-template-columns: 1fr 1fr; gap: 16px; }
+}
+
+/* ── The phone's Accept bar (an open estimate only) ─────────────────────── */
+
+.dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px));
+  background: var(--paper);
+  border-top: 1px solid var(--ink);
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 0.22s ease, visibility 0s linear 0.22s;
+}
+.dock.is-shown {
+  transform: none;
+  visibility: visible;
+  transition: transform 0.22s ease, visibility 0s;
+}
+.dock-total { display: flex; flex-direction: column; line-height: 1.2; }
+.dock-label { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+.dock-fig { font-family: var(--mono); font-size: 19px; }
+.dock .dock-btn { width: auto; flex: none; padding: 0 22px; }
+@media (max-width: 359px) {
+  .dock { padding-left: 16px; padding-right: 16px; }
+  .dock-fig { font-size: 17px; }
+  .dock .dock-btn { padding: 0 16px; }
+}
+/* Room at the end of the page, so the bar never sits on the footer. */
+.has-dock #doc { padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }
+@media (min-width: 768px) {
+  .dock { display: none; }
+  .has-dock #doc { padding-bottom: 88px; }
+}
+
+/* ── Footer ───────────────────────────────────────────────────────────────── */
+
+.foot {
+  margin-top: 64px;
+  padding-top: 18px;
+  border-top: 1px solid var(--ink);
+}
+.foot-ask { max-width: 30em; }
+.foot-who {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.foot-name { font-weight: 700; }
+.foot-who a {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 11px 0;
+  margin: -7px 0;   /* a 44px target without opening up the lines */
+  font-family: var(--mono);
+  font-size: 15px;
+}
+.foot .btn { margin-top: 22px; }
+.foot-msg:not(:empty) {
+  margin-top: 10px;
+  font-size: 15px;
+  color: var(--muted);
+}
+.foot-legal {
+  margin-top: 28px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 18px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* ── Wider screens: the same column, more air ─────────────────────────────── */
+
+@media (min-width: 768px) {
+  :root { --gutter: 96px; }
+  #doc { padding: 56px 20px 88px; }
+  .title { margin-top: 64px; }
+  .block { margin-top: 72px; }
+  .day { column-gap: 20px; }
+  .day-num { font-size: 64px; }
+  .panel { padding: 32px 32px 30px; }
+  .perf { margin-top: 72px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}
+
+@media print {
+  .panel, .skip, .foot .btn, .sign, .copy, .dock { display: none; }
+  #doc, .has-dock #doc { padding: 0; }
+}
+
+/* ── The call sheet (trip-planner task 10) ────────────────────────────────────
+   The document itself is css/call-sheet.css, themed by this page's tokens.
+   Here: the Download PDF under the masthead, and the document's place on the
+   paper. */
+
+.cs-bar { margin-top: 20px; }
+.cs-bar .btn { width: 100%; }
+@media (min-width: 560px) {
+  .cs-bar .btn { width: auto; min-width: 200px; }
+}
+#doc .cs { margin-top: 32px; font-size: 17px; }
+@media (min-width: 768px) {
+  #doc .cs { margin-top: 48px; }
+}

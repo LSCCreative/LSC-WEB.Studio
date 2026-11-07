@@ -1,0 +1,1344 @@
+/* Settings, #/settings (task 21, D65) — see js/views/settings.js.
+ *
+ * Mobile first: the base rules are the phone, and min-width queries add the
+ * tablet and the desktop rail. app.css already carries the form fields
+ * (.form-grid, .field, .field.full; .form-grid collapses to one column under
+ * 768px in responsive.css), the buttons, .pricing-save-bar and the modal shell.
+ * Nothing here restyles them.
+ *
+ * THE LOOK
+ * Functional, in the app's own terms: the page is a stack of sections divided
+ * by the same 1px rule as everywhere else, each headed in Delight at the
+ * modal-title size, with the uppercase tracked labels the fields already have.
+ * The rail is the Finance rail's twin (finance.css): .nav-links on a 1px
+ * spine, the current one marked with the accent. No cards, no shadows.
+ */
+
+/* ── The shell: jump list on top, rail beside from 1100px ─────────────────── */
+
+/* Below 1100px the sections are listed above the page as a wrapped row, so
+   all six stay visible and none hides behind a sideways scroll. The global
+   mobile rules give each .nav-link its 44px target under 768px. */
+.set-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  margin: -8px 0 26px;
+}
+.set-rail .nav-link {
+  text-decoration: none;
+  border-radius: 0;
+}
+.set-rail .nav-link[aria-current='true'] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.set-body {
+  min-width: 0;
+}
+
+/* ── Sections ─────────────────────────────────────────────────────────────── */
+
+/* 70px: the 52px sticky header and some air, so a jump lands the heading
+   under it rather than behind it. */
+.set-section {
+  padding-bottom: 30px;
+  margin-bottom: 30px;
+  border-bottom: 1px solid var(--border);
+  scroll-margin-top: 70px;
+}
+
+.set-section-head {
+  font-family: 'Delight', 'Georgia', serif;
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+/* Focused only by a jump, to put a keyboard user where they asked to go;
+   the heading itself isn't a control and doesn't need the ring. */
+.set-section-head:focus {
+  outline: none;
+}
+
+.set-intro {
+  max-width: 64ch;
+  margin-bottom: 18px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.set-group-head {
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-base);
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--color-text-primary);
+  margin: 24px 0 12px;
+}
+.set-section-head + .set-group-head,
+.set-intro + .set-group-head {
+  margin-top: 4px;
+}
+
+.set-hint {
+  margin: 8px 0 0;
+  max-width: 64ch;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.set-hint-lead {
+  margin: -4px 0 14px;
+}
+.field .set-hint {
+  margin-top: 2px;
+}
+
+/* app.css sets `.field input { width: 100% }`, which would stretch a checkbox
+   across the column, so these sit outside .field. */
+.set-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+.set-check input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* Signs for the business (U22): its own row, clear of the contact hint. */
+.set-signer,
+.set-home-base {
+  margin-top: var(--space-7);
+  margin-bottom: 0;
+}
+/* Home base's search message (trip-planner task 6): only while it has one. */
+.set-home-base-msg:empty {
+  display: none;
+}
+
+/* GST's rate and the inclusive tick, which mean nothing unless registered. */
+.set-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  margin-top: 10px;
+}
+.set-row-off {
+  opacity: 0.45;
+}
+.set-row-off .set-check {
+  cursor: default;
+}
+
+/* ── Estimates & invoices ─────────────────────────────────────────────────── */
+
+.set-numbers {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+}
+
+.set-numbering {
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--text);
+}
+.set-numbering code,
+.set-pv-notes code {
+  font-family: var(--font-family-mono);
+  font-size: 12px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  white-space: nowrap;
+}
+
+.set-msgs {
+  margin-bottom: 0;
+}
+.set-msg-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+/* A quiet text button: secondary to the field it sits over. */
+.set-link {
+  min-height: 44px;
+  padding: 0 2px;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: 11px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.set-link:hover {
+  color: var(--accent-text);
+}
+.set-link[hidden] {
+  display: none;
+}
+
+/* ── A connection's status (Email, Google Calendar, Hnry) ─────────────────── */
+
+.set-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--muted);
+}
+.set-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid var(--muted);
+}
+
+/* ── Hnry (hnry-invoicing H7) ─────────────────────────────────────────────── */
+
+/* The status and "Check again" share a line, wrapping under it when narrow. */
+.set-hnry-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: 14px;
+}
+.set-hnry-status .set-status {
+  margin-bottom: 0;
+}
+.set-hnry-status .btn[hidden] {
+  display: none;
+}
+/* The Rate Card link under the card-fee note: a link, so it needs the block
+   box for .set-link's 44px target. */
+.set-hnry-link {
+  margin: -8px 0 0;
+}
+.set-hnry-link .set-link {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ── Errors and the save bar ──────────────────────────────────────────────── */
+
+#settings-error {
+  display: none;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+#settings-error.show {
+  display: block;
+}
+
+/* ── Account (account-recovery) ───────────────────────────────────────────── */
+
+/* Its own error box and button: the section saves apart from the page. */
+#set-acct-error {
+  display: none;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+#set-acct-error.show {
+  display: block;
+}
+#set-acct-form .form-grid {
+  margin-bottom: 0;
+}
+.set-acct-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 22px;
+}
+.set-acct-actions .set-hint {
+  margin: 0;
+}
+#set-acct-spin {
+  display: none;
+}
+
+/* Sticky at the foot of the window, so Save is in reach from any section of
+   a long page. The background is the bar's own surface, so fields scrolling
+   under it don't show through. */
+.set-save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  gap: 14px;
+  padding: 10px 16px;
+}
+/* One row on a phone too. responsive.css stacks .pricing-save-bar under 768px
+   for the Rate Card's long sentence; this one's status is three words, and a
+   stacked bar pinned to the foot of a 812px screen would take ~95px of it. The
+   doubled class outranks that rule without touching it. */
+.pricing-save-bar.set-save-bar {
+  flex-direction: row;
+  align-items: center;
+}
+.set-save-bar > :last-child {
+  flex-shrink: 0;
+}
+.set-save-bar .btn {
+  white-space: nowrap;
+}
+/* The toast (a clause's Undo) sits above the bar, not on Save Settings. */
+body:has(.set-save-bar) .export-toast {
+  bottom: calc(var(--control-h) + var(--space-9));
+}
+
+/* ── "Preview with a project…" ────────────────────────────────────────────── */
+
+/* The overlay scrolls, and the box is full-bleed on a phone, where a centred
+   95vw box wastes width there is none of. */
+#modal-agreement-preview {
+  align-items: flex-start;
+  overflow-y: auto;
+}
+#modal-agreement-preview .modal-box {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 24px 16px;
+  border-left: 0;
+  border-right: 0;
+}
+
+.set-preview select {
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+.set-preview select:focus {
+  border-color: var(--accent);
+}
+.set-preview select option {
+  background: var(--color-bg-float);
+  color: var(--text);
+}
+
+.set-pv-notes {
+  margin: 14px 0 10px;
+}
+.set-pv-notes p + p {
+  margin-top: 6px;
+}
+.set-pv-warn {
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+/* The filled text, laid out as the client's sign dialog and the agreement PDF
+   set it (documents.js agreementLayout; c.css "The agreement as it reads",
+   here on the app's dark tokens). The characters are the text's own: no
+   generated content, no text-transform (the heads are capitals in the text).
+   Each block keeps its own line ends; the box doesn't, so the blank lines
+   between blocks become the space below.
+     title    SERVICE AGREEMENT, Delight, tracked
+     head     PARTIES … TERMS, mono over a hairline
+     clause   "3. Payment", Delight, the number quieter than its title
+     sub      (a) at one hang, (i) a hang further in, each hanging from its
+              mark; a second paragraph of either keeps its depth
+     signed   the signing line, set off below a hairline */
+.set-pv-text {
+  --ag-hang: 2.4em;
+  max-height: 55vh;
+  overflow-y: auto;
+  padding: var(--space-6) var(--space-6);
+  background: var(--color-bg-page);
+  border: 1px solid var(--color-border-subtle);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-relaxed);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+.set-pv-text > * {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: inherit;
+  font-weight: inherit;
+}
+.set-pv-text > * + * {
+  margin-top: var(--space-5);
+}
+.set-pv-text > .ag-title {
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-lg);
+  line-height: var(--line-height-tight);
+  letter-spacing: 0.06em;
+}
+.set-pv-text > .ag-head {
+  margin-top: var(--space-7);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border-subtle);
+  font-family: var(--font-family-mono);
+  font-weight: var(--font-weight-normal);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--color-text-secondary);
+}
+.set-pv-text > .ag-clause {
+  margin-top: var(--space-7);
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-snug);
+}
+.set-pv-text .ag-num {
+  font-weight: var(--font-weight-normal);
+  color: var(--color-text-secondary);
+}
+.set-pv-text > .ag-head + *,
+.set-pv-text > .ag-clause + * {
+  margin-top: var(--space-2);
+}
+.set-pv-text > .ag-sub {
+  padding-left: var(--ag-hang);
+  text-indent: calc(-1 * var(--ag-hang));
+}
+.set-pv-text .ag-mark {
+  display: inline-block;
+  min-width: var(--ag-hang);
+  text-indent: 0;
+  white-space: pre;      /* its space counts, so a long mark never touches its text */
+  color: var(--color-text-secondary);
+}
+.set-pv-text > .ag-l2 {
+  margin-left: var(--ag-hang);
+}
+.set-pv-text > .ag-p.ag-l1,
+.set-pv-text > .ag-p.ag-l2 {
+  padding-left: var(--ag-hang);
+}
+.set-pv-text > .ag-signed {
+  margin-top: var(--space-7);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border-subtle);
+}
+.set-pv-text:empty {
+  display: none;
+}
+
+/* ── Tablet and up ────────────────────────────────────────────────────────── */
+
+@media (min-width: 768px) {
+  .set-row {
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 20px;
+  }
+  .set-row .field {
+    width: 120px;
+    flex-shrink: 0;
+  }
+  .set-check {
+    min-height: 0;
+  }
+  .set-row .set-check {
+    padding-bottom: 9px;
+  }
+
+  .set-numbers {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .set-link {
+    min-height: 0;
+  }
+  .set-save-bar {
+    padding: 12px 22px;
+  }
+
+  #modal-agreement-preview {
+    padding: 24px 0;
+  }
+  #modal-agreement-preview .modal-box {
+    width: 720px;
+    max-width: 95vw;
+    margin: auto;
+    padding: 28px 32px;
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+}
+
+/* ── Desktop: the rail ────────────────────────────────────────────────────── */
+
+@media (min-width: 1100px) {
+  .set-shell {
+    display: grid;
+    grid-template-columns: 172px minmax(0, 1fr);
+    column-gap: 36px;
+    align-items: start;
+  }
+  /* Sticky so the rail stays in reach down the page; 86px is the 52px header
+     plus #main's 34px top padding, where it rests before any scroll. */
+  .set-rail {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 2px;
+    margin: 0;
+    position: sticky;
+    top: 86px;
+    border-left: 1px solid var(--border);
+  }
+  .set-rail .nav-link {
+    justify-content: flex-start;
+    width: 100%;
+    margin-left: -1px;
+    padding: 9px 14px;
+    text-align: left;
+    border-bottom: 0;
+    border-left: 2px solid transparent;
+  }
+  .set-rail .nav-link[aria-current='true'] {
+    border-left-color: var(--accent);
+  }
+}
+
+/* ── Email's test send (task 28) ──────────────────────────────────────────── */
+
+.set-email-test {
+  max-width: 420px;
+  margin-top: 10px;
+}
+
+/* ── Service agreement: the builder (ui-clarity task 5) ───────────────────── */
+
+/* Tokens only from here on (TASKS ground rules). The section is a stack of
+   panels (app.css); each panel's body carries its own vertical padding,
+   since .panel-body is padded across only. */
+.set-agr-preview {
+  margin: 0 0 var(--space-6);
+}
+.set-agr-panels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr); /* never wider than the column */
+  gap: var(--panel-gap);
+}
+.set-panel .panel-body {
+  padding-top: var(--panel-pad-y);
+  padding-bottom: var(--panel-pad-y);
+}
+.set-panel .set-hint code,
+.set-panel .field .set-hint code {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-primary);
+}
+
+/* The Header panel: the agreement's fixed layout as a page of text on the
+   inset layer, its heads in mono caps (they are the agreement's own heads),
+   each field a chip where its value goes. */
+.agr-doc {
+  display: grid;
+  gap: var(--space-6);
+  padding: var(--space-6);
+  background: var(--color-bg-inset);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-relaxed);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+.agr-label {
+  margin-bottom: var(--space-2);
+  font: var(--eyebrow-font);
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--color-text-primary);
+}
+.agr-title {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+.agr-alt {
+  font-style: italic;
+  color: var(--color-text-tertiary);
+}
+.agr-chip {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border-radius: var(--chip-radius);
+  background: var(--color-bg-panel);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+  color: var(--color-text-primary); /* the braces say "field"; terracotta is for the action (task 18) */
+  white-space: nowrap;
+}
+/* The one part typed here sits where it prints, lifted onto the panel. */
+.agr-intro {
+  padding: var(--space-5);
+  margin: 0 calc(-1 * var(--space-3));
+  background: var(--color-bg-panel);
+  border-radius: var(--radius-sm);
+}
+.agr-intro label {
+  font: var(--eyebrow-font);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.agr-biz {
+  margin-top: var(--space-6);
+}
+.agr-biz-lead {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.agr-biz-lead .set-link {
+  font-size: var(--font-size-sm);
+}
+.agr-biz-list > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-5);
+  min-height: var(--touch-min);
+  border-bottom: 1px solid var(--color-border-hairline);
+  font-size: var(--font-size-sm);
+}
+.agr-biz-list > div:last-child {
+  border-bottom: 0;
+}
+.agr-biz-list dt {
+  color: var(--color-text-secondary);
+}
+.agr-biz-value {
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+/* Blank: says so, in the warning colour with its shape (a dashed edge), and
+   takes you to the field. */
+.agr-missing {
+  min-height: var(--touch-min);
+  padding: 0 var(--space-4);
+  background: none;
+  border: 0;
+  font: var(--chip-font);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-status-warning-text);
+  cursor: pointer;
+}
+.agr-missing::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: var(--space-3);
+  border: 1px dashed currentColor;
+  border-radius: 50%;
+  vertical-align: 1px;
+}
+.agr-missing:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* The Clauses panel. */
+.set-cl-lead {
+  margin: 0 0 var(--space-5);
+}
+.clause-list {
+  position: relative; /* the drop line is placed inside it */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr); /* long titles ellipsise, never widen */
+  gap: var(--space-3);
+  list-style: none;
+}
+.set-cl-empty {
+  padding: var(--space-6);
+  border: 1px dashed var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.set-cl-empty[hidden] {
+  display: none;
+}
+.set-cl-add {
+  margin-top: var(--space-5);
+}
+
+/* A card: closed, a row on the inset layer; open, lifted onto the panel
+   with an edge, so the one being edited stands apart. */
+.clause {
+  background: var(--color-bg-inset);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+}
+.clause.is-open {
+  background: var(--color-bg-panel);
+  border-color: var(--color-border-subtle);
+  box-shadow: var(--shadow-sm);
+}
+.clause-row {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch-min);
+  padding-right: var(--space-2);
+}
+.clause-handle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-min);
+  min-height: var(--touch-min);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+  cursor: grab;
+  touch-action: none; /* a finger on the handle drags; anywhere else scrolls */
+}
+.clause-handle:hover {
+  color: var(--color-text-primary);
+}
+/* Two columns of three dots, drawn so they sit on the row's centre line
+   (the ⠿ glyph rides high in most system faces). */
+.clause-grip {
+  width: 8px;
+  height: 14px;
+  background: radial-gradient(circle, currentColor 1.25px, transparent 1.5px) 0 0 / 4px 5px;
+}
+.clause-head {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+}
+.clause-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  min-height: var(--touch-min);
+  padding: var(--space-2) var(--space-3) var(--space-2) 0;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  font: var(--font-weight-medium) var(--font-size-base)/var(--line-height-snug) var(--font-family-body);
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+.clause-num {
+  flex: 0 0 auto;
+  min-width: 2ch;
+  font: var(--clause-num-font);
+  color: var(--color-accent-text);
+}
+.clause-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.clause-tag {
+  flex: 0 0 auto;
+  padding: var(--chip-pad);
+  border-radius: var(--chip-radius);
+  box-shadow: inset 0 0 0 1px var(--color-border-subtle);
+  font: var(--chip-font);
+  color: var(--color-text-secondary);
+}
+.clause-tag[hidden] {
+  display: none;
+}
+.clause-toggle .panel-chev {
+  margin-left: auto;
+}
+.clause-toggle[aria-expanded='false'] .panel-chev {
+  transform: rotate(-45deg);
+}
+.clause-toggle:hover .panel-chev {
+  color: var(--color-text-primary);
+}
+.clause-menu {
+  flex: 0 0 auto;
+  display: flex; /* the button centres on the row, not on a text baseline */
+}
+.clause-more {
+  min-width: var(--touch-min);
+  justify-content: center;
+}
+
+.clause-body {
+  display: grid;
+  gap: var(--space-5);
+  padding: var(--space-2) var(--space-5) var(--space-6);
+}
+.clause-body[hidden] {
+  display: none;
+}
+/* Grows with its text where the browser can (rows is the fallback), up to
+   most of the window, so an open card shows its whole clause. */
+.clause-body textarea,
+.field textarea#set-agr-intro {
+  field-sizing: content;
+  min-height: calc(3lh + 2 * var(--space-4));
+  max-height: 60vh;
+  line-height: var(--line-height-relaxed);
+}
+.set-optional {
+  font-weight: var(--font-weight-normal);
+  color: var(--color-text-tertiary);
+}
+.clause-deposit {
+  margin-bottom: calc(-1 * var(--space-4));
+}
+.clause-dep-hint {
+  margin-top: 0;
+}
+
+/* Sub-clauses (task 6): rows inside an open card, each a handle, its
+   letter as it prints, an optional heading and the text, and a ⋯. An
+   indented row steps in under the lettered one above it; the space is the
+   nesting, no rule. On a phone the text takes the row's full width below;
+   from 768px it sits under the heading. */
+.clause-subs-head {
+  margin-bottom: var(--space-3);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+}
+.clause-subs-head[hidden] {
+  display: none;
+}
+.sub-list {
+  position: relative; /* the drop line is placed inside it */
+  list-style: none;
+}
+.sub-list:has(> .sub) {
+  border-top: 1px solid var(--color-border-hairline);
+}
+.sub {
+  display: grid;
+  grid-template-columns: var(--touch-min) 4ch minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-2);
+  row-gap: var(--space-3);
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--color-border-hairline);
+  background: var(--color-bg-panel);
+}
+.sub.is-indent {
+  margin-left: var(--space-6);
+}
+.sub-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-min);
+  height: var(--touch-min);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+  cursor: grab;
+  touch-action: none; /* a finger on the handle drags; anywhere else scrolls */
+}
+.sub-handle:hover {
+  color: var(--color-text-primary);
+}
+.sub-mark {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-accent-text);
+}
+.sub.is-indent .sub-mark {
+  color: var(--color-text-secondary);
+}
+.sub-heading,
+.sub-text {
+  width: 100%;
+  padding: var(--space-3) var(--space-5);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--input-radius);
+  font: inherit;
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--easing-default);
+}
+.sub-heading {
+  min-height: var(--touch-min);
+  font-weight: var(--font-weight-medium);
+}
+.sub-text {
+  grid-column: 1 / -1; /* a phone's full row: long clauses need the width */
+  min-height: calc(2lh + 2 * var(--space-3));
+  max-height: 60vh;
+  field-sizing: content;
+  resize: vertical;
+  line-height: var(--line-height-relaxed);
+}
+.sub-heading::placeholder,
+.sub-text::placeholder {
+  color: var(--color-text-tertiary);
+  font-weight: var(--font-weight-normal);
+}
+.sub-heading:focus,
+.sub-text:focus {
+  border-color: var(--color-accent-mark);
+}
+.sub-menu {
+  grid-column: 4;
+  grid-row: 1; /* beside the heading, whichever row the text takes */
+  display: flex;
+}
+.sub-more {
+  min-width: var(--touch-min);
+  justify-content: center;
+}
+.sub-add {
+  margin-top: var(--space-4);
+}
+.sub.is-dragging {
+  position: relative;
+  z-index: 2;
+  background: var(--color-bg-float);
+  box-shadow: var(--shadow-lg);
+  border-radius: var(--radius-sm);
+}
+
+/* Dragging (sortable.js): the card lifts and follows the pointer, the line
+   marks where it lands, and nothing else on the page reacts to the pointer
+   or selects text on the way. */
+.clause.is-dragging {
+  position: relative;
+  z-index: 2;
+  background: var(--color-bg-float);
+  box-shadow: var(--shadow-lg);
+  cursor: grabbing;
+}
+.sort-line {
+  position: absolute;
+  left: var(--space-4);
+  right: var(--space-4);
+  height: 2px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent-mark);
+  pointer-events: none;
+  z-index: 3; /* over the lifted card, which can sit across it */
+}
+.sort-dragging,
+.sort-dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.clause-handle:focus-visible,
+.clause-toggle:focus-visible,
+.sub-handle:focus-visible,
+.agr-missing:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: var(--shadow-focus);
+}
+
+/* Fields you can use: the list, two columns once there's room. */
+.set-field-list {
+  list-style: none;
+  border-top: 1px solid var(--color-border-hairline);
+}
+.set-field-list li {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--color-border-hairline);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-secondary);
+}
+.set-field-code {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-min);
+  padding: 0 var(--space-1);
+  background: none;
+  border: 0;
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+.set-field-code code {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--chip-radius);
+  background: var(--color-bg-inset);
+  box-shadow: inset 0 0 0 1px var(--color-border-subtle);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  transition: color var(--duration-fast) var(--easing-default), box-shadow var(--duration-fast) var(--easing-default);
+}
+.set-field-code:hover code {
+  box-shadow: inset 0 0 0 1px var(--color-accent-mark);
+  color: var(--color-accent-text);
+}
+
+.set-preview-row {
+  margin-top: var(--space-5);
+}
+
+/* The confirm before a clause with text is deleted. */
+.set-confirm {
+  max-width: 440px;
+}
+.set-cf-body {
+  margin-bottom: var(--space-7);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+}
+
+@media (min-width: 768px) {
+  .agr-doc {
+    padding: var(--space-7);
+  }
+  .agr-intro {
+    margin: 0 calc(-1 * var(--space-5));
+  }
+  .agr-biz-list > div {
+    min-height: var(--control-h);
+  }
+  .agr-missing {
+    min-height: var(--control-h-sm);
+  }
+  .set-agr-rate,
+  .set-faq {
+    max-width: 420px;
+  }
+  .clause-row {
+    min-height: 48px;
+  }
+  .clause-handle {
+    width: var(--space-8);
+    min-height: var(--space-8);
+  }
+  .clause-toggle {
+    min-height: var(--control-h);
+  }
+  .clause-more {
+    min-width: var(--control-h-sm);
+  }
+  .clause-body {
+    /* Under the title, past the handle and number. */
+    padding: var(--space-2) var(--space-6) var(--space-6) calc(var(--space-8) + 2ch + var(--space-4));
+  }
+  .sub {
+    grid-template-columns: var(--space-8) 4ch minmax(0, 1fr) auto;
+    padding: var(--space-3) 0;
+  }
+  .sub.is-indent {
+    margin-left: var(--space-8);
+  }
+  .sub-handle {
+    width: var(--space-8);
+    height: var(--control-h);
+  }
+  .sub-heading,
+  .sub-text {
+    font-size: var(--font-size-base);
+  }
+  .sub-heading {
+    min-height: var(--control-h);
+  }
+  .sub-text {
+    grid-column: 3 / 4;
+  }
+  .sub-more {
+    min-width: var(--control-h-sm);
+  }
+  .set-field-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--space-7);
+  }
+  .set-field-code {
+    min-height: var(--control-h-sm);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .set-field-code code,
+  .sub-heading,
+  .sub-text {
+    transition: none;
+  }
+}
+
+/* ── Google Calendar (trip-planner task 12) ───────────────────────────────── */
+
+/* Tokens only. Functionalist, like the rest of the screen: the calendars'
+   own colours are the only colour in the section, as small dots; a switch
+   that is on is drawn in the page's ink, not terracotta (that stays Save
+   settings', the screen's one accent action). */
+
+.set-status-dot.is-on {
+  border-color: var(--color-status-success);
+  background: var(--color-status-success);
+}
+/* Days Google didn't take: the warning colour, as the pencilled day wears it. */
+.set-status-dot.is-warn {
+  border-color: var(--color-status-warning);
+  background: var(--color-status-warning);
+}
+
+#set-gcal-notice {
+  display: none;
+  margin: 0 0 var(--space-6);
+  padding: var(--space-4) var(--space-6);
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  max-width: 64ch;
+}
+#set-gcal-notice.show {
+  display: block;
+}
+
+.gcal-account {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  justify-items: start;
+}
+.gcal-account .set-status {
+  margin-bottom: 0;
+}
+.gcal-who {
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+.gcal-who strong {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+.gcal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.gcal-warn {
+  margin: var(--space-6) 0 0;
+  padding: var(--space-4) var(--space-6);
+  max-width: 64ch;
+  border-left: 2px solid var(--color-status-warning);
+  background: var(--color-bg-inset);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-secondary);
+}
+
+/* The toggle list: one panel, a hairline between rows. */
+.gcal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-width: 560px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--panel-radius);
+}
+.gcal-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: 0 var(--space-6) 0 0;
+}
+.gcal-row + .gcal-row {
+  border-top: 1px solid var(--color-border-hairline);
+}
+/* The label is the row's big target: a click on the name flips the switch. */
+.gcal-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  min-height: 56px;
+  padding: var(--space-4) 0 var(--space-4) var(--space-6);
+  cursor: pointer;
+}
+.gcal-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+  background: var(--gcal-colour, var(--color-status-neutral));
+  box-shadow: 0 0 0 1px var(--color-border-subtle);
+}
+.gcal-text {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+.gcal-name {
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+.gcal-meta {
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-secondary);
+}
+
+/* The switch: a real checkbox (role="switch"), drawn. 44px wide target on a
+   phone through its own size plus the row's padding. */
+.gcal-switch {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  position: relative;
+  width: 44px;
+  height: 26px;
+  margin: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-inset);
+  box-shadow: inset 0 0 0 1px var(--color-border-strong);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--easing-default), box-shadow var(--duration-fast) var(--easing-default);
+}
+.gcal-switch::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  background: var(--color-text-tertiary);
+  transition: transform var(--duration-normal) var(--easing-default), background var(--duration-fast) var(--easing-default);
+}
+.gcal-switch:checked {
+  background: var(--color-text-primary);
+  box-shadow: inset 0 0 0 1px var(--color-text-primary);
+}
+.gcal-switch:checked::before {
+  transform: translateX(18px);
+  background: var(--color-bg-page);
+}
+.gcal-switch:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--color-border-strong), var(--shadow-focus);
+}
+.gcal-switch:checked:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--color-text-primary), var(--shadow-focus);
+}
+.gcal-row:hover .gcal-switch:not(:checked) {
+  box-shadow: inset 0 0 0 1px var(--color-text-secondary);
+}
+
+.gcal-list-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+  margin-top: var(--space-4);
+}
+.gcal-list-foot .set-hint {
+  margin: 0;
+}
+.gcal-sync {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: start;
+}
+.gcal-sync-hint {
+  margin-top: calc(-1 * var(--space-4));
+}
+.gcal-sync .gcal-actions {
+  margin-top: var(--space-2);
+}
+/* Working: reads as a disabled button but keeps focus (no disabled attribute). */
+.gcal-sync .btn[aria-disabled="true"] {
+  opacity: .45;
+  cursor: progress;
+}
+.gcal-sync-note {
+  margin-top: var(--space-5);
+  max-width: 64ch;
+}
+
+/* The disconnect dialog's one option. */
+.set-cf-option {
+  margin: calc(-1 * var(--space-5)) 0 0;
+}
+.set-cf-option-hint {
+  margin: 0 0 var(--space-7);
+  padding-left: 22px;
+}
+
+@media (min-width: 768px) {
+  .gcal-label {
+    min-height: 52px;
+  }
+  .gcal-name {
+    font-size: var(--font-size-base);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gcal-switch,
+  .gcal-switch::before {
+    transition: none;
+  }
+}

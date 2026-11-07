@@ -1,0 +1,61 @@
+'use strict';
+
+/**
+ * One estimates-row → object mapper, for every route that reads one.
+ *
+ * There used to be two: `loadJson` in routes/estimates.js and `loadEstimate` in
+ * routes/pdf.js. Each new column had to be remembered in both, and twice now it
+ * wasn't — first the rate-card lookup (see the note in ratecard.js), then
+ * `sectionLabels`, which the API returned and the PDF silently dropped, so a
+ * renamed category still re-headed the client's document even though the
+ * snapshot fixing that was sitting in the row.
+ *
+ * The PDF needs fewer fields than the API does, but carrying a couple of spare
+ * ones costs nothing and is worth not having a second definition of what an
+ * estimate is.
+ *
+ * `days` are its production days (days.js readDays), which live in their own
+ * table; a caller that has none to pass gets `days: []`, which is also what
+ * every estimate saved before v11 reads. `rentals` (v12, rentals.js
+ * readRentals) are the same: their own table, and `[]` when none are passed.
+ */
+function loadEstimate(row, days, rentals) {
+  return {
+    id: row.id,
+    upid: row.upid,
+    name: row.name,
+    date: row.date,
+    // draft | sent | accepted | declined (v13).
+    status: row.status,
+    // The project this estimate belongs to (v13); null only for a row no
+    // write or migration has reached yet.
+    projectId: row.project_id || null,
+    docType: row.doc_type,
+    invoiceNumber: row.invoice_number,
+    clientId: row.client_id,
+    client: JSON.parse(row.client_json || '{}'),
+    notes: row.notes,
+    activeRows: JSON.parse(row.active_rows_json || '{}'),
+    // What each labour category was called when this estimate was saved. The
+    // PDF and the detail view prefer it over the live rate card so a renamed or
+    // deleted category doesn't rewrite a document that has already gone out.
+    sectionLabels: JSON.parse(row.section_labels_json || '{}'),
+    // Whether GST applies to this estimate at all. Stored per estimate because
+    // being registered doesn't make every job GST-bearing, and because the tax
+    // treatment of a sent document must not move — see calc.js's header.
+    gstFree: row.gst_free === 1,
+    totals: JSON.parse(row.totals_json || '{}'),
+    // Production booking (v11). The tick, the snapshot it was priced under
+    // (calc.js surchargeSnapshot; owner-only, never on a public route), and
+    // the booked days.
+    shortNotice: row.short_notice === 1,
+    surcharges: JSON.parse(row.surcharges_json || '{}'),
+    days: Array.isArray(days) ? days : [],
+    // Gear rentals (v12): when each vendor's hire goes out and comes back.
+    rentals: Array.isArray(rentals) ? rentals : [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+module.exports = { loadEstimate };

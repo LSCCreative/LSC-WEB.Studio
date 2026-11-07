@@ -1,0 +1,1226 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Responsive — the tablet band (768–1099px) and the mobile band (<768px).
+
+   Additive and siloed, per the Desktop Preservation Law: every rule here lives
+   inside a media query, so the >=1100px layout is untouched. app.css stays
+   byte-identical to the desktop <style> block; this file is loaded last so it
+   wins ties on equal specificity.
+
+   One rule is a min-width query rather than a max-width one — it hides
+   #nav-menu-btn, which is markup no desktop layout has. It is explained where
+   it sits, at the head of the mobile band.
+
+   The three tables that stack below 768px (the editor's line-item grids, the
+   read-only estimate's tables, the rate card) do it by printing a data-label
+   from each cell. Those attributes are written by estimate-editor.js,
+   estimate-detail.js, clients.js and pricing.js, and each carries a comment
+   pointing back here. **A new column needs a data-label or it loses its
+   heading on a phone.**
+
+   TASKS.md names `@media (max-width: 992px)` for this task but states the band
+   as 768–1099px, as does DESIGN_BRIEF.md. 992 would leave 993–1099px on the
+   desktop rules inside a sub-desktop viewport, so the band here is 1099px.
+
+   Two queries, not one, because the measurements say the band has two halves.
+   Nothing actually breaks between ~900 and 1099px — the base rules already
+   handle it — so that half gets only the table guard. The things that do break
+   both break at ~860px, and are fixed at 900 with margin:
+
+     • the header nav wraps to two lines from ~865px down (TASKS.md estimated
+       ~720px and recorded that the tablet band was unaffected; it is not);
+     • .summary-bar silently clips a money figure from ~860px down.
+
+   Measured on the estimates list, detail, editor, pricing and clients screens
+   at 1400 / 1099 / 900 / 768px. There are still no stored baseline screenshots
+   for this project — this was done as a live measurement pass with
+   getBoundingClientRect/getComputedStyle, the same method as the desktop
+   preservation check.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── 768–1099px ───────────────────────────────────────────────────────────── */
+
+@media (max-width: 1099px) {
+  /* The editor's line-item tables are CSS grids with four fixed money columns
+     (90/90/90/110 plus a 32px delete cell) and one flexible name column. Only
+     the name column can absorb a narrower viewport, so it is the one that goes
+     first: at 768px it is down to 259px. Rather than let it keep squashing,
+     the block scrolls and the grid holds a floor.
+
+     .bb-head and .bb-picker take the same floor so the title bar and the
+     service picker scroll with the rows instead of sitting at the visible
+     width and leaving a blank strip beside them when scrolled.
+
+     660px is deliberately just under the content width at 768px (705px), so
+     this is latent through the whole tablet band and engages only below it.
+     That is the point: it guarantees the tables can never silently squash,
+     without forcing a scrollbar onto a width where they still fit. The <768px
+     task replaces this with stacked label/value blocks. */
+  .billing-block {
+    overflow-x: auto;
+  }
+  .billing-block .bb-head,
+  .billing-block .bb-picker,
+  .billing-block .gt-head,
+  .billing-block .gt-row,
+  .billing-block .gt-body > * {
+    min-width: 660px;
+  }
+
+  /* The save bar under the rate card, which Goals reuses. It is a flex row of
+     a sentence and a button group, and both default to flex-shrink:1 — so as
+     the band narrows the long sentence keeps its width and the button group is
+     the one squeezed, until "Save Goals", "Save Services" and "Reset Defaults"
+     each break onto two lines inside their buttons (measured at 768px: the
+     group was 105px against the sentence's 569px). Same failure the header
+     nav had at ~865px, same fix: the controls hold their width and the prose
+     wraps instead. Below 768px the bar is a column and none of this applies.
+     Latent through most of the band; nothing wraps at 1099px. */
+  .pricing-save-bar > :last-child {
+    flex-shrink: 0;
+  }
+  .pricing-save-bar .btn {
+    white-space: nowrap;
+  }
+  /* The estimate detail's Edit / Duplicate / Export row, same failure: at
+     768px "↑ Export Quote PDF" broke onto two lines inside a 142px button
+     while the title beside it kept its width (base design review,
+     2026-09-21). The group holds its width, the title wraps instead. */
+  .est-header > div:last-child {
+    flex-shrink: 0;
+  }
+  .est-header .btn {
+    white-space: nowrap;
+  }
+
+  /* ── Finance & Price (responsive pass, 2026-09-28) ───────────────────────
+     The rail narrows, per the brief's 1099–900 band, and stays narrow down to
+     768 (the 899–768 band keeps it). 120px holds the longest label — "PROFIT
+     GOALS", 88px of text — with 10px either side; the gap drops from 36 to 24.
+     That hands the child screen 44px back, which was the difference at 768px
+     between the Dashboard's Full day floor figure being cut 8px short (its
+     tile is overflow:hidden) and fitting, and likewise Overhead's Edit / ×
+     clipped 3px by #oh-table-block. Measured, not guessed: see HANDOVER. */
+  .finance-shell {
+    grid-template-columns: 120px minmax(0, 1fr);
+    column-gap: 24px;
+  }
+  .finance-rail .nav-link {
+    padding: 9px 10px;
+  }
+
+  /* The head-row actions — "+ Add Expense" / "+ Add Asset" beside Overhead's
+     title, "+ Add Category" in the Rate Card's catalogue bar — broke onto two
+     lines inside their buttons at 768–800px. Same failure and same fix as the
+     save bar above: the control keeps its width and the prose beside it
+     wraps. */
+  #oh-add,
+  #js-add-cat {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  /* The depreciation register is the one table in the area that doesn't fit
+     this band (it needs ~760px; the column is 560–830px), so it scrolls inside
+     .dep-scroll — the register task's fix for its Edit / × being clipped out
+     of reach. Scrolling alone still left them off-screen until the reader
+     scrolled to the far end, so the actions column is pinned to the right edge
+     of the scroller and the figures slide under it. Stacking the register
+     instead was measured and rejected: at 560px, eleven assets become eleven
+     nine-line cards for a table that fits once the window is ~140px wider.
+     The shadow is the only cue that something is under the column; it is
+     faint enough to read as nothing when the table happens to fit. */
+  /* And 4px off each side of every cell in the depreciation tables: across
+     eight and nine columns that is ~70px, which took the schedule from
+     scrolling by 3px at 768 to fitting, and the register from 194px of scroll
+     to 138 (three assets, scratch data). */
+  .dep-scroll .est-table th,
+  .dep-scroll .est-table td,
+  .dep-scroll .est-table td.right {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  .dep-scroll .dep-table th:last-child,
+  .dep-scroll .dep-table td.oh-act {
+    position: sticky;
+    right: 0;
+    background: var(--bg);
+    box-shadow: -10px 0 10px -10px rgba(0, 0, 0, 0.7);
+  }
+}
+
+/* ── 768–1099px only: the Dashboard's comparison table ────────────────────
+   Bounded at both ends, unlike the band above, because below 768px this table
+   stacks into cards and the Section line is wanted back there.
+
+   At 1100px the table fits one line per row; at 1000 thirteen of 21 rows ran
+   to two lines, and at 768 "Against floor" split "$37.10 / over" — the one
+   column the table exists for (design review, should-fix 1). Section goes: the
+   service names already say it, and the Rate Card and the phone cards both
+   show it. The figures hold one line each, so it is Service that wraps if
+   anything must.
+
+   The headings are left free to wrap ("You charge / (ex-GST)") — a nowrap
+   head would set its column's width and take it from Service — and the cells
+   lose 4px a side, as the depreciation tables do in this band. Measured on
+   the scratch card's 21 rows: none wrap from 1099 down to 850, and at 768
+   three of the longest names ("Video Editor — Longform Sound Mix/Master") take
+   two lines — the figures beside them never do. */
+@media (min-width: 768px) and (max-width: 1099px) {
+  .dash-table .dash-sec-col {
+    display: none;
+  }
+  .dash-table td.right {
+    white-space: nowrap;
+  }
+  .dash-table th,
+  .dash-table td {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+}
+
+/* ── below ~900px ─────────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  /* The Finance & Price Dashboard's cost / capacity panels and its targets row
+     stack here, per the brief's 899–768 band: beside the rail, two columns
+     leave each panel ~230px, and a label like "Overhead cost per hour" then
+     wraps against its figure. The floors stay three across until <768px. */
+  .dash-panels,
+  .dash-targets {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* 40px of gutter is generous on a 1080px column and expensive on a 768px
+     one. Held at 40px down to 900px on purpose: dropping it higher up the band
+     would make the content column grow as the window shrinks, which reads as a
+     jump backwards at the boundary. */
+  #main {
+    padding: 34px 24px;
+  }
+  /* The banner is a full-bleed bar under the header; its inset matches #main's
+     so its text lines up with the page content. */
+  #connection-banner,
+  #update-banner {
+    padding: 10px 24px;
+  }
+
+  /* The header nav.
+
+     #hdr-right needs 690px and the wordmark beside it takes 123px, so below
+     ~865px the flex items start shrinking. .nav-link has no flex-shrink of its
+     own, so they shrink to min-content and the labels break across two lines —
+     "Invoice / Settings", "Sign / Out" — inside a header fixed at 52px. It is
+     not clipped, but it is a mess, and it starts well inside the tablet band.
+
+     Fixed here by taking the space back rather than by collapsing the nav: the
+     <768px task owns the compact nav, and a real one (a menu button) is a
+     bigger change than this band needs. nowrap is the actual fix — the rest is
+     what makes nowrap fit.
+
+     The home button is the cheapest 95px available: #logo-btn and
+     #nav-estimates are both wired to toEstimates in js/app.js, so its label is
+     a duplicate of the Estimates item two places to its right. The house icon
+     stays, and the button keeps its name through the aria-label added in
+     index.html for exactly this reason. */
+  #hdr-right {
+    gap: 12px;
+  }
+  .nav-link {
+    white-space: nowrap;
+    padding: 6px 8px;
+  }
+  #logo-btn .nav-label {
+    display: none;
+  }
+
+  /* The summary bar.
+
+     Five 1fr tracks, and 1fr's minimum is auto — so a track cannot shrink
+     below its content's min-content width. A five-figure total ("$128,450.00")
+     is 117px of unbreakable string at 19px, which forces each track to 153.6px:
+     692px of tracks inside a 671px box. .summary-bar is overflow:hidden, so the
+     overflow is not scrolled or wrapped, it is cut — at 768px the Tax Set-Aside
+     figure is simply gone, with nothing on screen to say so. The scratch data
+     tops out at $560, which is why this never showed up before; it was found by
+     substituting a realistic figure and re-measuring.
+
+     Three changes, each doing one job:
+       minmax(0,1fr)  stops a long value from widening its track at all;
+       the smaller value and padding make a five-figure total fit the track that
+         is left (16px is already in this design's vocabulary — GST carries an
+         inline 15px at desktop);
+       overflow-wrap is the backstop, so a value too big even for that wraps
+         onto a second line instead of disappearing. Nothing is ever lost
+         silently.
+
+     The inline `grid-column: span 2` on two items in the second bar is left
+     alone — overriding it would need !important, and at five columns the
+     2/1/2 arrangement is still correct. */
+  .summary-bar {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .sum-item {
+    padding: 13px 12px;
+  }
+  .sum-value {
+    font-size: 16px;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* ── The mobile band, <768px ────────────────────────────────────────────────
+   Built 2026-09-13. 767px, not the 768 TASKS.md names, for the same reason the
+   band above is 1099 and not 992: 768 is the first pixel of the tablet band in
+   both TASKS.md and DESIGN_BRIEF.md, and claiming it for both would put two
+   layouts on one width.
+
+   The one rule in this section that is NOT a max-width query is the next one.
+   #nav-menu-btn is new markup — no desktop layout contains it — so hiding it
+   above the band is the same kind of rule as estimates.css's
+   `.btn .spinner{flex-shrink:0}`: global in form, but it can only reach
+   something the desktop app never had. It is here rather than in a screen's
+   stylesheet because the compact nav is a feature of this band and splitting it
+   across two files would hide half of it from whoever reads this one. */
+@media (min-width: 768px) {
+  #nav-menu-btn {
+    display: none;
+  }
+  /* The Dashboard comparison's "Show all N services" toggle, the same kind of
+     rule: phone-only markup (finance-dashboard.js, showAllRows). Above this
+     band every row always shows, so the button has nothing to do. */
+  .dash-show-all-row {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  /* iOS Safari zooms the page whenever a focused field's text is under 16px,
+     and leaves it zoomed after blur. Every field in the app was 10.5–13px, so
+     tapping any of them did it (Finance & Price design review, should-fix 3;
+     site-wide by the user's go-ahead, 2026-09-28). 16px is the threshold, not a
+     style choice. The alternative, maximum-scale=1 on the viewport, also stops
+     pinch-zoom on Android — a WCAG 1.4.4 failure — so it is not used.
+
+     !important is deliberate and is the only one in this file: the sizes it
+     replaces are set by more than twenty class selectors up to (0,2,1)
+     (`.pricing-table input.pricing-hpu-inp`, `.dep-modal .field select`), and
+     a new one added later must not quietly bring the zoom back. Checkboxes and
+     radios hold no text and are left out. */
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* The Dashboard's three floors stack: at 343px, three 40px money figures
+     side by side would be ~100px each and "$135.12" doesn't fit.
+
+     Stacked as three full tiles they were ~180px each, pushing "Rate card
+     against its floors" — the answer the page is for — ~700px down (design
+     review, should-fix 5). So they become three rows of one block instead,
+     the way .summary-bar already reads on a phone: label and note left, the
+     figure right in Delight at 28px, still the largest type on the page after
+     the title. About 190px for all three. */
+  .dash-floors {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+  .dash-floor {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 16px;
+    align-items: center;
+    padding: 14px 16px;
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .dash-floor:last-child {
+    border-bottom: none;
+  }
+  .dash-floor .sum-label {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: end;
+    margin-bottom: 3px;
+  }
+  .dash-floor-sub {
+    grid-column: 1;
+    grid-row: 2;
+    align-self: start;
+  }
+  .dash-floor-value {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    font-size: 28px;
+    margin: 0;
+    text-align: right;
+  }
+  /* The Dashboard's post-ratio inputs: two 190px fields don't fit side by side
+     in a phone-width panel, so each takes the row rather than wrapping ragged. */
+  .dash-post-inputs .field {
+    width: 100%;
+  }
+  /* The Dashboard's GST mirror: .tax-setting already stacks (below), so the
+     rate field widens with it; each checkbox label becomes the 44px target,
+     since the checkbox itself is held at its own size (finance-dashboard.css). */
+  .dash-gst .set-check {
+    min-height: 44px;
+  }
+  .dash-gst-detail {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  /* The depreciation schedule: its two totals stack like the floors, and the
+     total row's spacer cells — there only to line sums up under their columns
+     — have no label and nothing to say once the columns become card rows. */
+  .dep-sched-totals {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .dep-sched-table td.dep-blank {
+    display: none;
+  }
+  .dep-fy {
+    width: 100%;
+    justify-content: space-between;
+  }
+  /* The multi-year export's From / To stack like the FY picker above, and
+     its long label gets the row to itself rather than overflowing. */
+  .dep-multi-row .btn {
+    width: 100%;
+    justify-content: center;
+    white-space: normal;
+  }
+
+  /* ── Gutters ─────────────────────────────────────────────────────────────
+     24px of the tablet band becomes 16px, which is 16px more content on a
+     375px screen. #connection-banner matches, as it does above. */
+  #main {
+    padding: 26px 16px;
+  }
+  #connection-banner,
+  #update-banner {
+    padding: 10px 16px;
+  }
+  #app-header {
+    padding: 0 8px 0 16px;
+  }
+
+  /* ── The compact nav ─────────────────────────────────────────────────────
+     #hdr-right needs 515px and there are ~236px beside the wordmark at 375px,
+     so the header overflowed the viewport by 250px. That is worse than a
+     cosmetic overflow: with content wider than the layout viewport, the phone
+     zooms the whole page out to fit it (measured: window.innerWidth 625 against
+     a documentElement.clientWidth of 375). Every screen in the app was being
+     rendered shrunken because of the header alone.
+
+     The panel is #hdr-right itself, taken out of flow and parked under the
+     header — not a second copy of the nav. The buttons are the same elements
+     with the same handlers at every width, so the mobile menu cannot drift out
+     of step with the desktop header, and it inherits the unsaved-edit guards in
+     js/app.js for free. display:none while closed takes the six buttons out of
+     the tab order and the accessibility tree with it.
+
+     No z-index: #app-header already carries z-index:100, so the panel paints
+     above the connection banner (99) and below the modal overlay (9000), which
+     is the order those three want. */
+  #nav-menu-btn {
+    display: inline-flex;
+    min-height: 44px;
+    padding: 6px 10px;
+  }
+  #hdr-right {
+    display: none;
+    position: fixed;
+    top: 52px;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 6px 8px 10px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    max-height: calc(100vh - 52px);
+    overflow-y: auto;
+  }
+  #hdr-right.open {
+    display: flex;
+  }
+  /* A menu row is a touch target, not a header item: 48px tall, full width,
+     text from the left. The 2px transparent bottom border app.css gives
+     .nav-link is left alone, so .active still marks the current screen —
+     as a full-width underline here rather than a tab. */
+  #hdr-right .nav-link {
+    justify-content: flex-start;
+    min-height: 48px;
+    padding: 12px 14px;
+    font-size: 12px;
+  }
+  /* #logo-btn and #nav-estimates both call toEstimates. Side by side in the
+     header that redundancy is invisible; as two rows of a six-row menu it is
+     just a duplicate, and the wordmark beside the toggle already says whose app
+     this is. The Estimates row is the one that keeps the destination. */
+  #hdr-right #logo-btn {
+    display: none;
+  }
+
+  /* ── One column, everywhere it was two ───────────────────────────────────
+     minmax(0,1fr) rather than 1fr throughout: 1fr's minimum is auto, which is
+     what let a long money value push .summary-bar past its container in the
+     band above.
+
+     ⚠️ .cards-grid is NOT in this list, for the same reason the tablet task
+     didn't force it to two columns — see TASKS.md. It is already
+     repeat(auto-fill,minmax(260px,1fr)), which measures one column from ~534px
+     down, so every phone width gets the single column this task asks for
+     without a rule. Forcing it across the whole band would only change 534–767,
+     where it would render one 735px card holding a name and one number at 767px
+     against two 352px ones at 768px — a jump backwards at the boundary. It was
+     built, measured at 767px, and taken out again. One line here if the literal
+     reading is wanted. */
+  .form-grid,
+  .est-totals {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* .pricing-grid is repeat(auto-fill,minmax(380px,1fr)) — a 380px floor, which
+     below ~428px is wider than the column it sits in. The rate card was
+     overflowing the page by 53px and taking every delete button off the right
+     edge with it. */
+  .pricing-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* ── Headings and header rows ────────────────────────────────────────────
+     A title and its actions side by side leaves ~105px for the title; at 32px
+     Delight that is three or four words per line with the buttons wrapping
+     beside it. Stacked, both get the full width. */
+  .page-head,
+  .est-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  /* Stretched to the full width, the page's primary button (+ New Estimate,
+     + New Client) is a 343px bar — and .btn is inline-flex with no
+     justify-content, so its label sat hard left while every other full-width
+     button on the same screens is centred. */
+  .page-head > .btn {
+    justify-content: center;
+  }
+  .page-title {
+    font-size: 24px;
+  }
+  .est-name {
+    font-size: 26px;
+  }
+  .est-header > div:last-child,
+  .form-actions,
+  .modal-actions,
+  .doc-type-bar {
+    flex-wrap: wrap;
+  }
+  .doc-gst-free {
+    margin-left: 0;
+  }
+
+  /* ── The summary bars ────────────────────────────────────────────────────
+     Five columns in 335px is 65px a track, and the band above only stopped the
+     figures being *cut* — it did not make them readable. One column, each item
+     a label/value row, so a seven-figure total has the full width and can never
+     need wrapping in the first place.
+
+     .sum-span2 is why estimate-editor.js stopped writing grid-column inline: at
+     one explicit column, `span 2` would create an implicit second column and
+     put half the bar off the screen. */
+  .summary-bar {
+    grid-template-columns: minmax(0, 1fr);
+    margin-bottom: 14px;
+  }
+  .summary-bar .sum-span2 {
+    grid-column: auto;
+  }
+  .sum-item {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 11px 14px;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .sum-item:last-child {
+    border-bottom: none;
+  }
+  .sum-label {
+    margin-bottom: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .sum-value {
+    flex: 0 0 auto;
+    text-align: right;
+  }
+
+  /* ── The editor's line-item tables become stacked label/value blocks ──────
+     The tablet band let these scroll sideways behind a 660px floor. Below 768px
+     that would be a 335px window onto a 660px table for the app's main editing
+     surface, with the Client Bill column — the number being decided — off the
+     right edge by default. So the grid stops being a table: the head row is
+     hidden and each cell prints its own column heading from the data-label that
+     estimate-editor.js now writes.
+
+     Both halves are needed. Hiding .gt-head without the labels would leave a
+     column of bare numbers; the labels without hiding .gt-head would print
+     every heading twice. */
+  .billing-block {
+    overflow-x: visible;
+  }
+  .billing-block .bb-head,
+  .billing-block .bb-picker,
+  .billing-block .gt-head,
+  .billing-block .gt-row,
+  .billing-block .gt-body > * {
+    min-width: 0;
+  }
+  .billing-block .gt-head {
+    display: none;
+  }
+  .gt-row {
+    display: block;
+    position: relative;
+    padding: 8px 14px 12px;
+  }
+  .gt-row > div,
+  .gt-row > div.right {
+    justify-content: space-between;
+    gap: 14px;
+    padding: 5px 0;
+  }
+  /* Never wrapped: these are column headings standing in for a hidden head row,
+     and "Client Bill" broken over two right-aligned lines reads as two labels.
+     The value beside it is a money figure or an input, both of which have the
+     room to give. */
+  .gt-row > div::before {
+    content: attr(data-label);
+    font-family: var(--font-family-body);
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-size: var(--font-size-sm);
+    letter-spacing: var(--letter-spacing-normal);
+    color: var(--muted);
+  }
+  /* The first cell is the row's subject — a service name, or the text input for
+     a crew member or deliverable. It gets its heading above it and the full
+     width beneath, rather than being squeezed against a label. */
+  .gt-row > div:first-child {
+    display: block;
+    padding-bottom: 9px;
+    /* Clear of the absolutely positioned delete button — see .del-cell. */
+    padding-right: 46px;
+  }
+  .gt-row > div:first-child::before {
+    display: block;
+    margin-bottom: 5px;
+  }
+  .gt-row > div:first-child .text-inp {
+    width: 100%;
+  }
+  /* app.css sets .text-inp to width:100%, which in a label/value row would
+     leave the label nothing. */
+  .gt-row > div:not(:first-child) .text-inp {
+    width: auto;
+    flex: 1 1 90px;
+    min-width: 0;
+  }
+  /* app.css sets .gt-row .num-inp to width:100% — right for a 90px grid column,
+     wrong for a flex row where it leaves the label nothing and pushes the input
+     past the block. Fixed width, and tall enough to tap. */
+  .gt-row > div .num-inp {
+    flex: 0 0 auto;
+    width: 96px;
+    min-height: 44px;
+  }
+  .gt-row > div .text-inp {
+    min-height: 44px;
+  }
+  /* Crew and equipment rows have no price there: the column is an em dash under a
+     heading that is also an em dash. Legible as a table column, meaningless as
+     a line of its own. */
+  .gt-row .mu-cell {
+    display: none;
+  }
+  /* Removing the row is the row's own action once it is a block, so it moves to
+     the corner of the block rather than taking a sixth stacked line — which
+     across seven sections of rows is a lot of screen for one ×. Absolute rather
+     than floated so the 44px target can overhang the row's padding. */
+  .gt-row .del-cell {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    padding: 0;
+  }
+  .gt-row .del-cell::before {
+    content: none;
+  }
+  /* A block title, its tag and its subtotal do not fit on one 335px line. */
+  .bb-head {
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+  /* The picker's select and button share a row at every other width; here the
+     select would be squeezed to about 150px by a 44px-tall Add button beside
+     it. Stacked, both are full width and unmissable. */
+  .bb-picker {
+    flex-wrap: wrap;
+  }
+  /* min-width:0 because a select's automatic minimum is its longest option:
+     at the 16px every phone field now has (top of this band), a 40-character
+     service name pushed it 16px past the block. The option text truncates
+     inside the closed select instead; the open list shows it whole. */
+  .bb-picker .svc-select {
+    flex: 1 1 100%;
+    max-width: none;
+    min-width: 0;
+    min-height: 44px;
+  }
+  .bb-picker .btn {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+
+  /* ── The rate card's own rows ────────────────────────────────────────────
+     Stacked for the same reason as the tables above, and it was the narrowing
+     of columns that proved it. Five columns, four of them fixed, so the service
+     name input gets whatever is left: 90px at 375px, and every pixel clawed back
+     from the rate columns, the flag column and the padding only took it to
+     112px. At 320px it was **45px** — not enough of a name to read, let alone
+     edit. A rate card you cannot identify a row in is not a usable screen, so
+     this one stacks too. */
+  .pricing-table,
+  .pricing-table tbody,
+  .pricing-table tr {
+    display: block;
+  }
+  .pricing-table thead {
+    display: none;
+  }
+  .pricing-table tr {
+    position: relative;
+    padding: 4px 0 8px;
+    border-bottom: 1px solid var(--color-border-hairline);
+  }
+  .pricing-table tr:last-child {
+    border-bottom: none;
+  }
+  .pricing-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 4px 12px;
+    border-bottom: none;
+  }
+  .pricing-table td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-size: var(--font-size-sm);
+    letter-spacing: var(--letter-spacing-normal);
+    color: var(--muted);
+  }
+  /* The name is the row's subject: its own line, full width, clear of the
+     delete button in the corner. */
+  .pricing-table td:first-child {
+    display: block;
+    /* app.css gives this cell width:99% to make it the flexible column; as a
+       block that is 99% of the table plus its own padding, which overflows. */
+    width: auto;
+    padding: 8px 12px;
+    padding-right: 46px;
+  }
+  .pricing-table td:first-child::before {
+    display: block;
+    margin-bottom: 5px;
+  }
+  /* The Price cell carries the row's floor line under its input. As a
+     space-between flex row that line would sit beside the input as a third
+     item; wrapped, it takes its own line, right-aligned under the price it
+     describes. */
+  .pricing-table td .pricing-floor {
+    flex-basis: 100%;
+    text-align: right;
+    margin-top: 0;
+  }
+  .pricing-table td:has(.pricing-floor) {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .pricing-table td.pricing-act {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    width: auto;
+    padding: 0;
+  }
+  .pricing-table td.pricing-act::before,
+  .pricing-table td.pricing-empty-td::before {
+    content: none;
+  }
+  .pricing-table input[type='number'] {
+    width: 96px;
+  }
+  /* A tick (Custom, Capture, Direct, Your time) sits in a label that fills
+     the rest of its row, so the whole row beside the column name is the
+     target, 44px tall, with the box 20px at its right (production-booking
+     B2-12). At 768 and up the label is plain inline and changes nothing. */
+  .pricing-table .pricing-tick {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-height: 44px;
+    cursor: pointer;
+  }
+  .pricing-table .pricing-tick input[type='checkbox'] {
+    width: 20px;
+    height: 20px;
+  }
+  .pricing-table .pricing-tick:has(input:disabled) {
+    cursor: not-allowed;
+  }
+  /* Every bar on the Pricing screen is a flex row of a sentence and a button. */
+  .tax-setting,
+  .pricing-catalogue-bar,
+  .pricing-save-bar,
+  .pricing-sec-foot {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .tax-setting input {
+    width: 100%;
+  }
+  /* The travel foot's two buttons (task 6b) share the width, as its one
+     button filled it before. */
+  .pricing-sec-foot-btns .btn {
+    flex: 1;
+  }
+
+  /* ── The read-only estimate's tables ─────────────────────────────────────
+     🔴 These were losing a money figure, exactly as .summary-bar was in the
+     band above. .est-block is overflow:hidden, and with a realistic total in
+     it the five-column table measured 381px inside a 341px block — so the Bill
+     column, the number the client is charged, was **cut off rather than
+     scrolled to**, with nothing on screen to say so. The fixtures top out at
+     $560 and fit, which is the whole reason this survived to here.
+
+     Same fix as the editor's rows, and for the same reason a sideways scroll
+     would not do: a money column you have to go looking for is a money column
+     that gets missed. The head row is hidden and each cell prints the data-label
+     estimate-detail.js writes. .totals-card is left alone — two columns, and its
+     values measured 144px inside 343px with seven figures in them. */
+  .est-table,
+  .est-table tbody,
+  .est-table tr {
+    display: block;
+  }
+  .est-table thead {
+    display: none;
+  }
+  .est-table tr {
+    padding: 4px 0;
+    border-bottom: 1px solid var(--color-border-hairline);
+  }
+  .est-table tr:last-child {
+    border-bottom: none;
+  }
+  .est-table td,
+  .est-table td.right {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 4px 14px;
+    border-bottom: none;
+    text-align: left;
+  }
+  .est-table td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-size: var(--font-size-sm);
+    letter-spacing: var(--letter-spacing-normal);
+    color: var(--muted);
+  }
+  /* The subject of the row, same as .gt-row's first cell in the editor. */
+  .est-table td:first-child {
+    display: block;
+    padding-top: 8px;
+  }
+  .est-table td:first-child::before {
+    display: block;
+    margin-bottom: 4px;
+  }
+  /* "No items" and the like, spanning every column. */
+  .est-table td[colspan]::before {
+    content: none;
+  }
+  .totals-card td {
+    padding: 9px 14px;
+  }
+
+  /* ── Finance ─────────────────────────────────────────────────────────────
+     The Overhead expense table's actions cell. It stacks like every other
+     .est-table cell, but overhead.css's desktop `width: 1%` shrink-wrap
+     (0,2,1) outranks the stacking rule above (0,1,1) — so the stacked cell was
+     20px wide with 118px of Edit and × spilling out of it, on the left of a row
+     whose every value sits on the right. Not clipped, but overflowing its own
+     box. It also has no data-label, so the empty ::before would still have
+     taken the space-between's first slot. Right-aligned instead, under the
+     values it acts on. */
+  .oh-table td.oh-act {
+    width: auto;
+    justify-content: flex-end;
+    padding: 8px 14px;
+  }
+  .oh-table td.oh-act::before {
+    content: none;
+  }
+  .oh-table td.oh-act .btn:last-child {
+    margin-right: 0;
+  }
+
+  /* The Finance & Price rail reverts to the horizontal row it replaced: a
+     152px column beside a 343px screen would leave the child ~150px, and a
+     rail-as-hamburger would hide the whole area's structure behind a tap (IA
+     doc, Navigation Model). Five items don't fit 343px, so the row scrolls
+     sideways, bled to the screen edges so an item cut off at the edge reads as
+     "more this way" rather than as a clipping bug. The vertical padding is room
+     for a11y.css's focus ring, which sits 3px outside the button and would
+     otherwise be clipped by overflow-x. finance.js scrolls the active item into
+     view on every switch.
+
+     It is the one horizontal row of .nav-links left in this band — the header's
+     own collapse into the menu panel. The 44px touch target above grows the
+     button while the label stays centred in it, which put the active item's
+     accent underline 16px under its label against 8px at every wider width:
+     loose enough to read as a rule under the row rather than a mark on the
+     item. Seating the label at the bottom keeps the 44px target and brings the
+     gap back to what it was above 768px. */
+  .finance-shell {
+    display: block;
+  }
+  .finance-rail {
+    position: static;
+    flex-direction: row;
+    gap: 8px;
+    margin: -5px -16px 17px;
+    padding: 5px 6px;
+    overflow-x: auto;
+    border-left: 0;
+    /* A visible scrollbar draws a grey bar under the row that reads as the
+       rule this area deliberately doesn't have (finance.css). The label cut
+       off at the right edge already says the row scrolls. */
+    scrollbar-width: none;
+  }
+  .finance-rail::-webkit-scrollbar {
+    display: none;
+  }
+  /* 10px, the old row's .nav-link padding: with the rail's 6px that puts the
+     first label on #main's 16px gutter, in line with the page title. */
+  .finance-rail .nav-link {
+    flex: 0 0 auto;
+    width: auto;
+    margin-left: 0;
+    padding: 6px 10px;
+    align-items: flex-end;
+    white-space: nowrap;
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+  }
+  .finance-rail .nav-link.active {
+    border-bottom-color: var(--accent);
+  }
+  /* Overhead's inner tabs: the second row of .nav-links under the rail's row,
+     as the IA doc's mobile model asks. Same fix as the rail's for the 44px
+     target: seat the label at the bottom so the accent underline stays a mark
+     on the item rather than a rule under the row. */
+  .oh-inner-tabs .nav-link {
+    align-items: flex-end;
+  }
+
+  /* ── Finance & Price: the phone pass (responsive pass, 2026-09-28) ─────── */
+
+  /* The Dashboard comparison opens on the rows below their floor; the rest
+     wait behind "Show all N services" (finance-dashboard.js explains why).
+     (0,3,1) so it beats the stacking rule's `.est-table tr` display. */
+  .dash-table:not(.dash-table-all) tr.dash-clear {
+    display: none;
+  }
+  .dash-show-all-row {
+    padding: 12px 14px 14px;
+    border-top: 1px solid var(--border);
+  }
+  .dash-show-all-row .btn {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+  }
+  /* The comparison's head: at 343px the linked title wraps to two lines, and
+     as a <button> its text centred itself, with the "2 of 21 below floor"
+     count squeezed into a third column beside the info button. Title and info
+     button on one line, the count under them, all left-aligned. */
+  .dash-section .est-block-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .est-block-label > .dash-link {
+    text-align: left;
+  }
+  /* "Below by $X" is a button to the Rate Card row: a 44px area centred on
+     it, the same invisible-target technique as the linked headings below. */
+  .dash-badge {
+    position: relative;
+  }
+  .dash-badge::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 44px;
+    transform: translateY(-50%);
+  }
+
+  /* 44px touch targets for the Dashboard's links that stand on their own.
+     A line that carries a link grows to 46px (7px padding → 14px around 17px
+     of text, plus its 1px rule) and the link's hit area is 45px of it — so two
+     linked lines in a row, 32px apart before this, can't overlap each other's
+     targets. The
+     headings keep their size and get an invisible 44px area centred on them,
+     the info button's technique (info.css) — including "capacity" at the end
+     of "Shooting and post against capacity", which is a heading's link, not a
+     sentence's. Links mid-sentence (the GST note's "depreciation register",
+     the Rate Card's rate note, Profit Goals' "Capacity screen") are left as
+     they are, like every inline text link in the app: WCAG 2.5.8 exempts them,
+     and a 44px area there would cover the lines of prose above and below. */
+  .dash-line:has(.dash-link) {
+    padding: 14px 0;
+  }
+  .dash-line-label .dash-link,
+  .dash-panel-h > .dash-link:only-child,
+  .est-block-label > .dash-link {
+    position: relative;
+  }
+  .dash-line-label .dash-link::after {
+    content: '';
+    position: absolute;
+    inset: -14px 0;
+  }
+  .dash-panel-h > .dash-link:only-child::after,
+  .est-block-label > .dash-link::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 44px;
+    transform: translateY(-50%);
+  }
+
+  /* The Rate Card's unit select ("per [hour ▾]") was built at the hint's size,
+     22px tall — the one control in its stacked card under 44px; the hours
+     field beside it already gets 44px from the rule above. */
+  .pricing-unit-sel {
+    min-height: 44px;
+    padding: 2px 8px;
+    font-size: 12px;
+  }
+
+  /* ── Service rate tiers: the phone pass (2026-09-28) ─────────────────────
+     Measured at 375 and 320 before this: nothing overflowed, and the row's
+     unit line, a day's hours and the hidden-unit notice already sit under the
+     name (they are inside the first cell, which is a block here). What was
+     missing was size, not placement.
+
+     The Rate Card state line's links — "↺ use $103", "needs Profit Goals" —
+     were 17px tall, and the hidden-unit notice 14px. A 44px overlay (the
+     .dash-badge technique) would not do here: the state line sits directly
+     under the price field, and an overlay reaching 13px up would take taps
+     meant for the bottom of that field. So the link itself is 44px tall and
+     the line grows around it; the words before it stay on its baseline. Only
+     set-by-you rows and unpriced ones carry a link, so an auto row's line
+     keeps its height. The notice keeps pricing.css's full-width line under
+     the unit switch, as it has at every width. */
+  .pricing-state-link,
+  .pricing-hidden-note {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  /* The Service Day's two fields share the row, as the tax rate's single
+     field above it takes the row: "Full [   ] hrs · Half [   ] hrs", each
+     field growing, so the two blocks line up rather than leaving two 64px
+     boxes on the left of a 343px card. */
+  .pricing-day-ctl label {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .tax-setting .pricing-day-ctl input {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+  }
+  /* "Show": the label on its own line, then the three units as equal thirds
+     of the width. Three content-sized buttons left a ragged 60px gap on the
+     right at 375. At 320 a third is 92px and the longest label, "HALF DAY",
+     is 51px, so .btn-sm's 14px sides still fit (measured). */
+  .pricing-show {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .pricing-show-label {
+    grid-column: 1 / -1;
+    margin: 0 0 2px;
+  }
+  .pricing-show-btn {
+    justify-content: center;
+  }
+
+  /* The estimator. The picker's unit select is also a .svc-select, so the
+     stacking rule above already gave it the full width — but only because
+     this file loads after estimates.css, whose `.bb-picker .unit-select`
+     (flex: 0 0 10.5em) has the same specificity. Stated here so the stack
+     doesn't hang on load order. */
+  .bb-picker .unit-select {
+    flex: 1 1 100%;
+  }
+  /* A line's "per [full day ▾]" was 28px tall — the one control in a stacked
+     line under 44px. Its width is 7.6em (estimates.css), which at the 16px
+     every phone field has is 122px: "per", the select and "· 8 billable hrs"
+     still share one line at 320. */
+  .lab-unit {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0 5px;
+  }
+  .lab-unit-sel {
+    min-height: 44px;
+    padding: 2px 8px;
+  }
+  /* A day-priced post line's "5 hrs recommended" (post-multipliers PM5)
+     takes a line of its own here, so it never wraps in with a leading dot. */
+  .post-rec {
+    flex-basis: 100%;
+  }
+  .post-rec > [aria-hidden] {
+    display: none;
+  }
+
+  /* The Dashboard comparison's unit cells, stacked: a price over a "Below by
+     $X" badge is 43px, so two badges in a row sat 43px apart and their 44px
+     targets (above) overlapped by a pixel. 2px more padding each side. */
+  .dash-table td.dash-unit {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  /* An own-time travel row sells by the hour only (task 6a). In the table its
+     day cells are blank; stacked, each would print its heading over nothing,
+     so they go. Their "no half-day price" words go with them, which is right:
+     a stacked row is read as its labelled lines. */
+  .dash-table td.dash-unit-none {
+    display: none;
+  }
+
+  /* ── Touch targets ───────────────────────────────────────────────────────
+     TASKS.md asks for .btn-xs at >=44px; the same argument applies to every
+     control small enough to miss, and .del-btn (15.7 x 14px) was the worst of
+     them by some way. min-height rather than padding, so a button that is
+     already tall enough is untouched and nothing reflows around it.
+
+     No exceptions left: the rate card's delete button was the one control a
+     44px square would have distorted the layout for, and stacking that table
+     moved it into the row's corner where it has all the room it needs. */
+  .btn,
+  .btn-sm,
+  .btn-xs,
+  .back-btn,
+  .nav-link {
+    min-height: 44px;
+  }
+  .btn-sm,
+  .btn-xs {
+    padding: 8px 14px;
+  }
+  .del-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  /* Fields are ~36px tall everywhere in this app — fine under a mouse, small
+     under a thumb, and these screens are mostly form. Checkboxes are excluded:
+     they size themselves, and a 44px one would push its own row apart. */
+  .field input:not([type='checkbox']),
+  .field textarea,
+  .doc-type-select,
+  .inv-num-inp,
+  .tax-setting input,
+  .pricing-table input:not([type='checkbox']),
+  .pricing-sec-label-inp {
+    min-height: 44px;
+  }
+  /* The Minimum Job Price (?) is a 20px ring by design — it annotates a number
+     and a 44px one beside a 17px figure would outweigh what it points at. So
+     the target grows without the ring growing: an absolutely-positioned overlay
+     centred on it, which adds no layout box and leaves the row's height alone.
+     It overhangs the figure to its left by ~4px, which costs nothing — that is
+     a span, not a control. */
+  .mjp-help {
+    position: relative;
+  }
+  .mjp-help::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+  /* A target that is not .btn and was missed by the list above: the
+     typeahead's suggestions. */
+  .typeahead-list li {
+    min-height: 44px;
+    justify-content: center;
+  }
+  .back-btn {
+    align-items: center;
+  }
+
+  /* ── Odds and ends ───────────────────────────────────────────────────────*/
+  /* Fixed at 24px from two edges, which on a phone is a card floating in the
+     corner over the content it is reporting on. Full width reads as a bar. */
+  .export-toast {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+  }
+  .empty-state {
+    padding: 48px 18px;
+  }
+  /* Each step is a paragraph and a button; side by side the button takes the
+     width the paragraph needs. */
+  .first-run-step {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .first-run-step .btn {
+    justify-content: center;
+  }
+}

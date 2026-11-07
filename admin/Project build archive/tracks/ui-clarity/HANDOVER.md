@@ -1,0 +1,541 @@
+# Handover: UI Clarity
+
+Read this file, then [`DECISIONS.md`](DECISIONS.md) (the user's answers U1–U23; don't re-ask), then
+[`DESIGN_BRIEF.md`](DESIGN_BRIEF.md) and [`INFORMATION_ARCHITECTURE.md`](INFORMATION_ARCHITECTURE.md).
+
+## What this is
+
+There are three requests from the user, built as one track:
+- **D1:** the UI is too busy. A new panel system, Actions ▾ and Documents ▾ menus, and a rework of
+  the Project page, Invoice screen and Estimate editor.
+- **D2:** branded emails, with the logo and "LSC Creative" in a light shell.
+- **D3:** a modular service agreement builder in Settings, with drag-to-reorder,
+  auto-numbering and lettered sub-clauses.
+
+The work runs through `/design-flow`. **Model: Opus, effort high. Frontend task.**
+
+## Account recovery (from `main`, merged 2026-10-07)
+
+On 2026-10-07 another session built **account recovery** and deployed it (NAS **v15**, then Pages,
+`main` `a728420`). It is merged into this branch. Its record is
+`.design/account-recovery/HANDOVER.md`. Keep it working through every task. It adds:
+
+- "Forgot password?" on the sign-in card, which emails a reset link through Resend. The link,
+  `#/reset/<token>`, opens a new-password page; `app.js` answers it before the session check.
+  `login.js` is now one card with five states (sign in, forgot, sent, new password, link expired).
+- Sign-in takes the username **or** the account's email.
+- **Settings → Account**, a seventh section after Card payments, with its own `<form>` and
+  **Update account** button. Its fields are deliberately *not* in `form`, so they don’t touch
+  Save settings or the unsaved-edit check.
+- Server: `routes/account.js` (`/api/password/*` before the gate, `/api/account` behind it),
+  schema **v15** (`account.email`, `password_resets`), `mail.js passwordResetEmail`, and
+  `npm run set-email`.
+
+**The merge:** `login.js` took `main`'s file with this branch's sentence case on its labels;
+Account's labels are sentence case too ("Update account", "Save settings"). The new CSS uses the
+legacy names (`--muted`, `--accent`, `--ok`, `--err-*`), which `tokens.css` aliases, so **don't
+delete those aliases** (task 13 may move it onto `--color-*` names instead).
+
+**Deploy trap:** the live database is v15, and `db.js` refuses to start on a newer database than
+it knows. Every deploy (tasks 8, 15, 17) must ship a `server/` that has v15 and
+`routes/account.js`. `git fetch` and merge `origin/main` before each deploy; other sessions push
+`main` too.
+
+## State as of 2026-10-08
+
+- **Phase 1** (Grill Me): done. The answers are in DECISIONS.md.
+- **Phase 2** (Design Brief): done, in `DESIGN_BRIEF.md`.
+- **Phase 3** (IA): done, in `INFORMATION_ARCHITECTURE.md`. It covers the menu contents for
+  every state, the editor's six panels, the agreement data shape and the `agreementText` render
+  seam.
+- **Phase 4** (tokens): done. `web/css/tokens.css` exists but is **not loaded yet**: wiring it
+  into `index.html` and deleting `app.css`'s and `a11y.css`'s own `:root` values is build task 1.
+  `.design/ui-clarity/tokens-preview.html` is the specimen. Open it with launch.json's `design`
+  server at `/.design/ui-clarity/tokens-preview.html`.
+- **Phase 5** (tasks): done, in `TASKS.md` (18 tasks).
+- **Phase 6** (build) on branch **`ui-clarity`** (off `production-booking`, unpushed, not deployed).
+  - [x] Task 1, tokens live (`07df49a`). `tokens.css` loads first in `web/index.html`, and in
+    `web/c/index.html` with `<html data-theme="light">` (c.css's names now alias the tokens). No
+    raw hex left in the screen CSS except Overhead's measured chart palette and warm-white alphas.
+    Funnel Sans is deleted. Inputs moved to `--input-bg` / `--input-border` in app.css and wherever
+    they used the old `#1a1c20` well; other inputs still read `--surface`/`--border` (task 13).
+  - [x] Task 2, buttons and panels. Plain `.btn` **is** the secondary button (`.btn-secondary`
+    needs no rule); `.btn-accent` = `.btn-primary`; `.btn-ghost` = quiet plus a hairline ring (kept
+    for rows of document actions until tasks 9–10 move them into menus); `.btn-xs` = `.btn-sm`.
+    Edges are inset shadows, so focus (`--shadow-focus`) replaces them. Panel markup and the
+    collapsible variant are documented in `app.css`'s Panels comment; `web/js/panel.js` turns
+    `.panel-toggle`s and fires `lsc:panel` ({open}) for task 11's remembered states and task 12's
+    rail. Panels carry no margin (containers set `--panel-gap`); the legacy `.billing-block`,
+    `.est-block`, `.pricing-section` keep a margin-bottom. `tokens-preview.html` now loads the real
+    `app.css` and `panel.js` instead of copies.
+  - [x] Task 3, the menu button (`2e1bd3f`). `web/js/menu.js` + `web/css/menu.css`; API in
+    menu.js's header. `LSCMenu.markup({ label, items, ariaLabel?, icon?, btnClass? })` returns ''
+    when nothing is available, so tasks 9–10 can concatenate it unconditionally. Items are
+    `{ text, hint, danger, href, download, attrs }`, `'-'` or falsy; danger items are moved last
+    below a divider automatically. `LSCMenu.open(opener, { label, items, onSelect, empty })` is for
+    lists built on the spot (the editor's Move to and Add to a day use it; `.move-pop` is gone).
+  - [x] Task 4, agreement clauses and the one render (`cc92530`). `documents.js` exports
+    `DEFAULT_CLAUSES` (the user's 12 with Payment split in two, so 13: ids `c01`–`c13`; `c02` Deposit is deposit-only), `agreementText(agreement, values, { single })`
+    → `{ text, unknown, blank }`, `FALLBACK_TEXT`, `AGREEMENT_TITLE` and `AGREEMENT_HEADS` (task 7
+    styles those lines as heads). `docSettings().agreement` is `{ intro, clauses, hourlyRate }`;
+    `agreementText` and `agreement.text` are gone. The seed JSON the user gave is
+    `server/test/fixtures/agreement-seed.json`, and a test turns the defaults back into it.
+  - [x] Task 5, the builder (`890def6`). Settings → Service agreement is panels (Header, Clauses,
+    Agreement values, Fields you can use, Client page); Business gains **Signs for the business**
+    (`business.signer`). `web/js/sortable.js` is the shared reorder helper; `Toast.ok(msg, { action })`
+    gives the Undo.
+  - [x] Task 6, sub-clauses and reset. Open cards edit their sub-clause rows (handle, letter,
+    heading, text, ⋯ with Indent/Outdent/Move up/Move down/Delete); each card's row list has its
+    own `LSCSortable` (`Clauses.wire`), attached at draw and on every insert. The Clauses panel
+    head's ⋯ holds **Reset to LSC default clauses…** (`D.docSettings({}).agreement.clauses`).
+  - [x] Task 7, clause headings. `documents.js agreementLayout(text)` → `{ kind, items, tail }`
+    reads agreementText's format back from the stored text (never the clauses): title, section
+    heads, numbered clause heads (sequential only), lettered/roman subs with hanging indents,
+    continuation paragraphs at their sub's depth, the signing line. Lossless by construction and
+    test. `pdf.js agreementBodyHtml` and `c.js showAgreement` draw it; the dialog joins `parts`
+    with one NUL per slot, lays out, and puts the slot spans back in order.
+- **Task 8, "Deploy system + D3", is unblocked** (NAS and site back 2026-10-09). The plan
+  ([`../ROADMAP.md`](../ROADMAP.md) §3) ships it with task 15 as **wave 1**, after task 14: fetch
+  and merge `origin/main`, ship v15, NAS before Pages (the old server ignores saved clauses). Ask
+  the user first; the agreement header wording (below) needs their OK.
+  - [x] Task 9, the Project page. `project-folder.js` draws the header (`headMarkup`: one
+    `.btn-primary` = `nextAction`, Actions ▾ = `headerActions`), `noticeMarkup` (now also the
+    dates-taken warning), and three `.panel`s; each document is `estimateDoc` / `invoiceDoc` →
+    `docRow`. Menu items carry the old `data-act` / `data-doc`; `openerOf` gives dialogs the
+    menu's button to return focus to. New row kinds: `inv-paid`, `inv-void` (hand over to the
+    Invoice screen, which now takes `state.action` `'void'` as well as `'paid'`), and `duplicate`
+    (the row's own estimate).
+  - [x] Task 10, the Invoice screen. `invoice.js` `actionsFor(inv)` → `{ primary, actions, files }`
+    (IA's Invoice-screen column) drawn into the header as `#inv-primary` + `LSCMenu`s with stable
+    ids `inv-menu-act` / `inv-menu-doc`; menu items keep `data-act` (and `data-go` for Open the
+    replacement), `openerOf` gives dialogs the menu's button, `focusHead()` refocuses after a
+    redraw. Bodies are `{ main, side }` panels; Extras is `.panel.billing-block` so the editor's
+    tablet floor and phone stacking still apply. The `.pf-actions*` / `.pf-section-head` /
+    `.pf-h2` rules are deleted from `project-folder.css`.
+  - [x] Task 11, the editor's six panels. `estimate-editor.js` `edPanel(key, name, body, opts)`
+    draws Job details · Deliverables · Services · On set, by day · Summary (`#ed-<key>`,
+    `data-panel`, inside `#ed-panels`); `booking-block.js` draws Production booking as the same
+    kind of panel (`#block-booking`, `data-panel="booking"`). Summaries: `paintJobSum` (as typed)
+    and `paintPanelSums` (end of `recalc`, from the `subs` it painted). `openPanelOf(el)` opens a
+    closed panel before a field in it is focused (fieldError, + Add deliverable). States live in
+    `localStorage['lsc.editor.panels']` (`rememberPanel` / `panelOpen`), Job details excepted.
+  - [x] Task 12, the editor's jump rail and sticky bar. `formMarkup` wraps the page in
+    `.ed-shell` (rail) + `.ed-main` (head, `#ed-jump` select, panels, `.ed-bar`). `JUMPS` names
+    the six panels; `jumpTo(key)` opens (`LSCPanel.setOpen`), scrolls, focuses the toggle;
+    `spy()` marks the rail on scroll (`onSpyScroll`, removed once off screen) and `jumpHold`
+    keeps a jumped-to panel marked until the page moves. The bar's `#ed-bar-total` is painted in
+    `recalc` beside `#s-total`; ⋯ is `LSCMenu.open` built each time from `moreItems()`, and
+    `paintMore()` hides ⋯ when it has nothing. `#editor-error` lives in the bar now. `.form-actions`
+    is gone from the editor (still used elsewhere).
+  - [x] Task 13, the system sweep. Most of it was already done by tasks 1–3: the sweep found no
+    outlined caps buttons and no sideways scroll. What was left: the boxes that group sections kept
+    square corners (`.proj-card` and its users, `.totals-card`, `.notes-card`, `.summary-bar`,
+    `.dash-panel`, `.goals-ty`, …), now one rule at the end of `app.css`; dialogs and the toast got
+    their radius; `--color-status-neutral` (Proposed, Draft) was the last blue-grey; the UPID
+    fix-up had a terracotta Save per group. `scratchpad/sweep13.js`-style checks: see TASKS.
+  - [x] Task 14, the accessibility and responsive pass. Built 2026-10-12 in the worktree
+    `.claude/worktrees/ui-clarity` (after a fast-forward to `main`, so the branch is v16 now), with
+    its own data `/tmp/lsc-billing-scratch-uic` and launch.json's `api-uic` (:8081) + `web-uic`
+    (:5174). What failed, what passed and the VoiceOver list: "Decisions made in task 14".
+  - [x] Wave 1 (tasks 8, 15): deployed 2026-10-12, Pages only, `main` `eda110d`.
+  - [x] Task 16, the branded email shell (`752ab81`): built 2026-10-12, **look approved by the user** (screenshots `screenshots/task16-*`, local). See "Decisions made in task 16".
+- [x] Wave 2 (task 17): deployed 2026-10-12, `main` `4c7516b`. Pages first (logo 200), then NAS: code-only copy
+  (no migration, still v16), `docker compose up -d --build`, healthy, new `mail.js` in the container. Rollback:
+  NAS `/volume4/lsc-billing/code-pre-wave2.tgz` (code) and `manual-backup/pre-wave2-20261012-110204.db`.
+- [x] Task 18, the design review: [`DESIGN_REVIEW.md`](DESIGN_REVIEW.md). See "Decisions made in task 18".
+- [x] Wave 4 (task 18): deployed 2026-10-12, Pages only, `main` `db1a8ce`; server tests 711/711; live `c/c.css` and `css/estimates.css` match the repo. The track is closed.
+- ~~**Next: wave 4**~~ (Sonnet/medium, deploy): **Pages only** (web files, no server change). `git fetch`, merge
+  `main` in if it moved, fast-forward `main` to `ui-clarity`, push; check the live editor's money column
+  on one real estimate. **Ask the user first.** Then the track closes.
+
+## Waiting on the user
+
+- After wave 2: check the test email in Gmail on phone and desktop.
+- Task 18's open calls: **all fixed** at the user's "fix all" (round 2 in `DESIGN_REVIEW.md`).
+
+## Decisions made in task 18 (tell the user)
+
+- **Table money is never terracotta.** A line's client bill, the On set day subtotals and the
+  read-only estimate's bill column read in the primary text colour. Terracotta in the editor is now
+  Done/Save, the calendar's today mark and the Summary's headline total.
+- **Table money is mono everywhere in the editor** (U24, missed in tasks 11–12): client bill, Markup,
+  Rate, the On set amounts and the day totals take `--font-figures`. The mono face has one weight, so
+  the bill cell dropped its 600 (no synthetic bold); white against the grey Markup column marks it.
+  The phone's stacked labels (`data-label` ::before) stay in the body font.
+- **The Invoice's header Balance due is its one terracotta figure.** The Balance panel's total reads
+  in primary text, and "Less deposit …" in secondary.
+- Sentence case: "Add production service items", "Include overhead and markup in the calculation",
+  and the phone's "Markup" (was "Mark-Up").
+- **Round 2 ("fix all", the user):**
+  - Headline figures are white everywhere (Projects cards, Project total, Balance due, the Summary's
+    Total, the estimate view's Total row); this settles task 13's Projects-cards question.
+  - The Summary is flat on the inset fill, in D88's order and sizes.
+  - Move to and Add to a day are quiet menu buttons with the shared chevron.
+  - Category tags and the agreement field chips are filled with no ring and no terracotta.
+  - The sign dialog runs full length on a phone (presentation only).
+  - `font-synthesis-weight: none` in the app.
+- **Terracotta left in the app:** primary buttons, nav's underline, eyebrow UPIDs, the calendar's
+  today, clause numbers and sub-clause letters. A new use needs a reason as good as those.
+- **Trap:** shell commands that `cd` into the scratchpad reset the session to the main checkout; use the
+  worktree's absolute path for every edit (nothing landed in the main checkout).
+
+The logo master is `Visual Design/CS-Felice-Mono-Monospaced-Font/LogoDark_ No Text.png`
+(`Logo Light_ No Text.png` is for dark grounds); task 16 trimmed it into `web/email/logo.png`.
+Metro Sans's licence (`Visual Design/Metro-Sans---Full-Family/Metro Sans License.pdf`) is free:
+commercial use, web embedding and redistribution are all allowed, so it is live in `web/fonts/`.
+
+## Decisions made in the build (tell the user)
+
+- **D86 overridden by U17:** the editor's Deliverables block lost its terracotta border and tint
+  (production-booking D86 made it the one non-neutral block). It is a plain panel now.
+- **Invoice:** while extras are unsaved, Save extras takes the terracotta and the header's primary
+  (Send…, Mark paid…) drops to secondary, so the view keeps one.
+- Secondary "+ Add service / deliverable / date", Download CSV and the Cost Breakdown's Close are
+  no longer terracotta. Title Case UI labels in `web/js/views` are sentence case now (data
+  defaults like "New Service" untouched).
+
+## Decisions made in task 16 (tell the user)
+
+- **The look is the client page's:** paper, the logo (96×56) beside "LSC **Creative.**" over the
+  3px terracotta rule, a white card (heading; project · UPID line in mono; message), a full-width
+  `#8C4832` button with white text (6.8:1), the address printed under it, and a mono footer.
+- **Fonts:** the emails load Delight and CS Felice Mono from Pages under their own names
+  ('LSC Delight', 'LSC Felice Mono'), in a `<head>` `<style>` that holds only `@font-face`.
+  Everything else is inline. Apple Mail shows the brand fonts; Gmail and Outlook drop them, and
+  Delight (a sans) falls back to Helvetica/Arial, not tokens.css's Georgia. The own names matter:
+  this Mac has CS Felice Mono's Italic installed and Chrome picked it for the plain name. Outlook on
+  Windows is told Arial outright, since it falls to Times otherwise.
+- **The logo PNG is flattened onto the paper colour** (not transparent), so a mail client's dark
+  mode can't put the black heads on black. `color-scheme: light only` asks clients to leave it light.
+- **The test email wears the client footer** (it is how the user checks what clients see). The
+  owner notices (signed, password reset) end with "LSC Creative billing app" instead.
+- **The call sheet email gets the client footer** (crew are outside the business).
+- Every email now has the project line under the heading (the owner's "signed" notice and the
+  signed copy gained one), and a hidden preview line (the card's first words), so the inbox no
+  longer previews "LSC Creative LSC Creative.". The plain-text versions are byte-for-byte unchanged.
+- Templates take `business` (settings.business) and `appUrl` (APP_URL) now; a bare `businessName`
+  still works. No APP_URL means no logo and no fonts, and the wordmark still says who it's from.
+- Footer: name · ABN (spaced as the ATO prints it) · email (mailto) · phone (tel) ·
+  lsccreative.studio; only what is set; each part holds together on a narrow screen.
+- `node server/scripts/preview-mail.js [dir] [appUrl]` writes every template as .html + .txt;
+  `dev-stub-mail.js` (api-uic, api-scratch-mail) now saves each email's HTML in
+  `<DATA_DIR>/stub-mail/` and prints the path.
+- **For wave 2:** Pages first, then check `…/email/logo.png` returns 200 and a font file returns
+  `access-control-allow-origin: *` (GitHub Pages sends it; a font without it falls back quietly).
+  The NAS's `APP_URL` must be the Pages base (it already is: the client links use it).
+- **Trap:** `preview_start` runs launch.json from the main checkout, so `api-uic`/`web-uic` served
+  `main`'s code, not this worktree's. Start them from the worktree by hand (same env as launch.json).
+
+## Decisions made in task 14 (tell the user)
+
+Checked headless (real CDP keys, axe-core, a contrast and target probe, a Tab-walk for hidden
+focus) on the Project page (4 states), Invoice (3), the editor (draft, NBK-014, new), the estimate
+view, Settings (agreement, business, account), Projects, Home, Clients and Finance, at 1280, 800,
+375 and 320. Shots in `screenshots/task14/` (local only).
+
+**Fixed**
+- **Focus hidden by the sticky bars (WCAG 2.4.11):** Tab put 18 controls fully under the editor's
+  bar at 1280, 30 under Settings' Save bar at 375, and Shift+Tab put the Invoice header under the
+  app header on a phone. `a11y.css` now gives the page `scroll-padding` (top: the new
+  `--header-h`; bottom: the editor's measured `--ed-bar-h`, now set on `<html>`, or Settings' bar).
+  Re-walked: 0 hidden anywhere.
+- **The toast sat on Save settings.** It now rises above Settings' bar, as it already did on the
+  editor (there it follows the bar's measured height now).
+- **Undo was out of a keyboard's reach:** after deleting a clause or sub-clause, focus goes to the
+  next one and the Undo button is the last thing in the page, inside 10 s. **⌘Z / Ctrl+Z runs the
+  toast's Undo** while it shows (not from a text field). The button is styled now (it was the
+  browser's grey) and shows its key, hidden on touch screens.
+- **Editor rows:** "+ Add service" focuses the new line's hours, "+ Add deliverable" its name (the
+  task 11 leftover); × moves focus to the row that took its place, the one above, or the
+  section's picker. Each is said in `#editor-live` ("Hero film removed and its 2 post lines.").
+- **Opening a screen from a menu** (View estimate, the call sheet) left focus on nothing: both
+  now land on their heading (`landFocus`), as the Project page and Invoice did.
+- **Phone sheets:** `#app-view` is `inert` while a menu sheet is open, so VoiceOver's swipe can't
+  leave it (Tab already couldn't).
+- **Targets:** `.back-btn` is 28px (was 21; `#csp-back`'s patch is gone); every icon-only ⋯ is
+  square, 44px on a phone (the Clauses panel's ⋯ was 28px wide); from 768px nothing a pointer
+  aims at is under `--target-min` (24px): ×, the line handle, Move to, unit selects, small
+  buttons, "Edit on the day", "+ Add Date TBC day" (20px), the autosave link; checkbox labels take
+  the small control height (28px, 44 on a phone).
+- **Projects search** had a 1.3:1 edge; it takes the input fill and `--input-border` (3:1).
+- **Markup:** the rentals list's `<li role=group>` (axe: serious) is a list item holding the group;
+  the estimate view's "Internal notes" is an `<h2>` (was `<h4>` under an `<h1>`).
+
+**Checked and left (passes)**
+- Menus (APG): Enter/Space/↓ open at the first item, ↑ at the last, arrows wrap, Home/End,
+  type-ahead, Esc and Tab return to the button; a sheet traps Tab and ends with Cancel. Dialogs
+  from a menu trap Tab and return focus to the menu's button.
+- Panels: toggles are buttons, Enter and Space, focus stays. The rail lands on the panel's head
+  and marks it. Move to and drag keep focus on the line and say where it went.
+- The builder: Alt+↑/↓ and ⋯ Move up/down keep focus on the handle and say "Deposit moved to
+  clause 3 of 13."; delete focuses the card that took its place or the one above; add focuses
+  the title; sub-clauses the same (Indent, Outdent, Move, Delete, Undo). Drag has two non-drag
+  ways (WCAG 2.5.7).
+- Reduced motion: `a11y.css` and `tokens.css` zero every transition; nothing scrolls smoothly.
+- 44px below 768px on every screen of this track; no sideways scroll at 320, 375, 800 or 1280.
+- Contrast: no text under 4.5:1. The probe's other flags are disabled fields (GST rate, Save
+  extras, which WCAG exempts), the logo's full stop, and the pencilled hatch, which it can't read
+  (ink 6.0:1 on the dark stripe, 8:1 on the light).
+
+**Seen, not changed**
+- **Jump to… (the editor below 1100px) acts on `change`.** On macOS and iOS that fires only on a
+  pick; where arrow keys change a closed select in place (Firefox/Windows, and Chrome's emulated
+  phone) each arrow jumps (WCAG 3.2.2). A guard would cost Mac keyboard users a second Enter and
+  can't be tested headless. Left; check it in Safari with the keyboard.
+- Inline links in a sentence stay their line's height (Settings → Business in a hint, Finance's
+  dashboard sentences): WCAG's inline exception.
+- Home's weekday headers (axe `empty-table-header`, minor): their name is an `aria-label`. As
+  trip-planner left it.
+
+**For a person with VoiceOver (macOS Safari, then iOS)**
+1. Project page: the header reads the next action, then "Project actions, menu button"; open it,
+   hear the items and the count; Esc returns to the button. On iOS the sheet: can you swipe out
+   of it? (You shouldn't.)
+2. Invoice: Actions ▾ and Documents ▾ name the invoice; Mark paid… opens its dialog at the date;
+   after Mark paid, the toast is spoken.
+3. Editor: + Add service, then hear "… added." and land in its hours; × says "… removed."; Move to
+   says "Moved … to Thu 29 Oct: $1,120.00."; the rail's current section reads as current.
+4. Settings → Service agreement: a clause card reads "Clause 2, Deposit, collapsed"; Alt+↓ on its
+   handle says where it went; delete a sub-clause, hear it, then ⌘Z and hear "restored".
+5. The toast: does VoiceOver read "Undo ⌘Z" sensibly as the button's name?
+
+## Decisions made in task 13 (tell the user)
+
+- **Corners, not re-layouts.** The other screens' sections were already on the panel's colours;
+  what made them read as the old app was square corners. Every sectional box takes the panel's
+  8px radius from one rule in `app.css`; dialogs and the sign-in card take `--radius-lg` (16),
+  as the tokens give dialogs. Settings' sections stay divided by rules: Service agreement
+  already holds panels, so wrapping sections in panels would nest panels in panels.
+- **Proposed and Draft are warm grey** (`--color-status-neutral` `#9A938B`, was blue-grey
+  `#8D939C`, same lightness, so the chip ink stays ~6:1). The client pages' neutral text warmed
+  with it. Sent and gear rentals keep their blue: that is the info status, not the old palette.
+- **The UPID fix-up has one terracotta Save:** the first group's. The others are plain until
+  they reach the top (each saved group leaves the list, so the next one takes it).
+- **The client card's phone** is a mono figure, not a boxed label (`.tag`, used nowhere else).
+- **Left as they are, for you to call:** the Projects cards' totals are terracotta figures (11
+  on a full page) beside the terracotta + New project. They're figures, not buttons, like the
+  Invoice's Balance due, so the one-terracotta-button rule holds; toning them to white would
+  calm the page further. The Estimate view's header still has four ringed buttons beside its
+  primary (U1 kept that screen to system changes).
+
+## Decisions made in task 12 (tell the user)
+
+- **#main widens by the rail on the editor** (`--max-width-page` is now 1080 + rail + gap =
+  1296px, was 1240): the panels keep their 1000px wherever the window allows, as Finance's shell
+  does. Between 1100 and 1295 they are 804–999px, so **Production booking puts its calendar
+  above its cards until 1296px** (was 1100px): beside a 420px calendar the day cards' rows were
+  clipped (the block hides sideways overflow). A media query, not a container query: containment
+  would have made the block the box for the Gear rentals ⓘ's fixed popover.
+- **The save error moved into the bar**, on top of it beside Save, so a refused save is seen
+  from anywhere on the page (it used to sit at the foot). Focus still goes to the field.
+- **⋯ is built when opened:** How this is calculated only while the Minimum Job Price has
+  figures (as its ⓘ; scratch has no Overhead & Goals, so it doesn't show there), Delete
+  estimate… only on a saved estimate and not mid-save. On a phone it starts with **Cancel
+  editing** (not "Cancel": the sheet's own last row is Cancel, which only closes it). A new
+  estimate on a desktop with no Finance has no ⋯ at all.
+- **Save says "Save"** (was "Save estimate"), per IA; the bar's label is **Client total · inc
+  GST** in grey, so Save is the bar's one terracotta. The total is Delight, 22px on a phone,
+  28px from 768.
+- **Jump to… resets to its prompt after each jump** (it's a way to go, not a setting), so it
+  doesn't track scroll; the rail does. Rail labels are short (Booking, On set), IA allows it.
+- **The toast clears the bar** on the editor (`body:has(.ed-bar) .export-toast`), instead of
+  sitting on Save. The Project page's toast note under traps is unchanged.
+
+## Decisions made in task 11 (tell the user)
+
+- **Job details isn't remembered.** It is closed on an existing estimate and open on a new one or
+  a fresh Duplicate (its UPID is blank); the other five remember (IA said all six, but then the
+  "starts collapsed" rule could never hold). With Job details closed, focus lands on its head.
+- **Production booking with nothing remembered** keeps D64 (closed unless it has days or on-set
+  lines); once opened or closed in this browser, that wins. A new estimate opens it if it was
+  left open, which fetches the calendar.
+- **Job details' summary adds "Short notice" and "GST-free"** when ticked: they move prices and
+  would otherwise be hidden in a closed panel. Blank: "Not filled in yet".
+- **Tags:** Services' categories lost "LABOUR" (all are), Deliverables lost "PROJECT OUTPUT";
+  On set's Production now says **Labour** (was "On set"), beside the others' Expenses, so each
+  says which Summary subtotal it counts toward. An archived category keeps its tag.
+- Sub-sections sit on the panel's own layer (inset is the input fill) with a subtle rule
+  between them, headed in Metro Sans semibold. On a phone, the two word summaries (Job details,
+  Production booking) take their own line under the name; the figures stay beside it.
+- The Summary panel's insides (surcharge box, bars, Minimum Job Price) are unchanged: their
+  boxes inside a panel are task 13/14's to judge.
+- **Not fixed (task 14):** "+ Add deliverable" / "+ Add service" don't move focus to the new row
+  (they never did).
+
+## Decisions made in task 10 (tell the user)
+
+- **Paid and void invoices have no primary button**: IA's Invoice-screen column gives them none
+  (its "Open" is the Project page row's). Only Actions ▾ and Documents ▾ show.
+- **The sum sits beside the panels at ≥1100** (Balance, Total, or Amount for a deposit/legacy),
+  sticky while a long list of extras is edited; below that it comes last.
+- **The status is the Project page's mono chip** (NOT SENT, SCHEDULED, SENT, OVERDUE, PAID, VOID,
+  LEGACY) with its note beside it; the overdue note is red.
+- **The deposit's % is the Deposit panel's count**, and Production days booked is its own panel.
+- **The accepted estimate's own blocks sit one layer in** (inset, no border) inside its panel, and
+  it stays open across a redraw of the same invoice (e.g. after Save extras), collapsed on arrival.
+- Ledger figures are `--font-figures` (U24); Balance due stays Delight. Its label is grey, so the
+  figure is the corner's one terracotta.
+- **Fixed in passing:** after Save extras, focus went nowhere (it aimed at the now-disabled Save
+  button); it lands on the Additional work picker. A paid legacy invoice's notice no longer says
+  "Mark it paid when the money is in."
+
+## Decisions made in task 9 (tell the user)
+
+- **One terracotta on the page:** the header's next action. A document row's own button (Open,
+  Send…, Send vN…) is a secondary button, so the rows don't compete with it.
+- **Decline… is a danger item** (red, below the divider) in every menu, with Delete and Void.
+- **Accepted with no invoices still offers Decline…** in the header: IA's table left it out, but
+  today's rule (no live invoice) allows it, and this track doesn't change rules.
+- **Row Mark paid… / Void and remake…** open the invoice's own page with that dialog already open.
+- **Rows say more:** an overdue invoice reads OVERDUE · was due 4 Oct, an expired quote "expired
+  5 Oct" in red, a void one VOID · voided … · replaced by ….
+- **The dates-taken warning** moved from the Production days panel to the notices under the header.
+- **Duplicate as new project** on a second estimate's row copies that estimate (the header's
+  copies the lead). **Show all (N)** in Activity resets on each visit.
+
+## Decisions made in task 4 (tell the user)
+
+- **Header wording** (none was specified): `SERVICE AGREEMENT`; `PARTIES` (business name (ABN),
+  "represented by" the signer, (the "Business"), email · phone; then the client the same way);
+  the Intro; `PROJECT` ("…, as set out in quote X (the "Quote")", which defines "Quote" for the
+  clauses); `PAYMENT SCHEDULE` (Total, Deposit (%), Balance, "Invoices are due N days after each
+  is issued"; single: "Total: $X, on a single invoice, due N days after it is issued");
+  `SCOPE AND PRODUCTION DAYS`; `TERMS`; the clauses; then
+  "Signed for {client} by {name}, {role}, on {date}." The default Intro is the user's own line
+  from their Blue Harvest agreement, with "your accepted quote" made "the Quote".
+- **Deposit-only clauses** (user's request): `clause.depositOnly === true` leaves the clause out,
+  unnumbered, when `agreementText` gets `{ single: true }` (signing passes the project's
+  invoicing; the Settings preview passes the previewed project's). Only a real `true` counts.
+  If every clause is deposit-only, a single invoice gets `FALLBACK_TEXT`.
+- **Payment split (user, 2026-10-06):** the defaults' 2. Deposit (deposit-only) holds "A
+  non-refundable deposit of {deposit_pct}… The balance is due on the date shown on the final
+  invoice."; 3. Payment keeps the AUD/GST line and Late payment. A single invoice reads 12 clauses
+  with Payment as 2; the header's payment row says when its one invoice is due.
+- `hourlyRate` defaults to 63; `null` stored = cleared on purpose (the field is then blank).
+- Blank sub-clauses and empty clauses are skipped and take no letter or number. An indented
+  first sub-clause is lettered (and stored as indent 0).
+
+## Decisions made in task 7 (tell the user)
+
+- **The client page now loads `../js/documents.js`** (pure functions, no DOM/storage/requests),
+  so the dialog and the PDF share one layout. Its header comment and c.js's say so.
+- **Only the app's own format gets headings.** A text is 'clauses' only if it starts
+  `SERVICE AGREEMENT`, then `PARTIES`, and has a `TERMS` block; `ACCEPTANCE OF QUOTE` gets its
+  title and signing line; anything else (pre-task-4 free text) is plain paragraphs, even if it
+  has "1. Payment" lines.
+- **The (i) rule:** "(i)" after (h) is a letter unless the next mark is (ii); (v) and (x)
+  likewise. A *lone* indented (i) under (h) is the same text as a ninth letter and reads as one
+  (it loses its extra indent; the words are unchanged).
+- Sub-clause headings aren't bolded: the text can't tell "Heading." from a first sentence.
+- PDF heads are tracked only .06em: wider, and PDF readers copy "PARTIES" as "PA R T I E S".
+- **The Settings preview draws with `agreementLayout` too** (settings.js `drawAgreement`, no
+  slots; settings.css ports c.css's styles onto the dark tokens). Its `textContent` is still
+  `filled.text` exactly.
+
+## Decisions made in task 5 (tell the user)
+
+- **The preview shows what's on screen, saved or not** (D39's original rule), not the saved
+  clauses as task 4's interim did.
+- **Cards are numbered by position**, as a deposit project reads them. A deposit-only clause
+  carries a "Deposit only" tag; on a single invoice the render skips it and numbers on.
+- A clause with sub-clauses calls its text box "Intro (optional)" (the label follows as rows
+  are added or deleted).
+
+## Decisions made in task 6 (tell the user)
+
+- **A new, blank sub-clause is lettered at once** ((d)), so the card letters every row, blank or
+  not, while the render skips blank ones. **Save drops blank rows**, so the two agree once
+  saved. A row with only a heading (8(a) "By the Client") is not blank.
+- **A row moved or left to the top loses its indent** (it has nothing to sit under); moving it
+  back down doesn't restore it.
+- **Rows move one at a time.** Moving a lettered row doesn't carry its (i)(ii) along; they
+  re-letter under whichever lettered row is now above them.
+- **Sub-clause delete has no confirm**, only the 10s Undo (back where it was, indent and all).
+- **Reset** confirms with the count ("Your 12 clauses are replaced by the 13…"), skips the
+  confirm when there are none, and its toast has Undo too (open cards come back open).
+- The heading's placeholder is just "Heading" (the 375 box cut "(optional)" off); its
+  accessible name still says optional.
+- **Delete confirms only when the clause has text** (body or sub-clauses; a title alone doesn't
+  count). Undo lasts 10s and holds while hovered or focused.
+- **Field insertion** goes where the cursor last was in the Intro or a clause (else the Intro's
+  end), opening that card if it was closed.
+- **Missing** (Header panel) covers Email, Phone and Signs for the business; it jumps to the
+  field and updates as you type.
+
+## Traps
+
+- **The booking block draws its day cards while closed** (task 11). A day's items are the
+  editor's own rows, and collect() reads them from the page: before, a closed block held no
+  cards, so with a remembered-closed booking a save dropped every on-set line. Only the calendar
+  waits for the open. Don't put `paintCards()` back behind `if (!open)`.
+- **Every booking open/close goes through `LSCPanel.setOpen`** and its `lsc:panel` event (the
+  block's handler mounts the calendar and calls `onToggle`). Calling paint with a changed `open`
+  instead leaves the toggle and the remembered state behind.
+- **NBK-014** (`prj_4eaa776d` on today's scratch) is a draft with a line in every section, made
+  by `seed-review.js`'s step 14; its Vehicle line prints "—" (no km rate on the card, on
+  purpose: a line with no price). Its saves in task 11's checks only re-saved it as it was.
+
+- **Agreement business details come from the version's frozen snapshot** (`snap.business`), as
+  name and ABN always did. A link sent before Settings → Business email, phone and signer are
+  filled offers a header without them, until it is re-sent.
+- **`(i)` is ambiguous in the text** (the 9th letter and roman one): `agreementLayout` settles it
+  by the next mark (task 7's decisions). Any new reader of the text must use that function.
+- **`agreement.text` still rides in the live row** (merged through `loaded.agreement`, read by
+  nothing). Left on purpose as a second copy of the user's old text; the pre-deploy backup is the
+  first.
+- The owner's agreement PDF route (`routes/projects.js`) always uses the real renderer and ignores
+  `opts.renderPdf`; tests read a PDF through the client's `/public/estimates/:token/agreement`.
+
+- **Testing declarative menus by script:** `el.click()` on a menu item does nothing in the end,
+  because menu.js re-clicks the item in place and `HTMLElement.click()` is a no-op on an element
+  whose own click is in progress. Real clicks are fine. Test with
+  `el.dispatchEvent(new MouseEvent('click', { bubbles: true }))`. Task 9 will meet this too.
+- **Stacked grids need `grid-template-columns: minmax(0, 1fr)`**, or a nowrap child (an
+  ellipsised title, a chip) widens the column: the panels overflowed 375 by 54px until both
+  `.set-agr-panels` and `.clause-list` had it.
+- **sortable.js** takes items that are direct children of the list only, so task 6's sub-clause
+  list inside a card attaches its own instance. Its `onMove(from, to)` must move data and node
+  together, as `Clauses.move` does. The handle is `touch-action: none`.
+- **Scratch DB recreated 2026-10-08** (macOS cleared /tmp). It holds the review dataset
+  DRF-001…VOD-010 from [`seed-review.js`](seed-review.js) (its header lists each state); the old
+  SEND-A…RVR-011 names are gone. Rebuild: seed the `dev` account (launch.json), start
+  `api-scratch-mail`, `node .design/ui-clarity/seed-review.js server`. Its signing step was fixed
+  after the run that built today's data (DPD-006 was signed by hand), so check it the first time.
+- **A voided deposit only warns on a final that has gone out.** Voiding a deposit while its final
+  is a draft re-points the final at the replacement (server rule), so no notice shows; the
+  "deposit … was voided" notice needs a sent/scheduled final. To make one on scratch: send the
+  deposit and the final `{ by: 'link', dueAt }`, then void the deposit.
+- **Scratch is shared state:** task 10's checks ran on a `db.backup()` copy and restored it
+  (stop `api-scratch-mail`, copy over `billing.db`, delete `-wal`/`-shm`, restart). Do the same
+  before any check that sends, voids or marks paid, so `seed-review.js`'s states survive.
+- **Project page menus have stable ids** (`pf-menu-head`, `pf-menu-e-<estimateId>-act|doc`,
+  `pf-menu-i-<invoiceId>-act|doc`): the quiet refresh after a send puts focus back by id, and
+  waits while a menu is open (a redraw would close it).
+- **On a phone the download toast sits over the foot of the page** for its few seconds, so a tap
+  on Activity's Show all can land on the toast. Task 14 to look at (toast placement).
+- **Menus (task 3):** an open list is moved into `<body>`, and a chosen declarative item is put
+  back and `.click()`ed in place, so a screen's delegated `data-act` handler must listen on a
+  container that holds the *closed* menu, not on the list. menu.js listens in the capture phase
+  and stops Esc there, so Esc in a menu inside a dialog closes only the menu.
+- Move to keeps its "No other day yet…" note (`open()`'s `empty`): its button is per line and
+  exists before any day does. "A menu with no items isn't drawn" is `markup()`'s rule.
+- **Screenshots:** a puppeteer `clip` capture resizes the viewport to 1×1 for a frame, which
+  flips the 767px query (and restarts the menu's fade). menu.js ignores flips that don't settle
+  (150ms); take menu shots with `captureBeyondViewport: false` and no clip.
+
+- **The studio Mac has a Fontspring DEMO of Metro Sans installed** (`~/Library/Fonts/fontspring-demo-*`):
+  its glyphs for `( ) - @` and some digits are `±`. Chrome falls back to an installed font of the
+  same family name when a web font file 404s, so `tokens.css` names the face **'LSC Metro Sans'**.
+  Keep that name. The masters in `Visual Design/` are the full family (checked).
+- Screenshots: `node <scratch>/shots.js` pattern (headless Chrome via `server/node_modules/puppeteer-core`,
+  in-page login, computed-colour scan for old palette values). `screenshots/` stays local, uncommitted.
+
+- `.sum-label` is the mono caps figure label now; `.tax-setting .sum-label` scopes it back to a
+  sentence-case title (Rate Card, Goals reuse it as a setting name).
+- Metro Sans has **no tabular figures**: money uses `--font-figures` (mono), U24.
+- Metro Sans: `web/fonts/MetroSans-{400,500,600}.woff2` are the Regular, Medium and Semi Bold
+  webfonts from `Visual Design/Metro-Sans---Full-Family/`. A 700 request uses 600 (no synthetic
+  bold). It lacks `▾ ⋯ ← → ↑ ↓ ✓ ±`, which come from the system face. The client pages don't use
+  it (Delight + mono, by design).
+- The Desktop Preservation Law in `app.css` is retired (U16). Rewrite that header comment when
+  tokens land.
