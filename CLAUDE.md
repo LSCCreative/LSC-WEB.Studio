@@ -16,11 +16,17 @@ allow-list of paths only. A new public file or folder must be added to that list
 
 ## Coding Standards
 
-- Follow the Cross-Device Responsive Architecture rules below for all CSS/layout work.
+- Follow the Cross-Device Responsive Architecture rules below for CSS/layout work on the marketing site.
+  The admin (`admin/web/`) follows its own conventions in `admin/web/README.md` instead.
 - Keep the client-hub-app as a single self-contained HTML file unless asked to split it.
 - Don't touch `_archive/` unless a task explicitly needs something from it (see below).
 
 ## 📱 Cross-Device Responsive Architecture & Viewport Locks
+
+Scope: the marketing site (`index.html`, `css/`, `js/`) only. The admin in
+`admin/web/` is an app, not this site: it has its own phone-first shell
+(`admin/web/css/shell.css`) and conventions (`admin/web/README.md`), and these
+rules don't apply to it.
 
 Treat desktop and mobile as two distinct visual mediums. Never write blended
 CSS that compromises one device for the other.

@@ -231,6 +231,9 @@ function fakeBunny() {
 
 async function startHub(overrides = {}, { trustProxy = 1 } = {}) {
   const db = openDatabase(path.join(TMP, `hub-${crypto.randomBytes(4).toString('hex')}.db`));
+  // /hub/publish takes billing projects only (S11), so the ids these tests publish exist.
+  const addProject = db.prepare("INSERT INTO projects (id, created_at, updated_at) VALUES (?, 'x', 'x')");
+  for (const id of ['p_pub', 'p_sign', 'p_guess', 'p_clear', 'p_cf', 'p_ip', 'p_w']) addProject.run(id);
   const backupDir = path.join(TMP, `hub-backups-${crypto.randomBytes(4).toString('hex')}`);
   const bunny = fakeBunny();
   const router = createHubRouter(db, {
@@ -320,6 +323,10 @@ test('editor routes need the session, and an expired one doesn’t count', async
 test('publish, then the client signs in with email and code and reads the record', async () => {
   const record = { id: 'p_pub', name: 'Harbour', deliverables: [{ title: 'Hero' }] };
   assert.equal((await hub.call('/hub/publish', { method: 'POST', cookie, body: { record } })).status, 400);
+  // Only a billing project can be published: the delete guard looks under projects.id (S11).
+  const stray = await hub.call('/hub/publish', { method: 'POST', cookie, body: { record: { id: 'p_hub_only' }, priv: {} } });
+  assert.deepEqual([stray.status, stray.body.error], [404, 'unknown_project']);
+  assert.equal(hub.db.prepare("SELECT 1 FROM records WHERE project_id = 'p_hub_only'").get(), undefined);
   const pub = await hub.call('/hub/publish', { method: 'POST', cookie, body: {
     record, priv: { clientEmail: ' Priya@Salt.example ', codeHash: sha('1234'), inviteToken: 'inv-abc', delivered: true },
   } });

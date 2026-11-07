@@ -202,13 +202,19 @@ const ClientsView = (() => {
     // The cards sit under the client form, so opening one leaves a screen that
     // may have edits in it — the router's guard asks, as for the header.
     ProjectCard.bind(box, reply.projects || [], handlers.onOpenProject);
+    return reply.total;
   }
 
   function showEditor(client) {
     window.scrollTo(0, 0);
     root.innerHTML = editorMarkup(client);
+    // "Acme — Clients": the record names its tab, as a project's folder does.
+    document.title = LSCShell.title(client ? client.businessName || 'Client' : 'New client');
     const $ = (id) => root.querySelector('#' + id);
     let saving = false;
+    // How many projects name this client, once the history below has loaded:
+    // a client with any stays (the server's 409 has_projects, L4 / S11).
+    let projectCount = null;
 
     /* Is this record still the screen on #main? A save or delete is async and
        the nav doesn't wait for it, so its outcome can land after the user has
@@ -292,12 +298,15 @@ const ClientsView = (() => {
 
     async function remove() {
       if (saving || !client) return;
-      if (
-        !window.confirm(
-          'Delete ' + (client.businessName || 'this client') + ' from your client list?\n\n' +
-          'Estimates already saved for them keep their own copy of these details.'
-        )
-      ) return;
+      // Known to be refused: say why now rather than after a confirm.
+      if (projectCount > 0) {
+        showError(
+          'Couldn’t delete: this client has ' + (projectCount === 1 ? 'a project' : projectCount + ' projects') +
+          ', so they stay on your list. Their projects are listed below.'
+        );
+        return;
+      }
+      if (!window.confirm('Delete ' + (client.businessName || 'this client') + ' from your client list?')) return;
 
       setSaving(true);
       Toast.working('Deleting…');
@@ -338,7 +347,11 @@ const ClientsView = (() => {
     if ($('js-delete')) $('js-delete').addEventListener('click', remove);
     $('c-business').focus();
 
-    if (client) loadHistory(client);
+    if (client) {
+      loadHistory(client).then((n) => {
+        if (typeof n === 'number') projectCount = n;
+      });
+    }
   }
 
   /* #/clients/<id>: the record the list handed over, or a fresh read for a

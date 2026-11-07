@@ -102,6 +102,7 @@ function createHubRouter(db, opts = {}) {
       updated_at   = excluded.updated_at
   `);
   const getRecord = db.prepare('SELECT data FROM records WHERE project_id = ?');
+  const getProject = db.prepare('SELECT 1 FROM projects WHERE id = ?');
   const getAgreementEvidence = db.prepare('SELECT * FROM agreement_evidence WHERE project_id = ?');
   const findByEmailHash = db.prepare('SELECT * FROM private_auth WHERE email_hash = ?');
   const findByInviteToken = db.prepare('SELECT * FROM private_auth WHERE invite_token = ?');
@@ -323,6 +324,10 @@ function createHubRouter(db, opts = {}) {
   router.post('/hub/publish', requireAdmin, async (req, res) => {
     const { record, priv } = req.body || {};
     if (!record || !record.id || !priv) return res.status(400).json({ error: 'bad payload' });
+    // Portal rows are keyed by billing's projects.id (merged-admin S11): that is
+    // what the admin's delete guard (projects.js clientDataHeld) looks under, so
+    // a record under any other id could be orphaned by a delete it never saw.
+    if (!getProject.get(String(record.id))) return res.status(404).json({ error: 'unknown_project' });
     await backupBeforeWrite();
 
     const now = new Date().toISOString();

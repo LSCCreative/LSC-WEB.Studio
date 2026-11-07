@@ -2252,6 +2252,28 @@ test('setup: keep together makes one project under the shared UPID, invoices and
   assert.equal(projectRow(old.projectId), undefined);
 });
 
+test('setup: keep together refuses when a project it would delete holds client data (L4 / S11)', async () => {
+  const first = (await saveEstimate({ name: 'L4 Merge First' })).body.estimate;
+  const second = (await saveEstimate({ name: 'L4 Merge Second' })).body.estimate;
+  db.prepare("UPDATE estimates SET created_at = '2020-01-01T00:00:00.000Z' WHERE id = ?").run(first.id);
+  makeWaiting(first, 'L4-MERGE');
+  makeWaiting(second, 'l4-merge');
+  // The second project is the one keeping together would delete.
+  db.prepare("INSERT INTO records (project_id, data, updated_at) VALUES (?, '{}', 'x')").run(second.projectId);
+
+  const refused = await fixUp({ key: 'u:l4-merge', keepTogether: true });
+  assert.deepEqual([refused.status, refused.body.error], [409, 'has_client_data']);
+  assert.match(refused.body.message, /^One of these projects has a published portal record, so it can’t be merged\./);
+  assert.ok(projectRow(first.projectId) && projectRow(second.projectId), 'both projects kept');
+  assert.equal(db.prepare('SELECT project_id FROM estimates WHERE id = ?').get(second.id).project_id, second.projectId);
+
+  // With the record gone, they keep together as before.
+  db.prepare('DELETE FROM records WHERE project_id = ?').run(second.projectId);
+  assert.equal((await fixUp({ key: 'u:l4-merge', keepTogether: true })).status, 200);
+  assert.equal(projectRow(second.projectId), undefined);
+  await dropEstimates(first.id, second.id);
+});
+
 // ── The Projects list (task 17) ───────────────────────────────────────────
 
 const { projectStage } = require('../src/projects');
@@ -2881,6 +2903,49 @@ test('invoices: the UPID locks with the first invoice (D36), and a sent one keep
   db.prepare('UPDATE invoices SET status = ? WHERE project_id = ?').run('draft', est.projectId);
   await dropEstimates(est.id);
   assert.equal(projectRow(est.projectId), undefined);
+});
+
+test('L4 / S11: a project holding portal data, and a client with projects, can\'t be deleted', async () => {
+  const est = (await saveEstimate({ name: 'L4 Guard', upid: 'L4-GUARD' })).body.estimate;
+  const pid = est.projectId;
+  const del = (url) => api(url, { method: 'DELETE' }).then(async (r) => ({ status: r.status, body: await r.json() }));
+  const hold = {
+    records: () => db.prepare("INSERT INTO records (project_id, data, updated_at) VALUES (?, '{}', 'x')").run(pid),
+    private_auth: () => db.prepare("INSERT INTO private_auth (project_id, updated_at) VALUES (?, 'x')").run(pid),
+    agreement_evidence: () => db.prepare(`INSERT INTO agreement_evidence (project_id, signer_name, signed_at,
+      signature_data_url, consent_text, consent_checked, received_at) VALUES (?, 'A', 'x', 'x', 'x', 1, 'x')`).run(pid),
+  };
+  for (const [table, add] of Object.entries(hold)) {
+    // agreement_evidence and private_auth hang off a record.
+    if (table !== 'records') db.prepare("INSERT OR IGNORE INTO records (project_id, data, updated_at) VALUES (?, '{}', 'x')").run(pid);
+    add();
+    // The folder's Delete and the last estimate's Delete both refuse, and nothing is removed.
+    for (const url of [`/api/projects/${pid}`, `/api/estimates/${est.id}`]) {
+      const r = await del(url);
+      assert.deepEqual([table, r.status, r.body.error], [table, 409, 'has_client_data']);
+      // One clean sentence pair, and no Archive yet (R2 adds it).
+      assert.match(r.body.message, /^This (project|estimate is the last one on a project that) has a published portal record, so it can’t be deleted\. The client still uses it\.$/);
+      assert.ok(projectRow(pid), 'project kept');
+      assert.ok(db.prepare('SELECT 1 FROM estimates WHERE id = ?').get(est.id), 'estimate kept');
+    }
+    db.prepare('DELETE FROM agreement_evidence WHERE project_id = ?').run(pid);
+    db.prepare('DELETE FROM private_auth WHERE project_id = ?').run(pid);
+    db.prepare('DELETE FROM records WHERE project_id = ?').run(pid);
+  }
+
+  // A client with a project stays; once the project goes, the client can.
+  const client = (await api('/api/clients', { method: 'POST', body: JSON.stringify({ businessName: 'L4 Client Pty' }) })
+    .then((r) => r.json())).client;
+  db.prepare('UPDATE projects SET client_id = ? WHERE id = ?').run(client.id, pid);
+  const blocked = await del(`/api/clients/${client.id}`);
+  assert.deepEqual([blocked.status, blocked.body.error], [409, 'has_projects']);
+  assert.match(blocked.body.message, /a project/);
+  assert.equal((await api(`/api/clients/${client.id}`)).status, 200);
+
+  // With nothing held, both go as before.
+  assert.equal((await del(`/api/projects/${pid}`)).status, 200);
+  assert.equal(projectRow(pid), undefined);
+  assert.equal((await del(`/api/clients/${client.id}`)).status, 200);
 });
 
 /* ── The invoice screen's routes (task 20; D35–D37, D100) ──────────────── */

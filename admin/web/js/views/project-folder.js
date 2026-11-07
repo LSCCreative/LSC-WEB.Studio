@@ -825,7 +825,9 @@ const ProjectFolder = (() => {
       Toast.ok('Project deleted.');
       closeDialog(false);
       if (onScreen() && folder.project.id === id) {
-        LSCRouter.go(ProjectCard.placeOf(folder.project).path, { replace: true, skipGuard: true });
+        // Where Back would have gone (the list or client page it was opened
+        // from, with its chip and search), else where the project belonged.
+        LSCRouter.leaveTo(ProjectCard.backOf(folder.project).path, { replace: true, skipGuard: true });
       }
       return true;
     } catch (err) {

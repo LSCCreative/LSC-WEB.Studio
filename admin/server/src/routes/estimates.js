@@ -13,7 +13,9 @@ const {
 const {
   readRentals, readRentalsByEstimate, parseRentals, rentalsWithGear, rentalIdTakenElsewhere, replaceRentals,
 } = require('../rentals');
-const { planProjectWrite, applyProjectWrite, dropEmptyProject, upidLocked } = require('../projects');
+const {
+  planProjectWrite, applyProjectWrite, dropEmptyProject, upidLocked, clientDataHeld, clientDataRefusal,
+} = require('../projects');
 const {
   versionsOf, liveVersion, changedSince, buildCallSheet, callSheetDays, setCallSheetLink,
 } = require('../public');
@@ -507,6 +509,10 @@ function registerEstimateRoutes(app, db, opts = {}) {
         message: `${gone.number || 'An invoice'} has gone out, so this estimate can’t be deleted.`,
       });
     }
+    // The last estimate takes the project with it, so it answers to the same guard.
+    const lastOne = db.prepare('SELECT COUNT(*) AS n FROM estimates WHERE project_id = ?').get(existing.project_id).n === 1;
+    const held = lastOne && clientDataHeld(db, existing.project_id);
+    if (held) return res.status(409).json(clientDataRefusal(held, 'This estimate is the last one on a project that'));
     db.transaction(() => {
       db.prepare('DELETE FROM estimates WHERE id = ?').run(req.params.id);
       dropEmptyProject(db, existing.project_id);

@@ -107,6 +107,15 @@ function registerClientRoutes(app, db) {
   });
 
   app.delete('/api/clients/:id', (req, res) => {
+    // S11: a client with projects stays; their name is on every one of them.
+    const n = db.prepare('SELECT COUNT(*) AS n FROM projects WHERE client_id = ?').get(req.params.id).n;
+    if (n > 0) {
+      return res.status(409).json({
+        error: 'has_projects',
+        message: `This client has ${n === 1 ? 'a project' : n + ' projects'}, so they can’t be deleted. ` +
+          'Delete or move the project' + (n === 1 ? '' : 's') + ' first, or leave the client as they are.',
+      });
+    }
     // FK is ON DELETE SET NULL — estimates keep their client_json snapshot.
     const result = db.prepare('DELETE FROM clients WHERE id = ?').run(req.params.id);
     if (result.changes === 0) return res.status(404).json({ error: 'not_found' });

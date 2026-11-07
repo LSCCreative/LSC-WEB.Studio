@@ -48,6 +48,8 @@ const hubSettings = (over = {}) => ({
 
 async function start(opts = {}) {
   const db = openDatabase(path.join(TMP, `app-${crypto.randomBytes(4).toString('hex')}.db`));
+  // /hub/publish takes billing projects only (S11).
+  db.prepare("INSERT INTO projects (id, created_at, updated_at) VALUES ('p_ip', 'x', 'x')").run();
   const app = createApp(db, { hub: hubSettings(), ...opts });
   const server = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
   const { port } = server.address();

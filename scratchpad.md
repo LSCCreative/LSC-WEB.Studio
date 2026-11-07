@@ -94,7 +94,18 @@ by design (it is Live's address). Tests 950/950.
 Trap: a local `const next` in `show()` shadowed the module's paging cursor; the preview server keeps old
 API code until restarted (`preview_stop` then start). Test post-acceptance pages by patching `LSCApi.get`.
 
-**Next: L4 Guard every delete | Model: Sonnet 5.5 | Effort: Medium.**
+**L4 done 2026-11-08 (not committed when written).** Every delete asks `clientDataHeld` (`src/projects.js`,
+`CLIENT_DATA`: records, private_auth, agreement_evidence): project delete, last-estimate delete, setup merge
+-> 409 `has_client_data`; client with projects -> 409 `has_projects`. R1/R3 must add their tables to
+`CLIENT_DATA`; reword `clientDataRefusal` to point at Archive once R2 lands.
+**L1-L4 review fixed 2026-11-08 (not committed):** one refusal helper (`clientDataRefusal(held, subject, verb,
+advice)`) for delete and merge, lookups prepared once per db; merge refusal tested; `/hub/publish` now 404s
+`unknown_project` unless `record.id` is a billing `projects.id` (the guard looks there; the old client-hub-app
+publishes its own ids, so it can no longer publish; live hub never had records). Client page titled
+"<Name> — Clients"; its Delete explains at once when the client has projects; a deleted project returns where
+Back would. Root CLAUDE.md's responsive rules now name the marketing site only. 952/952; checked in the browser.
+
+**Next: R1 Open a project with its checklist | Model: Opus 5.5 | Effort: High.**
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
 `routes.js` (`createHubRouter(db, opts)`, not mounted yet), `url-signing.js` (was signing.js), `admin-auth.js`,

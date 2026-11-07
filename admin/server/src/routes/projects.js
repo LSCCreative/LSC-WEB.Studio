@@ -1,7 +1,9 @@
 'use strict';
 
 const { newId, nowIso } = require('../db');
-const { STAGES, projectStage, settledAt, upidLocked } = require('../projects');
+const {
+  STAGES, projectStage, settledAt, upidLocked, clientDataHeld, clientDataRefusal,
+} = require('../projects');
 const { readDays } = require('../days');
 const { readRentals } = require('../rentals');
 const { loadEstimate } = require('../estimate');
@@ -1104,6 +1106,8 @@ function registerProjectRoutes(app, db, opts = {}) {
         message: `${gone.number || 'An invoice'} has gone out, so this project can’t be deleted.`,
       });
     }
+    const held = clientDataHeld(db, p.id);
+    if (held) return res.status(409).json(clientDataRefusal(held, 'This project'));
     // Estimates (and through them days and rentals), invoices and activity
     // all hang off the project, ON DELETE CASCADE. Sends name their document
     // by id only, so they go first: a waiting one would email a deleted job.
