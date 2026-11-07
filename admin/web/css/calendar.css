@@ -283,7 +283,7 @@
 }
 .cal-dot-more {
   font-size: var(--font-size-xs);
-  line-height: 8px;
+  line-height: 1;
   color: var(--muted);
 }
 

@@ -54,24 +54,25 @@ button,input,textarea,select{font-family:var(--font-family-body)}
    .btn-secondary is accepted as a name for plain .btn and needs no rule.
    Below 768px both heights are --touch-min (tokens.css). Edges are inset
    box-shadows, not borders, so every kind is the same size and a ring never
-   shifts a label. The focus ring (--shadow-focus) replaces them while focused. */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-3);min-height:var(--control-h);padding:var(--space-2) var(--btn-pad-x);border:0;border-radius:var(--btn-radius);background:var(--color-accent-secondary);box-shadow:inset 0 0 0 1px var(--color-border-subtle);color:var(--color-text-primary);font:var(--btn-font);letter-spacing:var(--btn-tracking);text-transform:var(--btn-transform);text-align:center;text-decoration:none;cursor:pointer;transition:background-color var(--duration-fast) var(--easing-default),color var(--duration-fast) var(--easing-default),box-shadow var(--duration-fast) var(--easing-default)}
-.btn:not(:disabled):hover{background:var(--color-bg-hover);box-shadow:inset 0 0 0 1px var(--color-border-strong);color:var(--color-text-primary)}
+   shifts a label. The focus ring (--shadow-focus) replaces them while focused.
+   Hover strengthens plain .btn's edge through --btn-edge, never by setting
+   box-shadow, so it can't override the focus ring or a variant's own edge. */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-3);min-height:var(--control-h);padding:var(--space-2) var(--btn-pad-x);border:0;border-radius:var(--btn-radius);background:var(--color-accent-secondary);box-shadow:inset 0 0 0 1px var(--btn-edge,var(--color-border-subtle));color:var(--color-text-primary);font:var(--btn-font);letter-spacing:var(--btn-tracking);text-transform:var(--btn-transform);text-align:center;text-decoration:none;cursor:pointer;transition:background-color var(--duration-fast) var(--easing-default),color var(--duration-fast) var(--easing-default),box-shadow var(--duration-fast) var(--easing-default)}
+.btn:not(:disabled):hover{--btn-edge:var(--color-border-strong);background:var(--color-bg-hover);color:var(--color-text-primary)}
 .btn:not(:disabled):active{background:var(--color-bg-inset)}
 .btn-primary,.btn-accent{background:var(--color-accent-primary);box-shadow:none;color:var(--color-text-on-accent)}
-.btn-primary:not(:disabled):hover,.btn-accent:not(:disabled):hover{background:var(--color-accent-primary-hover);box-shadow:none;color:var(--color-text-on-accent)}
+.btn-primary:not(:disabled):hover,.btn-accent:not(:disabled):hover{background:var(--color-accent-primary-hover);color:var(--color-text-on-accent)}
 .btn-primary:not(:disabled):active,.btn-accent:not(:disabled):active{background:var(--color-accent-primary-active)}
 .btn-confirm{background:transparent;box-shadow:inset 0 0 0 1px var(--color-accent-confirm);color:var(--color-accent-confirm)}
-.btn-confirm:not(:disabled):hover{background:color-mix(in srgb,var(--color-accent-confirm) 14%,transparent);box-shadow:inset 0 0 0 1px var(--color-accent-confirm);color:var(--color-accent-confirm)}
+.btn-confirm:not(:disabled):hover{background:color-mix(in srgb,var(--color-accent-confirm) 14%,transparent);color:var(--color-accent-confirm)}
 .btn-confirm:not(:disabled):active{background:color-mix(in srgb,var(--color-accent-confirm) 22%,transparent)}
 .btn-quiet,.btn-ghost{background:transparent;box-shadow:none;color:var(--color-text-secondary)}
 .btn-quiet{padding-left:var(--space-4);padding-right:var(--space-4)}
 .btn-ghost{box-shadow:inset 0 0 0 1px var(--color-border-subtle)}
-.btn-quiet:not(:disabled):hover{background:var(--color-bg-hover);box-shadow:none;color:var(--color-text-primary)}
-.btn-ghost:not(:disabled):hover{background:var(--color-bg-hover);box-shadow:inset 0 0 0 1px var(--color-border-subtle);color:var(--color-text-primary)}
+.btn-quiet:not(:disabled):hover,.btn-ghost:not(:disabled):hover{background:var(--color-bg-hover);color:var(--color-text-primary)}
 .btn-quiet:not(:disabled):active,.btn-ghost:not(:disabled):active{background:var(--color-bg-inset)}
 .btn-danger{background:transparent;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--color-status-error) 45%,transparent);color:var(--color-status-error-text)}
-.btn-danger:not(:disabled):hover{background:color-mix(in srgb,var(--color-status-error) 14%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--color-status-error) 45%,transparent);color:var(--color-status-error-text)}
+.btn-danger:not(:disabled):hover{background:color-mix(in srgb,var(--color-status-error) 14%,transparent);color:var(--color-status-error-text)}
 .btn-danger:not(:disabled):active{background:color-mix(in srgb,var(--color-status-error) 22%,transparent)}
 .btn-sm,.btn-xs{min-height:var(--control-h-sm);padding:var(--space-1) var(--space-5);font-size:var(--font-size-sm)}
 .btn-quiet.btn-sm,.btn-quiet.btn-xs{padding-left:var(--space-4);padding-right:var(--space-4)}
@@ -93,7 +94,7 @@ button,input,textarea,select{font-family:var(--font-family-body)}
 .card-gross-label{font:var(--eyebrow-font);letter-spacing:var(--letter-spacing-wide);text-transform:uppercase;color:var(--color-text-secondary);margin-bottom:var(--space-2)}
 .card-gross{font-family:var(--font-family-display);font-weight:700;font-size:26px;color:var(--text)}
 .card-foot{display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
-.card-date{color:var(--muted);font-size: var(--font-size-xs)}
+.card-date{color:var(--muted);font-size:var(--font-size-xs)}
 .tag{font-family:var(--font-figures);font-size:var(--font-size-xs);color:var(--color-text-secondary);white-space:nowrap}
 .empty-state{text-align:center;padding:80px 30px;border:1px dashed var(--border)}
 .empty-state h3{font-family:var(--font-family-display);font-weight:700;font-size:22px;color:var(--muted);margin-bottom:10px}
@@ -102,7 +103,7 @@ button,input,textarea,select{font-family:var(--font-family-body)}
 .field{display:flex;flex-direction:column;gap:6px}
 .field.full{grid-column:1/-1}
 .field label{font-size:var(--font-size-sm);color:var(--color-text-secondary);font-weight:var(--font-weight-medium)}
-.field input,.field textarea{background:var(--input-bg);border:1px solid var(--input-border);border-radius:var(--input-radius);color:var(--text);font-size:13px;padding:9px 12px;outline:none;transition:.15s;width:100%}
+.field input,.field textarea{background:var(--input-bg);border:1px solid var(--input-border);color:var(--text);font-size:13px;padding:9px 12px;outline:none;transition:.15s;width:100%}
 .field input:focus,.field textarea:focus{border-color:var(--accent)}
 .field textarea{resize:vertical;min-height:60px}
 .field input[type=number]{-moz-appearance:textfield}
