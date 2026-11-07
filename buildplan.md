@@ -8,16 +8,21 @@ Full context and decisions: `feature-spec.md`. Work strictly top-to-bottom.
 > merge.** Agreed order is merge → Bunny → payment (see `.design/merged-admin/
 > DESIGN_BRIEF.md` and `scratchpad.md`). Do not start Slice 2 or later until
 > the merge lands. When resuming, first re-check against the merged codebase:
-> file paths (`nas/client-hub-api/` and `client-hub-app/` may move), the admin
+> file paths (the hub API moved to `admin/server/src/hub/` in merge task M2;
+> `client-hub-app/` may move), the admin
 > login (the billing account replaces the hub PIN, so `requireAdmin`, the
 > editor's admin calls and Slice 10's widget sign-in all change), and the data
 > model (hub projects move from `localStorage` to one server-side project, so
 > the "link by NAS path" decision and Slice 4's editor work need rethinking).
-> Slice 0, Slice 1 and the Slice 2 code (uncommitted, 57/57 against a fake
+> Slice 0, Slice 1 and the Slice 2 code (committed, 57/57 against a fake
 > Bunny, real-Bunny lookup proven 2026-11-03) carry over.
+>
+> **Active plan until then: `.design/merged-admin/TASKS.md`.** It's gitignored,
+> so it isn't in a fresh clone or a worktree; it lives in this project folder.
 
 Tags: **[USER]** = only the user can do it (dashboards, keys, NAS shell).
-**[WEB]** = `client-hub-app/index.html`. **[API]** = `nas/client-hub-api/`
+**[WEB]** = `client-hub-app/index.html`. **[API]** = `nas/client-hub-api/` (on the
+`merged-admin` branch: `admin/server/src/hub/`)
 (needs a NAS redeploy, `docker compose up -d --build`, before anything
 downstream can be checked live). **[DESKTOP]** = new `desktop-publisher/`.
 

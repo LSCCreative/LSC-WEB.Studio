@@ -3,14 +3,84 @@
 > High-frequency memory zone. Wiped clean when the current feature merges to
 > main. Keep this brutally current — overwrite, don't append history.
 
-## PLANNING (design-flow): merged admin + paid delivery — Phase 2 brief written, nothing built
+## BUILD: merged admin + paid delivery. On branch `merged-admin`, P1-P4 and M1-M5 done, M6 prep done
+
+**M3 done 2026-11-06 (local, not pushed).** The portal is mounted in billing's `app.js`: trust proxy always 1
+hop; `hub-api` serves `/hub/*` and `/health` only (Host header); billing's CORS skips `/hub` and ignores portal
+origins; the portal router sits before billing's JSON parser, with the raw-body slot above it for B1's webhook.
+Without both `HUB_` secrets billing starts and `/hub` answers 503. Tests: `test-portal-mount.js`. 917/917,
+three local runs; the real server booted on a throwaway folder with and without the hub secrets.
+- Review fixes before M3 (`f2e54f3`): `openDatabase` copies before migrating by default (scripts too), hub writes
+  take the pre-write copy, JSON 404s and errors under `/hub`.
+- Before M6: check the tunnel's `hub-api` route keeps the Host header (TASKS Live Settings).
+- M3 review fixes: client sign-in limited per address (billing's `rateLimit`) and per email (10 wrong codes in
+  15 min); the hub reads billing's `clientIp`; the `hub-api` check compares one spelling of the host;
+  `/health` is plain `ok` again, the deliverables state is `GET /hub/deliverables-health`; `TRUST_PROXY` retired.
+  The portal shows a 429 on sign-in as "network" today; its rebuild should say "too many tries".
+
+**M4 done 2026-11-06 (local, not pushed).** The server serves `admin/web` (`server/src/web.js`): `js/config.js`
+written per request (API = page origin, `LSC_MAPS_KEY`/`LSC_MAPS_ID`), pages `no-cache` with scripts and
+stylesheets stamped `?v=<content hash>`, only current-stamp addresses cached long; only the pages' folders are
+served. Cookie default `lax`. Docker builds from `admin/` (`admin/docker-compose.yml`, `admin/.dockerignore`).
+Review fixes (M4 review): won't start without `web/` or with a mismatched `calc.js`/`documents.js`/`call-sheet.js`;
+`/api` replies carry `X-LSC-Version` and an open tab shows a Reload banner (`js/update.js`); 933/933.
+`test-web.js`; 928/928; checked in a real browser (launch config `admin`, port 8090, `/tmp/lsc-admin-scratch`):
+with the old `calc.js` cached, a changed file loaded under its new stamp. Image build and the Cloudflare
+header check wait for M6 (Docker wasn't running). New M6 settings in TASKS Live Settings: Maps key into
+`.env`, Google OAuth redirect onto `app`, the app folder holding `server/` + `web/`.
+
+**M5 done 2026-11-06 (local, not pushed).** `scripts/import-hub.js` (core `src/hub/import.js`) copies the hub's
+tables into billing.db, never overwriting; a differing row undoes the run. Rehearsed on `.backup` copies of
+both live DBs (deleted afterwards): live hub = schema 5, 31 file tokens, no records/logins/evidence. Run 1 added
+31, runs 2-3 changed nothing; 28 live tokens serve 200 through the merged app, 3 point at deleted September test
+files (dead today too). M6 steps for the import are in TASKS (copy with `.backup`, not `cp`: the hub's data sits
+in its `-wal`). Backups are whole-file, every table covered (S16, tested). M5 review fixes: dead links/files
+warn (exit 0), dry run on a throwaway copy, refuses while a server answers, strict args, tokens printed short;
+re-rehearsed on fresh live copies (deleted after). 948/948 before the last output-only change; import tests 15/15.
+
+**M6 in progress (2026-11-07).** Runbook: `.design/merged-admin/CUTOVER.md` (rollback first; its Progress
+note is the live state). Prep done on the NAS from local `a0c2baa`: `/volume4/lsc-admin/{app,data}`, the NAS
+compose (`lsc-admin`, `127.0.0.1:8098`, `LSC_ADMIN_DATA` override), `.env` built NAS-side (20 names), image
+`lsc-admin:latest` built, full rehearsal on live copies 17/17 checks + PDF + 28/31 tokens (deleted after).
+Old containers untouched and healthy. Waiting on the user: P1 push + PR (Claude's push was blocked by the
+permission check), P5 Maps values in the NAS `.env`, P6 Google redirect URI, a cutover time. Then C1-C9.
+
+**Next: M6 cutover (C1-C9) | Model: Opus 5.5 | Effort: High.** [USER + API].
+
+**M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
+`routes.js` (`createHubRouter(db, opts)`, not mounted yet), `url-signing.js` (was signing.js), `admin-auth.js`,
+`bunny.js`, `deliverables.js`, `cors.js`, `tokens.js` (was crypto.js). Hub tables are migration v21; billing now
+copies an existing db to `backups/premigrate-*.db` before any migration. Settings are `config.hub`; hub env names
+that clash gained `HUB_` (rename table under Live Settings in TASKS.md). `nas/client-hub-api` is gone from this
+branch; `main` keeps it for any hub hotfix before M6. 901/901 pass, three runs from a local-disk copy.
+- Behaviour changes, both invisible today: missing Bunny keys answer 503 on publishing instead of stopping the
+  server; `/hub/publish` writes its two rows in one transaction.
+- A full run can stall on this Mac: a leftover Chrome crash reporter holds a PDF-rendering test's pipe (not Google Drive, as first thought). See WORKING_NOTES.
+
+## (M2 notes)
+
+**M1 done 2026-11-05 (local, not pushed).** Billing is at `admin/` with its 308 commits, rewritten only
+so paths start `admin/`. 878 of 878 tests pass from a clean clone; allow-list site unchanged.
+- Live billing still deploys from `LSCCreative/lsc-billing-app` until M6. Anything fixed there comes across
+  too. Billing's own `main` still has the failing send-routes test; the fix is here only.
+- Run tests: `cd admin/server && npm test`. Hub has no test suite yet; M2 adds hub tests.
+- Timing check "a wrong, short or malformed link" failed once on a shifted-clock run, then passed 3 of 3
+  alone: it's a timing assert, so suspect machine load before the code if it recurs.
+- `.design/quote-format/` stays untracked in billing's folder and did not come across.
+
+## PLANNING notes (design-flow)
 
 User ran `/design-flow` to put deliverables behind payment; it grew into merging
 the Billing App here. Full decisions: `.design/merged-admin/DESIGN_BRIEF.md`.
 Design Tokens was skipped at the start, but the rebrand now needs a token mapping;
 raise it at Phase 4. Agreed order: **merge → Bunny → payment**. `feature-spec.md` /
 `buildplan.md` still describe Bunny only and are untouched. Next: user confirms the
-brief's 7 defaults, then Phase 3 Information Architecture.
+Defaults are confirmed (2026-11-04). Work `.design/merged-admin/TASKS.md` top to bottom.
+P3's live settings are in `TASKS.md`. `ssh lsc-nas` currently fails because the NAS's local address
+moved; see `TASKS.md`.
+
+The allow-list Pages deploy is live on `main` (`f177537`), merged into `merged-admin`, so
+docs and `nas/` no longer reach the website. They are still public on GitHub.
 
 Found in Phase 2 (code reading, not run live): on live projects client notes and
 approvals never reach the server (`persistViewProject` no-ops, no route), the record
@@ -25,16 +95,19 @@ clients today, so this is built in the merge with no stopgap.
 - **Project page:** Production (shoot days, call sheets, trip planner),
   Deliverables, Payments. One server-side project under the billing UPID; hub
   projects leave `localStorage` via a one-time import.
+- **Superseded detail below:** the brief is the source of truth. Overlap audit
+  (2026-11-03) removed the hub's Final Sign-Off, added revision rounds (2 per Final,
+  drafts free, Submit uses one), a quote-based checklist, contract rewording, and "show
+  only the invoice actually sent" (no billing PDF or bank details beside Hnry's).
 - **Lifecycle:** accepted quote opens the client project. Portal invite goes on
   first draft published (manual send also available). Complete is automatic:
-  finals approved + signed + all invoices paid (signed alone if payment is off).
-- **Assets:** stage replaces the `gated` checkbox. Draft Cut: comment or approve,
-  never downloadable or payable. Final: re-approve → sign → pay → download, same
-  asset, comment history kept.
-- **Payment:** final invoice via Hnry, order approve → sign → pay. Downloads and
+  checklist approved or not needed + all invoices paid.
+- **Assets:** stage replaces the `gated` checkbox. Draft Cut: notes or approve,
+  never downloadable or payable. Final: approve → pay → download, same asset,
+  comment history kept.
+- **Payment:** final invoice via Hnry, order approve → pay. Downloads and
   the Drive link lock; review stays open. Per-project "Payment required" toggle
-  (on for new, off for existing live projects). Billing pushes invoice number,
-  amount, due date and PDF.
+  (on for new, off for existing live projects).
 - **Unlock:** Mark paid in billing, plus a hub admin override. Hnry via Zapier has
   no paid trigger or pay link, and Hnry sends no payment email. To test: does Find
   Invoice report PAID on a real paid invoice? If yes, add a ~15 min check.
