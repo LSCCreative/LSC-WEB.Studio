@@ -1,13 +1,13 @@
 # LSC Billing App
 
-> **Merged copy, not yet live.** This folder is the billing app inside `LSC-WEB.Studio`, on the way to
-> becoming Scope & Sales. Until the cutover (task M6 in the merge plan), the live app still deploys from
-> `LSCCreative/lsc-billing-app`, last brought across at `f04efb7`, and nothing here reaches the NAS or
-> `app.lsccreative.studio`. Here, pushing `main` deploys the marketing site, not this app. A fix made to
-> the live repo before then has to be brought across too. "Repo root" below means this `admin/` folder.
+> **This is the live app (since the M6 cutover, 2026-11-07).** This folder is the billing app inside
+> `LSC-WEB.Studio`, on the way to becoming Scope & Sales, and it is what runs on the NAS as `lsc-admin`.
+> `LSCCreative/lsc-billing-app` is retired (its Pages workflow is disabled; kept only as the rollback).
+> Pushing `main` here deploys the marketing site, never this app: the admin deploys to the NAS
+> (`.design/DEPLOYMENT.md`). "Repo root" below means this `admin/` folder.
 
-Quoting/invoicing tool for LSC Creative: a static site on GitHub Pages (`web/`) plus a Node/Express/
-SQLite API on the user's NAS (`server/`). **Live and fully built**; only the open work in the roadmap
+Quoting/invoicing tool for LSC Creative: a Node/Express/SQLite server on the user's NAS (`server/`) that
+also serves the admin's pages (`web/`) and the Client Portal's API. **Live and fully built**; only the open work in the roadmap
 remains.
 
 ## What to read
@@ -44,10 +44,10 @@ Code comments that cite `.design/<track>/` point into that archive.
 
 ## Architecture (short)
 
-Live today: different origins, so CORS (`CORS_ORIGINS`) and cross-site cookies (`COOKIE_SAMESITE=none`,
-`Secure`; API over HTTPS through a Cloudflare Tunnel). Site `app.lsccreative.studio`, API
-`billing.lsccreative.studio`. **In this merged copy (M4) the server serves `web/` itself** (`server/src/web.js`):
-one origin, a `SameSite=Lax` cookie, `js/config.js` written per request, scripts stamped `?v=<content hash>`.
+One container (`lsc-admin`) behind a Cloudflare Tunnel answers `app`, `billing` and `hub-api.lsccreative.studio`.
+The server serves `web/` itself (`server/src/web.js`): one origin, a `SameSite=Lax` cookie, `js/config.js` written
+per request, scripts stamped `?v=<content hash>`. `hub-api` serves only `/hub/*` and `/health`. `CORS_ORIGINS`
+is set only until 2026-11-14, for browsers still on the old Pages admin.
 Tests in `test-web.js`; the `admin` launch config runs it. The security bar is deliberately low (the user's conscious call): don't
 re-raise it, but keep internal figures (floors, tax set-aside, take-home, Cost Breakdown) off every
 public route. Client pages (`web/c/`) are light, in the colours of lsccreative.studio.

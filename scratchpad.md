@@ -3,7 +3,7 @@
 > High-frequency memory zone. Wiped clean when the current feature merges to
 > main. Keep this brutally current — overwrite, don't append history.
 
-## BUILD: merged admin + paid delivery. On branch `merged-admin`, P1-P4 and M1-M5 done, M6 prep done
+## BUILD: merged admin + paid delivery. On branch `merged-admin`, P1-P4 and M1-M6 done, live
 
 **M3 done 2026-11-06 (local, not pushed).** The portal is mounted in billing's `app.js`: trust proxy always 1
 hop; `hub-api` serves `/hub/*` and `/health` only (Host header); billing's CORS skips `/hub` and ignores portal
@@ -43,9 +43,9 @@ note is the live state). Prep done on the NAS from local `a0c2baa`: `/volume4/ls
 compose (`lsc-admin`, `127.0.0.1:8098`, `LSC_ADMIN_DATA` override), `.env` built NAS-side (20 names), image
 `lsc-admin:latest` built, full rehearsal on live copies 17/17 checks + PDF + 28/31 tokens (deleted after).
 Old containers untouched and healthy. Pushed; draft PR LSCCreative/LSC-WEB.Studio#1. Waiting on the user:
-P5 and P6 done 2026-11-07 (Maps values in the NAS `.env`, `app` redirect URI in Google). Pre-cutover review fixed (`21aba29`, 949/949; NAS image rebuilt, re-rehearsed 20/20). **Cut over 2026-11-07 19:43: live on `lsc-admin`, C1-C8 passed** (log in CUTOVER.md). Left: C9 (push, merge PR #1 with the user's OK, `gh workflow disable` on lsc-billing-app), then the Afterwards list.
+P5 and P6 done 2026-11-07 (Maps values in the NAS `.env`, `app` redirect URI in Google). Pre-cutover review fixed (`21aba29`, 949/949; NAS image rebuilt, re-rehearsed 20/20). **Cut over 2026-11-07 19:43: live on `lsc-admin`, C1-C8 passed** (log in CUTOVER.md). C9 done: PR #1 merged as `dc6eac3` (site deploy ok, `/admin/` not published), lsc-billing-app's Pages workflow disabled. **M6 done.** Afterwards (CUTOVER.md): remove `CORS_ORIGINS` on 2026-11-14; old containers out after 2026-11-21 on the user's OK; repoint any hub `/health` monitor; ssh config + router reservation; `db.productiondecks.online` route still on .45.
 
-**Next: M6 cutover (C1-C9) | Model: Opus 5.5 | Effort: High.** [USER + API].
+**Next: B1 Re-plan Bunny against the merged code (rewrite `buildplan.md` Slices 2-12) | Model: Opus 5.5 | Effort: Medium.**
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
 `routes.js` (`createHubRouter(db, opts)`, not mounted yet), `url-signing.js` (was signing.js), `admin-auth.js`,
