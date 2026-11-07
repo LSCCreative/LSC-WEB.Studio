@@ -43,7 +43,7 @@ note is the live state). Prep done on the NAS from local `a0c2baa`: `/volume4/ls
 compose (`lsc-admin`, `127.0.0.1:8098`, `LSC_ADMIN_DATA` override), `.env` built NAS-side (20 names), image
 `lsc-admin:latest` built, full rehearsal on live copies 17/17 checks + PDF + 28/31 tokens (deleted after).
 Old containers untouched and healthy. Pushed; draft PR LSCCreative/LSC-WEB.Studio#1. Waiting on the user:
-P5 and P6 done 2026-11-07 (Maps values in the NAS `.env`, `app` redirect URI in Google). Pre-cutover review fixed (`21aba29`, 949/949; NAS image rebuilt, re-rehearsed 20/20). Waiting on: a cutover time. Then C1-C9.
+P5 and P6 done 2026-11-07 (Maps values in the NAS `.env`, `app` redirect URI in Google). Pre-cutover review fixed (`21aba29`, 949/949; NAS image rebuilt, re-rehearsed 20/20). **Cut over 2026-11-07 19:43: live on `lsc-admin`, C1-C8 passed** (log in CUTOVER.md). Left: C9 (push, merge PR #1 with the user's OK, `gh workflow disable` on lsc-billing-app), then the Afterwards list.
 
 **Next: M6 cutover (C1-C9) | Model: Opus 5.5 | Effort: High.** [USER + API].
 
