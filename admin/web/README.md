@@ -26,6 +26,7 @@ css/finance.css          the Finance sub-tab row, additive
 css/overhead.css         the Overhead screen: summary card, expense table,
                          Add/Edit modal and the charts, additive
 css/goals.css            the Goals form, additive
+css/shell.css            the header and its pages row, phone first
 css/responsive.css       the responsive bands (tablet 768-1099, mobile
                          <768). Every rule is inside a media query
 css/a11y.css             accessibility pass: global focus-visible rings,
@@ -75,6 +76,7 @@ js/documents.js          deposit / validity / due-days / message / agreement
                          byte-identical copy of server/src/documents.js
 js/call-sheet.js         the call sheet's markup (app, public page, PDF); a
                          byte-identical copy of server/src/call-sheet.js
+js/shell.js              the header: area tabs, the area's pages, account menu
 js/app.js                boot + top-level view switching
 ```
 
@@ -240,12 +242,13 @@ cd server && DATA_DIR=/tmp/lsc-billing-scratch ADMIN_USERNAME=dev ADMIN_PASSWORD
   this (`.gt-row .del-cell`, `.summary-bar .sum-span2`); the single-column mobile summary bar has to
   set `grid-column` back to `auto`, or a `span 2` builds an implicit second column and pushes half
   the bar off the screen.
-- **The compact nav below 768px is `#hdr-right` itself**, taken out of flow and opened by
-  `#nav-menu-btn` (`bindCompactNav` in `js/app.js`). There is no second copy of the nav markup on
-  purpose: the buttons are the same elements with the same handlers at every width, so the menu
-  can't drift from the header and it inherits the unsaved-edit guards. **A nav item added to
-  `#hdr-right` is in the mobile menu automatically** — including its close-on-choice behaviour,
-  which is delegated rather than wired per button.
+- **The shell is `js/shell.js` + `css/shell.css`** (merged-admin L2): two area tabs (Scope & Sales,
+  Clients) with manual activation, the area's pages in `#app-subnav`, and Settings / Sign out in the
+  account menu (a declarative `LSCMenu`). There is no compact menu: two tabs fit a phone, and the
+  subnav scrolls sideways. A new page in an area is one entry in `LSCShell.AREAS`; app.js's route
+  table says where each screen belongs with `setNav(area, page)`. Screens title themselves with
+  `LSCShell.title(name)`, which appends the area. Only the 52px header row is sticky, so the
+  "sticky under the header" offsets elsewhere are unchanged.
 - **Test money layouts with a realistic figure, not the fixtures.** The scratch database tops out
   at **$560**, so nothing in it is wide enough to overflow a column. The summary-bar clipping bug
   was invisible until a five-figure total was substituted into the live DOM and the bar
@@ -272,7 +275,7 @@ cd server && DATA_DIR=/tmp/lsc-billing-scratch ADMIN_USERNAME=dev ADMIN_PASSWORD
   registration is dropped automatically once its screen leaves the page — so
   there is nothing to release. Every route *out* of such a screen then asks
   `LSCUnsaved.confirmLeave()` first and does nothing if it returns false: the
-  header nav and Sign Out in `js/app.js`, and the screen's own Cancel / Back /
+  shell's tabs, pages and account menu (`js/shell.js`), and the screen's own Cancel / Back /
   Escape. A reload or tab close is covered once, centrally, by `beforeunload`.
   Re-snapshot the baseline after a successful save, or the screen stays
   "unsaved" until it is replaced.

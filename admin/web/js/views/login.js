@@ -53,7 +53,7 @@ const LoginView = (() => {
   }
 
   function signInMarkup() {
-    return card('Project Billing', `
+    return card('Scope & Sales', `
       <div class="login-fields">
         <div class="field">
           <label for="login-username">Username or email</label>

@@ -70,7 +70,18 @@ not B2.
   styles identical old vs new on all 89 elements. 949 server tests pass.
 - Scratch DB now holds a sample project `L1-TEST` (sent by link) for later visual checks.
 
-**Next: L2 Rename and rebuild the shell | Model: Sonnet 5.5 | Effort: Medium.**
+**L2 done 2026-11-07 (not committed when written).** New `admin/web/js/shell.js` (`LSCShell`: AREAS, set,
+title, setUser, bind) and `css/shell.css` (phone first). Header = wordmark + two area tabs (manual
+activation) + account menu (declarative `LSCMenu`: Settings, Sign out). `#app-subnav` = the area's numbered
+pages, not sticky, so every 52px sticky offset still holds. Titles "<Page> — <Area>"; login card "Scope &
+Sales"; Finance tab + heading "Overview" (route id still `dashboard`). Old `#hdr-right`/compact menu and their
+CSS removed from app.css/responsive.css/app.js. Checked on the scratch admin at 1280/768/375; guard asks on
+tab, page, wordmark, sign-out; keyboard sign-out and sign back in land on the asked page. 949/949.
+`#/pipeline` + the `?stage=` redirects moved to L3 (noted in TASKS.md L3).
+Trap: a scripted `.click()` on an open menu item does nothing (the browser's re-entrant click rule); test
+menus with real clicks or keys.
+
+**Next: L3 Split Pipeline from the project list | Model: Sonnet 5.5 | Effort: Medium.**
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
 `routes.js` (`createHubRouter(db, opts)`, not mounted yet), `url-signing.js` (was signing.js), `admin-auth.js`,

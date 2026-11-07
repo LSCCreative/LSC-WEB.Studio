@@ -583,7 +583,7 @@ const ProjectFolder = (() => {
       '<section class="panel pf-days-panel" aria-labelledby="pf-days-h">' + daysMarkup(project, today) + '</section>' +
       '<section class="panel pf-activity-panel" aria-labelledby="pf-activity-h">' + activityMarkup(today) + '</section>' +
       '</div></div></div>';
-    document.title = (project.upid ? project.upid + ' · ' : '') + (project.name || 'Project') + ' — LSC Billing';
+    document.title = LSCShell.title((project.upid ? project.upid + ' · ' : '') + (project.name || 'Project'));
     bind();
     clearTimeout(following);
     following = SendPanel.follow(folder.estimates.map((e) => e.send).concat(folder.invoices.map((i) => i.send)),

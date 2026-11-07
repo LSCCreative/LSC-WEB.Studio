@@ -335,7 +335,7 @@ const SetupView = (() => {
       return;
     }
     if (!LSCRouter.isCurrent(ticket)) return;
-    document.title = 'Fix UPIDs — LSC Billing';
+    document.title = LSCShell.title('Fix UPIDs');
 
     // Nothing left to fix: the route has gone (D61).
     if (!listing.groups.length) {

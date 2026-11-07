@@ -32,10 +32,7 @@ button,input,textarea,select{font-family:var(--font-family-body)}
    specificity, so any rule that sets its own radius (an in-table cell, a joined pair) still wins. */
 :where(input:not([type=checkbox],[type=radio],[type=range],[type=color]),select,textarea){border-radius:var(--input-radius)}
 .delight{font-family:var(--font-family-display);font-weight:700}
-#app-header{display:flex;align-items:center;justify-content:space-between;padding:0 28px 0 24px;height:52px;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;background:var(--bg)}
-.logo-text{font-family:var(--font-family-display);font-weight:700;font-size:16px;color:var(--text);letter-spacing:.04em}
-.logo-text em{color:var(--accent);font-style:normal}
-#hdr-right{display:flex;align-items:center;gap:1.5rem}
+/* The header is css/shell.css (merged-admin L2). .nav-link is now the rails' item (Finance, Settings, the editor). */
 .nav-link{display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.1em;cursor:pointer;padding:6px 10px;border-bottom:2px solid transparent;border-radius:4px;transition:color .2s ease-in-out,background .2s ease-in-out}
 .nav-link:hover{color:var(--text);background:var(--surface)}
 .nav-link.active{color:var(--text);border-bottom-color:var(--accent)}

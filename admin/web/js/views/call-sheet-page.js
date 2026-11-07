@@ -82,7 +82,7 @@ const CallSheetPage = (() => {
     const alive = () => LSCRouter.isCurrent(ticket) && root.isConnected;
     const retry = () => mount(root, estimate, project, handlers);
 
-    document.title = 'Call sheet — LSC Billing';
+    document.title = LSCShell.title('Call sheet');
     root.innerHTML = shell('<p class="csp-note" role="status">Loading the call sheet…</p>');
     root.querySelector('#csp-back').addEventListener('click', handlers.onBack);
 
@@ -112,7 +112,7 @@ const CallSheetPage = (() => {
 
     const sheet = reply.callSheet;
     const hasDays = Array.isArray(sheet.days) && sheet.days.length > 0;
-    document.title = LSCCallSheet.title(sheet) + ' — LSC Billing';
+    document.title = LSCShell.title(LSCCallSheet.title(sheet));
     let link = reply.link || { on: false, token: null };
     root.innerHTML = shell(
       '<div class="csp-bar">' +

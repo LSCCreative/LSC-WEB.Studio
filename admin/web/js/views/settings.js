@@ -2321,9 +2321,8 @@ const SettingsView = (() => {
       account = { username: reply.username, email: reply.email };
       setBusy(false);
       fill();
-      // The header's "Signed in as …" names the login.
-      const out = document.getElementById('nav-sign-out');
-      if (out) out.title = 'Signed in as ' + reply.username;
+      // The account menu names the login.
+      LSCShell.setUser({ username: reply.username });
       const others = reply.signedOutOthers;
       const said = reply.passwordChanged
         ? 'Account updated, password changed' + (others ? '; ' + others + (others === 1 ? ' other browser was' : ' other browsers were') + ' signed out.' : '.')
@@ -2398,7 +2397,7 @@ const SettingsView = (() => {
     if (rest.length > 1) return false;
     const sectionId = rest[0];
     if (sectionId !== undefined && !SECTIONS.some(([id]) => id === sectionId)) return false;
-    document.title = 'Settings — LSC Billing';
+    document.title = LSCShell.title('Settings');
     if (state && state.jump && onScreen() && form) {
       jumpTo(sectionId || SECTIONS[0][0], true);
       return true;

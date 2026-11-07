@@ -537,7 +537,7 @@ const InvoiceView = (() => {
       '<div class="inv-main">' + body.main + '</div>' +
       (body.side ? '<div class="inv-side">' + body.side + '</div>' : '') +
       '</div></div>';
-    document.title = (inv.number || 'Invoice') + ' · ' + (project.name || 'Project') + ' — LSC Billing';
+    document.title = LSCShell.title((inv.number || 'Invoice') + ' · ' + (project.name || 'Project'));
     bind();
     paintSave();
     clearTimeout(following);

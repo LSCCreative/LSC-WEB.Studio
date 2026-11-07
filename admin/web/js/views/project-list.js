@@ -413,7 +413,7 @@ const ProjectsView = (() => {
       clearTimeout(typing);
       typing = null;
       filter = wanted;
-      document.title = 'Projects — LSC Billing';
+      document.title = LSCShell.title(['draft', 'sent', 'declined'].includes(filter.stage) ? 'Pipeline' : 'Live projects');
       if (onScreen()) {
         syncShell();
       } else {

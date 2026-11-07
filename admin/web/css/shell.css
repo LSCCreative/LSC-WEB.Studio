@@ -1,0 +1,280 @@
+/* ── The admin shell (merged-admin L2) ───────────────────────────────────────
+   Swiss in the dark register: one hairline grid, mono caps for every way
+   around, the accent used only to say "you are here".
+
+     #app-header   sticky, --header-h (52px) at every width, so every screen's
+                   "sticky under the header" offset still holds.
+                   [LSC CREATIVE.] | [SCOPE & SALES] [CLIENTS]        [L name ▾]
+     #app-subnav   the active area's pages, on #main's content grid, scrolling
+                   away with the page.     01 DASHBOARD  02 PIPELINE  03 …
+
+   Written phone first: the base rules are the 375px layout, and the
+   min-width queries add room. Below 768px the subnav scrolls sideways and
+   the wordmark shortens to "LSC." so both tabs always fit; there is no
+   compact menu. js/shell.js drives it.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+#app-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: stretch;
+  height: var(--header-h);
+  padding: 0 var(--space-4) 0 var(--space-6);
+  background: var(--color-bg-page);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+/* ── The wordmark: home ── */
+.shell-mark {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  padding-right: var(--space-5);
+  margin-right: var(--space-2);
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-md, 16px);
+  letter-spacing: 0.04em;
+  color: var(--color-text-primary);
+  text-decoration: none;
+  border-right: 1px solid var(--color-border-subtle);
+}
+.shell-mark em {
+  font-style: normal;
+  color: var(--color-accent-primary);
+}
+.shell-mark-full {
+  display: none;
+}
+.shell-mark:focus-visible {
+  box-shadow: inset var(--shadow-focus);
+}
+
+/* ── The two areas ──
+   Full header height, so the active bar sits on the header's own hairline:
+   one rule, interrupted where you are. */
+.shell-tabs {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+.shell-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-4);
+  background: none;
+  border: 0;
+  font: var(--font-weight-normal) var(--font-size-xs) / 1 var(--font-family-mono);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--easing-default);
+}
+.shell-tab::after {
+  content: '';
+  position: absolute;
+  left: var(--space-4);
+  right: var(--space-4);
+  bottom: -1px;
+  height: 2px;
+  background: transparent;
+  transition: background-color var(--duration-fast) var(--easing-default);
+}
+.shell-tab:hover {
+  color: var(--color-text-primary);
+}
+.shell-tab:hover::after {
+  background: var(--color-border-strong);
+}
+.shell-tab[aria-selected='true'] {
+  color: var(--color-text-primary);
+}
+.shell-tab[aria-selected='true']::after {
+  background: var(--color-accent-primary);
+}
+/* The ring goes inside: the header clips nothing, but an outer ring would
+   sit on the hairline and read as the active bar. */
+.shell-tab:focus-visible {
+  box-shadow: inset var(--shadow-focus);
+}
+
+/* ── Utility: the account menu (and, later, the Needs you count) ── */
+.shell-utility {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-left: auto;
+  padding-left: var(--space-4);
+}
+.shell-account {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: var(--touch-min);
+  padding: 0 var(--space-3) 0 var(--space-3);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-md);
+  font: var(--font-weight-normal) var(--font-size-xs) / 1 var(--font-family-mono);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--easing-default), background-color var(--duration-fast) var(--easing-default);
+}
+.shell-account:hover {
+  color: var(--color-text-primary);
+  background: var(--color-bg-hover);
+}
+.shell-avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  font: var(--font-weight-normal) var(--font-size-xs) / 1 var(--font-family-mono);
+  letter-spacing: 0;
+  color: var(--color-text-primary);
+}
+/* On Settings, the account menu is where you are. */
+.shell-account.is-current .shell-avatar {
+  border-color: var(--color-accent-primary);
+  box-shadow: inset 0 0 0 1px var(--color-accent-primary);
+}
+.shell-account-name {
+  display: none;
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shell-account .menu-caret {
+  display: none;
+}
+
+/* ── The area's pages ── */
+#app-subnav {
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+#app-subnav[hidden] {
+  display: none;
+}
+.subnav {
+  max-width: 1080px;
+  margin: 0 auto;
+}
+.subnav-list {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 var(--space-6);
+  list-style: none;
+  /* Phones: one row that scrolls sideways, edges faded so it reads as more. */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  scroll-padding: 0 var(--space-6);
+}
+.subnav-list::-webkit-scrollbar {
+  display: none;
+}
+.subnav-list li {
+  flex: 0 0 auto;
+}
+.subnav-link {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  min-height: var(--touch-min);
+  padding: 15px var(--space-4) 0;
+  font: var(--font-weight-normal) var(--font-size-xs) / 1 var(--font-family-mono);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--easing-default);
+}
+.subnav-list li:first-child .subnav-link {
+  padding-left: 0;
+}
+.subnav-index {
+  color: var(--color-text-tertiary);
+  letter-spacing: 0;
+}
+.subnav-link:hover {
+  color: var(--color-text-primary);
+}
+.subnav-link[aria-current='page'] {
+  color: var(--color-text-primary);
+}
+.subnav-link[aria-current='page'] .subnav-index {
+  color: var(--color-accent-text);
+}
+/* The current page carries a short rule under its label, not under its
+   number: the number is the grid, the label is the place. */
+.subnav-link[aria-current='page'] .subnav-label {
+  box-shadow: 0 1px 0 0 currentColor;
+  padding-bottom: 3px;
+}
+.subnav-link:focus-visible {
+  box-shadow: inset var(--shadow-focus);
+  border-radius: var(--radius-sm);
+}
+
+/* ── 480px: the full wordmark fits beside both tabs ── */
+@media (min-width: 480px) {
+  .shell-mark-full {
+    display: inline;
+  }
+  .shell-mark-short {
+    display: none;
+  }
+}
+
+/* ── 768px: room for the name in the account button ── */
+@media (min-width: 768px) {
+  #app-header {
+    padding: 0 var(--space-6) 0 var(--space-7);
+  }
+  .shell-mark {
+    padding-right: var(--space-7);
+    margin-right: var(--space-4);
+  }
+  .shell-tab {
+    padding: 0 var(--space-6);
+  }
+  .shell-tab::after {
+    left: var(--space-6);
+    right: var(--space-6);
+  }
+  .shell-account {
+    padding: 0 var(--space-4) 0 var(--space-3);
+  }
+  .shell-account-name,
+  .shell-account .menu-caret {
+    display: inline-block;
+  }
+  .subnav-list {
+    gap: var(--space-6);
+    padding: 0 var(--space-7);
+  }
+  .subnav-link {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+  }
+}
+
+/* ── 900px+: the subnav sits on #main's 40px content inset ── */
+@media (min-width: 900px) {
+  .subnav-list {
+    padding: 0 40px;
+  }
+}
