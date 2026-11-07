@@ -45,7 +45,19 @@ compose (`lsc-admin`, `127.0.0.1:8098`, `LSC_ADMIN_DATA` override), `.env` built
 Old containers untouched and healthy. Pushed; draft PR LSCCreative/LSC-WEB.Studio#1. Waiting on the user:
 P5 and P6 done 2026-11-07 (Maps values in the NAS `.env`, `app` redirect URI in Google). Pre-cutover review fixed (`21aba29`, 949/949; NAS image rebuilt, re-rehearsed 20/20). **Cut over 2026-11-07 19:43: live on `lsc-admin`, C1-C8 passed** (log in CUTOVER.md). C9 done: PR #1 merged as `dc6eac3` (site deploy ok, `/admin/` not published), lsc-billing-app's Pages workflow disabled. **M6 done.** Afterwards (CUTOVER.md): remove `CORS_ORIGINS` on 2026-11-14; old containers out after 2026-11-21 on the user's OK; repoint any hub `/health` monitor; ssh config + router reservation; `db.productiondecks.online` route still on .45.
 
-**Next: B1 Re-plan Bunny against the merged code (rewrite `buildplan.md` Slices 2-12) | Model: Opus 5.5 | Effort: Medium.**
+**B1 done 2026-11-07: plan approved by the user and committed.** `buildplan.md` Slices
+2-12 rewritten and `feature-spec.md`'s Decisions updated (not committed). Main changes: Bunny rows belong to a
+deliverable version (R1), not a NAS path; admin publish/status move to `/api` behind billing's login; the server
+builds (and in Slice 9 signs) media URLs when it answers; collections/storage paths use `projects.id`, not UPIDs or
+folder names; Bunny pulls a 6h signed `/hub/source/` URL, not a permanent `/hub/files/` token; the webhook mounts
+in the raw-body slot (S20) with a regression test; Slice 11 removes only what no client reply refers to, so Past
+projects keep their files. User decisions 2026-11-07, now in the plan: no Bunny Optimizer (Slice 6 makes sizes with `sharp`;
+ask before falling back to originals if it won't build on the NAS); add a manual Take offline button for archived
+projects, explained on hover, focus and in the confirm dialog, with Bring back online (Slice 11); the desktop
+widget is still wanted (Slice 10). **Order:** Slice 2 needs R1, R3, C1, C2, so per TASKS.md the next build task after B1 is **L1**,
+not B2.
+
+**Next: L1 Apply the tokens to the real app | Model: Opus 5.5 | Effort: Medium.**
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
 `routes.js` (`createHubRouter(db, opts)`, not mounted yet), `url-signing.js` (was signing.js), `admin-auth.js`,
