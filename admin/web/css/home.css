@@ -741,7 +741,7 @@
   color: var(--text);
 }
 .wk-ltoday {
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   color: var(--accent-text);
 }
 .wk-lday .cal-empty {
@@ -869,7 +869,7 @@
 .wk-rbar-t {
   display: block;
   padding: 0 6px;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   line-height: 14px;
   font-weight: 400;
   letter-spacing: 0.02em;
@@ -918,7 +918,7 @@
   position: absolute;
   top: calc(var(--h) * var(--wk-hour) + 2px);
   right: 6px;
-  font-size: 9px;
+  font-size: var(--font-size-xs);
   line-height: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
@@ -934,7 +934,7 @@
   background: var(--cal-confirmed);
   color: var(--cal-ink);
   border: none;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   line-height: 13px;
   text-align: left;
   overflow: hidden;
@@ -964,7 +964,7 @@
   text-overflow: ellipsis;
 }
 .wk-tile-time {
-  font-size: 9px;
+  font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
 }
 .wk-tile-upid {

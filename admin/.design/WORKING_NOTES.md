@@ -209,9 +209,14 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   outcome must not touch a screen the user has left (`onScreen()` check); `onAuthLost({keepScreen})`.
 - Info controls are buttons with `aria-expanded`, not hover tooltips. Finance sub-tabs are `<nav>` +
   `aria-current`, not `role=tablist`.
-- Fonts: the face is named **'LSC Metro Sans'** on purpose (a Fontspring demo on the studio Mac has
-  `±` glyphs). It has no tabular figures: money uses `--font-figures` (mono). Brand font masters in
+- Fonts: the admin's body face is **'LSC Funnel Sans'** (OFL 1.1, merged-admin L1); the client pages
+  (`web/c/`, `data-theme="light"`) keep **'LSC Metro Sans'**. Private names on purpose: a page that names
+  an installed font looks right only on the studio Mac. Neither has ▾ ⋯ ✓ (they fall through to the
+  system face) or useful tabular figures: money uses `--font-figures` (mono). Brand font masters in
   `Visual Design/` are gitignored (licence); only `.woff2` goes in `web/fonts/`.
+- Look (merged-admin L1): every `.btn` is mono caps via `--btn-*` tokens; `.btn-confirm` (sage outline)
+  is for Approve and Confirm only. No font size under `--font-size-xs` (11px). The light block in
+  `tokens.css` pins every value the dark theme changed, so a dark-theme change can't reach `web/c/`.
 - Test money layouts with a five-figure total, not the fixtures (scratch tops out near $560).
 - Dashboard layout: below 768 the column wrappers (`.dash-main`, `.dash-side`) are `display: contents`,
   so Coming up can sit between the lists and Recent activity. Any `grid-area` on their children must be

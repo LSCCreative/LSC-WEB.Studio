@@ -30,8 +30,8 @@ css/responsive.css       the responsive bands (tablet 768-1099, mobile
                          <768). Every rule is inside a media query
 css/a11y.css             accessibility pass: global focus-visible rings,
                          placeholders, field errors. Loaded LAST of all
-fonts/*.woff2          Delight 400/700 (from the old app) + CS Felice Mono. Metro
-                         Sans joins them once its web licence is confirmed
+fonts/*.woff2          Delight 400/700, CS Felice Mono, Funnel Sans (the admin's
+                         body face, OFL 1.1) and Metro Sans (client pages only)
 js/config.js             the API address and the Google Maps browser key + Map
                          ID. Written by the server per request (LSC_MAPS_KEY,
                          LSC_MAPS_ID); a file only for the python setup below,

@@ -380,7 +380,7 @@
 .oh-donut-total-label {
   fill: var(--muted);
   font-family: var(--font-family-body);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   letter-spacing: 0.16em;
 }
 

@@ -131,7 +131,7 @@
   gap: 3px;
 }
 .dash-auto {
-  font-size: 10.5px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
 }
 .dash-table td:first-child {

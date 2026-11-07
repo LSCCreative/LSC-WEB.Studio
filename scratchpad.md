@@ -57,7 +57,20 @@ projects, explained on hover, focus and in the confirm dialog, with Bring back o
 widget is still wanted (Slice 10). **Order:** Slice 2 needs R1, R3, C1, C2, so per TASKS.md the next build task after B1 is **L1**,
 not B2.
 
-**Next: L1 Apply the tokens to the real app | Model: Opus 5.5 | Effort: Medium.**
+**L1 done 2026-11-07: look signed off by the user, ticked and committed.**
+- `admin/web/css/tokens.css` = `.design/merged-admin/tokens.css`. Funnel Sans added as
+  `web/fonts/FunnelSans-Variable.woff2` (from the installed TTF; licence read from the font: OFL 1.1).
+- `app.css`: buttons are mono caps from `--btn-*`, plain `.btn` is an outline, new `.btn-confirm`
+  (sage, not yet used: Approve/Confirm arrive with the portal work). All text fields and dropdowns
+  take `--input-radius` through one `:where()` rule. `.stage-chip` gets 8px corners.
+- All 30 sizes under 11px raised to `--font-size-xs`. The five `border-radius: 0` rules are deliberate
+  (pencilled dot, rail tabs, flat sub-sections) and stay.
+- Checked on the scratch admin: 11 screens at 1280/768/375, no page or button overflow. Calendar:
+  Confirmed sage fill vs Proposed warm-grey shorter tile, distinct. `web/c/` quote page: computed
+  styles identical old vs new on all 89 elements. 949 server tests pass.
+- Scratch DB now holds a sample project `L1-TEST` (sent by link) for later visual checks.
+
+**Next: L2 Rename and rebuild the shell | Model: Sonnet 5.5 | Effort: Medium.**
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
 `routes.js` (`createHubRouter(db, opts)`, not mounted yet), `url-signing.js` (was signing.js), `admin-auth.js`,
