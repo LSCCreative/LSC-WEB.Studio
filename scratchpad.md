@@ -42,8 +42,8 @@ re-rehearsed on fresh live copies (deleted after). 948/948 before the last outpu
 note is the live state). Prep done on the NAS from local `a0c2baa`: `/volume4/lsc-admin/{app,data}`, the NAS
 compose (`lsc-admin`, `127.0.0.1:8098`, `LSC_ADMIN_DATA` override), `.env` built NAS-side (20 names), image
 `lsc-admin:latest` built, full rehearsal on live copies 17/17 checks + PDF + 28/31 tokens (deleted after).
-Old containers untouched and healthy. Waiting on the user: P1 push + PR (Claude's push was blocked by the
-permission check), P5 Maps values in the NAS `.env`, P6 Google redirect URI, a cutover time. Then C1-C9.
+Old containers untouched and healthy. Pushed; draft PR LSCCreative/LSC-WEB.Studio#1. Waiting on the user:
+P5 and P6 done 2026-11-07 (Maps values in the NAS `.env`, `app` redirect URI in Google). Pre-cutover review fixed (`21aba29`, 949/949; NAS image rebuilt, re-rehearsed 20/20). Waiting on: a cutover time. Then C1-C9.
 
 **Next: M6 cutover (C1-C9) | Model: Opus 5.5 | Effort: High.** [USER + API].
 
