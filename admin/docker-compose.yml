@@ -2,8 +2,8 @@
 # same file that runs the stack locally on the Mac.
 #
 #   Local:  docker compose up --build          → data lands in ./server/data
-#   NAS:    change the volume's host path to a real share, e.g.
-#           /volume1/docker/lsc-billing/data:/data
+#   NAS:    /volume4/lsc-admin/app keeps its own copy of this file, with the
+#           real data folder and the deliverables share (merge task M6).
 #
 # It lives in admin/, beside server/ and web/, and builds this folder (merge task
 # M4): the image carries the admin's pages as well as the server. The context is
@@ -16,7 +16,7 @@
 # a reverse proxy in front of the published port — see the deployment guide.
 #
 # `media_net` joins this container to the same Docker network as the NAS's
-# Cloudflare Tunnel container, so the tunnel can reach it at `lsc-billing:8080`
+# Cloudflare Tunnel container, so the tunnel can reach it at `lsc-admin:8080`
 # for a Zero Trust Public Hostname (see DEPLOYMENT.md). It's declared external
 # because that network is owned by another stack (the media server), not this
 # one. Locally this network won't exist — `docker compose up` will fail to
@@ -24,12 +24,14 @@
 # purely local runs, comment the `networks:` blocks below out.
 
 services:
-  billing:
+  # `admin`, not `billing`: the service name is also its name on media_net,
+  # where the old lsc-billing container answers to `billing`.
+  admin:
     build:
       context: .
       dockerfile: server/Dockerfile
-    image: lsc-billing:latest
-    container_name: lsc-billing
+    image: lsc-admin:latest
+    container_name: lsc-admin
     restart: unless-stopped
 
     # Bound to loopback so nothing is reachable from the LAN until a proxy or
@@ -46,6 +48,9 @@ services:
     environment:
       DATA_DIR: /data
       PORT: "8080"
+      # scripts/import-hub.js runs in a container of its own (`docker compose
+      # run`); this lets it see a running server here before it writes.
+      IMPORT_PROBE_HOSTS: lsc-admin
 
     volumes:
       - ./server/data:/data

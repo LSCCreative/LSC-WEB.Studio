@@ -353,6 +353,39 @@ test('a real import refuses while a server answers on PORT; a dry run doesn’t 
   }
 });
 
+test('the server check also asks the hosts IMPORT_PROBE_HOSTS names (the server\'s container, under Docker)', async (t) => {
+  const { f, hub } = makeHub();
+  hub.close();
+  const billingFile = file('billing');
+  openDatabase(billingFile).close();
+  // A server this machine's 127.0.0.1 can't see, as another container's isn't: on ::1 only.
+  const server = http.createServer((_q, r) => r.end('ok'));
+  try {
+    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '::1', resolve); });
+  } catch {
+    t.skip('no IPv6 loopback here');
+    return;
+  }
+  const PORT = String(server.address().port);
+  const run = (env) => new Promise((resolve) => {
+    const child = spawn(process.execPath, [SCRIPT, '--hub', f, '--billing', billingFile], { env: { ...process.env, DATA_DIR: TMP, NODE_ENV: 'test', PORT, ...env } });
+    let out = '';
+    child.stdout.on('data', (c) => { out += c; });
+    child.stderr.on('data', (c) => { out += c; });
+    child.on('close', (code) => resolve({ code, out }));
+  });
+  try {
+    const r = await run({ IMPORT_PROBE_HOSTS: 'no-such-host.invalid, ::1' });
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, new RegExp(`A server is answering on port ${PORT} \\(at ::1\\)`), 'a host that doesn\'t resolve is passed over, the next is asked');
+    const db = new Database(billingFile, { readonly: true });
+    assert.equal(db.prepare('SELECT COUNT(*) FROM deliverable_tokens').pluck().get(), 0, 'nothing imported');
+    db.close();
+  } finally {
+    await new Promise((r) => server.close(r));
+  }
+});
+
 test('the command takes only its own arguments, each with its value', () => {
   const { f, hub } = makeHub();
   hub.close();

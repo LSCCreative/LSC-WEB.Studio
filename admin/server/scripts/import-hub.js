@@ -21,8 +21,11 @@
  *
  * Run it with the server stopped, before it serves the portal: until the
  * import, every link already handed out would answer 404, and a link made in
- * that gap could clash with the hub's. It refuses if a server answers on PORT.
- * On the NAS: `docker compose run --rm billing node scripts/import-hub.js …`
+ * that gap could clash with the hub's. It refuses if a server answers on PORT,
+ * here or on any host in IMPORT_PROBE_HOSTS (comma-separated): under Docker the
+ * import runs in a container of its own, whose 127.0.0.1 never sees the
+ * server's, so the NAS compose file names the server's container there.
+ * On the NAS: `docker compose run --rm admin node scripts/import-hub.js …`
  * before `docker compose up -d`.
  *
  * Before writing, billing.db is copied to backups/preimport-*.db beside it.
@@ -104,10 +107,21 @@ function openHub(file) {
   return hub;
 }
 
-/** True if something answers HTTP on this port: the server, which must be stopped for a real import. */
-function serverAnswers(port) {
+/** Where a running server could answer: this machine, and any host IMPORT_PROBE_HOSTS names. */
+const probeHosts = () => ['127.0.0.1', ...(process.env.IMPORT_PROBE_HOSTS || '').split(',').map((h) => h.trim()).filter(Boolean)];
+
+/** The first host where something answers HTTP on this port (the server, which must be stopped for a real import), or null. */
+async function serverAnswering(port) {
+  for (const host of probeHosts()) {
+    if (await serverAnswers(host, port)) return host;
+  }
+  return null;
+}
+
+/** True if something answers HTTP at host:port. A host that doesn't resolve or connect is false. */
+function serverAnswers(host, port) {
   return new Promise((resolve) => {
-    const req = http.get({ host: '127.0.0.1', port, path: '/health', timeout: 1000 }, (res) => {
+    const req = http.get({ host, port, path: '/health', timeout: 1000 }, (res) => {
       res.resume();
       resolve(true);
     });
@@ -137,9 +151,10 @@ async function main() {
       if (!fs.existsSync(opts['--deliverables'])) throw new Stop(`No folder at ${opts['--deliverables']} (--deliverables).`);
       share = createDeliverables(opts['--deliverables']);
     }
-    if (!dryRun && await serverAnswers(config.port)) {
-      throw new Stop(`A server is answering on port ${config.port}. Run the import with it stopped, before it serves the portal `
-        + '(docker compose run --rm billing node scripts/import-hub.js …, then docker compose up -d), or try --dry-run.');
+    const answering = dryRun ? null : await serverAnswering(config.port);
+    if (answering) {
+      throw new Stop(`A server is answering on port ${config.port} (at ${answering}). Run the import with it stopped, before it serves the portal `
+        + '(docker compose run --rm admin node scripts/import-hub.js …, then docker compose up -d), or try --dry-run.');
     }
 
     console.log(`Hub database: ${path.resolve(opts['--hub'])} (its schema ${hubVersion(hub) || 'unknown'})`);
