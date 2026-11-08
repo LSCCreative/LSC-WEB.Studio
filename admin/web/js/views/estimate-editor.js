@@ -4520,11 +4520,21 @@ const EstimateEditor = (() => {
       link = { id: match.id, name: match.businessName };
       return { id: match.id, created: false };
     }
-    const reply = await LSCApi.post('/api/clients', snapshot);
+    let reply;
+    let emailOn = null;
+    try {
+      reply = await LSCApi.post('/api/clients', snapshot);
+    } catch (err) {
+      // That address is another client's portal login (S13). The record is still
+      // made, without it, so this save goes on; the estimate keeps what was typed.
+      if (!(err instanceof LSCApi.ApiError) || err.code !== 'email_taken') throw err;
+      emailOn = err.data.holder.businessName;
+      reply = await LSCApi.post('/api/clients', Object.assign({}, snapshot, { email: '' }));
+    }
     // Linked before the estimate is saved, so if that save fails a retry
     // reuses this record instead of creating a second one.
     link = { id: reply.client.id, name: reply.client.businessName };
-    return { id: reply.client.id, created: true };
+    return { id: reply.client.id, created: true, emailOn };
   }
 
   function payload() {
@@ -4679,10 +4689,12 @@ const EstimateEditor = (() => {
 
     try {
       let added = false;
+      let leftOff = null; // whose email kept it off the new client record
       if (!body.clientId && body.client.businessName && $('f-saveclient').checked) {
         const resolved = await resolveClient(clientFields(body));
         body.clientId = resolved.id;
         added = resolved.created;
+        leftOff = resolved.emailOn;
         paintLink();
       }
 
@@ -4690,7 +4702,9 @@ const EstimateEditor = (() => {
       const reply = existing
         ? await LSCApi.put(estimateUrl(), Object.assign({}, body, { baseUpdatedAt }))
         : await LSCApi.post('/api/estimates', body);
-      saved(reply, added ? 'Estimate saved — ' + body.client.businessName + ' added to your client list.' : 'Estimate saved.');
+      saved(reply, !added ? 'Estimate saved.'
+        : 'Estimate saved — ' + body.client.businessName + ' added to your client list' +
+          (leftOff ? ', without an email: that one is on ' + leftOff + '.' : '.'));
     } catch (err) {
       // A quote the client has, changed (task 33 C2, C3): it can't be saved
       // without sending them the change. The dialog saves it again with how.
@@ -4853,11 +4867,13 @@ const EstimateEditor = (() => {
     inFlight = JSON.stringify(body);
     try {
       let added = false;
+      let leftOff = null; // whose email kept it off the new client record
       // T17: only once Business Name has been left, so never a half-typed name.
       if (wantsClient(body)) {
         const resolved = await resolveClient(clientFields(body));
         if (!still()) return null;
         added = resolved.created;
+        leftOff = resolved.emailOn;
         paintLink();
         body = payload();
         inFlight = JSON.stringify(body);
@@ -4884,7 +4900,8 @@ const EstimateEditor = (() => {
         const title = root.querySelector('.page-title');
         if (title) title.textContent = 'Edit estimate';
       }
-      if (added) Toast.ok(body.client.businessName + ' added to your client list.');
+      if (added && leftOff) Toast.error(body.client.businessName + ' added to your client list, without an email: that one is on ' + leftOff + '.');
+      else if (added) Toast.ok(body.client.businessName + ' added to your client list.');
       paintMore();
       return { kind: 'saved', at: existing.updatedAt };
     } catch (err) {

@@ -126,7 +126,15 @@ scheduled final counts as sent; the quote is loaded once after `confirmDays` and
 CLIENT_DATA rows carry their own reason (a checklist: "Accepted work stays on record…"); ROADMAP updated.
 959/959; scratch admin migrated v21→v22 (backup taken), folder page clean.
 
-**Next: R2 Build the client record | Model: Sonnet 5.5 | Effort: Medium.**
+**R2 done 2026-11-08 (not committed when written).** Schema v23 (emails normalised). `src/clients.js`: one spelling, one holder
+(409 `email_taken`; existing shared pairs stay, warned on Client details), login moves with the email. Lists read `project.delivery`
+(`deliveryReader`): Live = state model's group; `in-production`, `in-review`, `revisions`, `payment-due`, `current`, `complete`, `archived`.
+Screens: client list search (project names, UPIDs), `#/clients/<id>/projects|details|invoices`, Archive/Unarchive, `js/subtabs.js`.
+`test-client-record.js` 10/10. Checked in a real browser on scratch admin at desktop and 375: tabs by keyboard, unsaved guard between tabs,
+archive focus, invoice table stacked, deep links, unknown client, unknown tab. Scratch DB now holds the R2 sample clients (ids `cl_r2*`) at v23.
+Decisions to confirm are under R2 in TASKS.md.
+
+**Next: R3 Build the project page | Model: Opus 5.5 | Effort: High.**
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
 `routes.js` (`createHubRouter(db, opts)`, not mounted yet), `url-signing.js` (was signing.js), `admin-auth.js`,

@@ -16,6 +16,7 @@
  */
 
 const { newId } = require('./db');
+const { normEmail } = require('./clients');
 
 /* The most items one quoted line opens. A quantity is typed by hand; a slip
    ("300 × Cut-down") shouldn't fill a checklist the studio has to clear. */
@@ -110,7 +111,7 @@ function clientForAcceptance(db, p, estimate, now) {
   }
   const snap = (estimate && estimate.client) || {};
   if (!clientId) {
-    const email = String(snap.email || '').trim();
+    const email = normEmail(snap.email);
     const business = String(snap.businessName || '').trim();
     const contact = String(snap.contactName || '').trim();
     // Oldest first, so a tie goes to the client made first.
@@ -238,10 +239,8 @@ function deliveryState(input) {
 
 /* ── Reading it ─────────────────────────────────────────────────────────── */
 
-/** The checklist as the admin reads it, in order, each item with its versions. */
-function readChecklist(db, projectId) {
-  const items = db.prepare('SELECT * FROM deliverables WHERE project_id = ? ORDER BY position, created_at, id').all(projectId);
-  const versions = db.prepare('SELECT * FROM deliverable_versions WHERE project_id = ? ORDER BY n').all(projectId);
+/* Item and version rows as the admin reads them, each item with its versions. */
+function checklistOf(items, versions) {
   return items.map((d) => ({
     id: d.id,
     position: d.position,
@@ -264,6 +263,14 @@ function readChecklist(db, projectId) {
   }));
 }
 
+/** The checklist as the admin reads it, in order, each item with its versions. */
+function readChecklist(db, projectId) {
+  return checklistOf(
+    db.prepare('SELECT * FROM deliverables WHERE project_id = ? ORDER BY position, created_at, id').all(projectId),
+    db.prepare('SELECT * FROM deliverable_versions WHERE project_id = ? ORDER BY n').all(projectId),
+  );
+}
+
 /* Did the client sign one of this project's quotes? Mark accepted leaves none
    (brief: "The project page says so plainly; delivery isn't blocked by it"). */
 function projectSigned(db, projectId) {
@@ -276,15 +283,12 @@ function projectSigned(db, projectId) {
 }
 
 /**
- * The checklist and the state for one project row, whose money stage the
- * caller already has (projectStage). An item is waiting on the client while
- * its newest version is published; approvals (C5) and submitted notes (C4)
- * join here when they exist.
- *
- * @returns {{ state: object, deliverables: Array }}
+ * The state of a project row from its checklist, whose money stage the caller
+ * already has (projectStage). An item is waiting on the client while its newest
+ * version is published; approvals (C5) and submitted notes (C4) join here when
+ * they exist.
  */
-function readDelivery(db, p, money, invoices) {
-  const deliverables = readChecklist(db, p.id);
+function stateOf(p, money, invoices, deliverables, signed) {
   const items = deliverables.map((d) => {
     const newest = d.versions[d.versions.length - 1];
     return {
@@ -294,7 +298,7 @@ function readDelivery(db, p, money, invoices) {
       notesSubmitted: false,
     };
   });
-  const state = deliveryState({
+  return deliveryState({
     money,
     project: {
       upid: p.upid,
@@ -306,12 +310,48 @@ function readDelivery(db, p, money, invoices) {
     },
     items,
     invoices: invoices || [],
-    signed: projectSigned(db, p.id),
+    signed,
   });
-  return { state, deliverables };
+}
+
+/**
+ * One project's checklist and state.
+ *
+ * @returns {{ state: object, deliverables: Array }}
+ */
+function readDelivery(db, p, money, invoices) {
+  const deliverables = readChecklist(db, p.id);
+  return { state: stateOf(p, money, invoices, deliverables, projectSigned(db, p.id)), deliverables };
+}
+
+/**
+ * The state of many projects at once, for the lists: reads every checklist
+ * and signature up front, then answers (p, money, invoices) => state. Make one
+ * per request.
+ */
+function deliveryReader(db) {
+  const versions = db.prepare('SELECT * FROM deliverable_versions ORDER BY n').all();
+  const items = db.prepare('SELECT * FROM deliverables ORDER BY position, created_at, id').all();
+  const signed = new Set(db.prepare(`
+    SELECT DISTINCT e.project_id FROM signatures s
+      JOIN estimate_versions v ON v.id = s.version_id
+      JOIN estimates e ON e.id = v.estimate_id
+  `).all().map((r) => r.project_id));
+  const byProject = (rows) => {
+    const map = new Map();
+    rows.forEach((r) => {
+      if (!map.has(r.project_id)) map.set(r.project_id, []);
+      map.get(r.project_id).push(r);
+    });
+    return map;
+  };
+  const itemsOf = byProject(items);
+  const versionsOf = byProject(versions);
+  return (p, money, invoices) => stateOf(p, money, invoices,
+    checklistOf(itemsOf.get(p.id) || [], versionsOf.get(p.id) || []), signed.has(p.id));
 }
 
 module.exports = {
-  quotedDeliverables, createChecklist, clientForAcceptance, deliveryState, readDelivery, readChecklist,
+  quotedDeliverables, createChecklist, clientForAcceptance, deliveryState, readDelivery, deliveryReader, readChecklist,
   BADGES, MAX_PER_LINE,
 };

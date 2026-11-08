@@ -263,7 +263,7 @@
       shown = EstimatesView.showOld(rest);
     } else if (area === 'clients') {
       setNav('clients', rest.length ? null : 'clients');
-      shown = ClientsView.show(rest, state);
+      shown = ClientsView.show(route, state);
     } else if (area === 'setup') {
       // The UPID fix-up (task 16) is reached from the Projects list.
       setNav('sales', null);

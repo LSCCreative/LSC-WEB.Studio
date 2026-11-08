@@ -21,11 +21,12 @@ const ProjectCard = (() => {
   const C = LSCCalendar;
 
   /* The two lists' filter chips, in the order a job moves through them
-     (merged-admin L3; IA "Pipeline", "Live projects"). Each list's first chip
-     is its default (the server's `pipeline` and `live`); the others narrow it
-     to one stage. Pipeline's Open leaves declined projects a filter away.
-     Paid projects belong to their client, so there is no Paid chip: they are
-     under Clients. */
+     (merged-admin L3, R2; IA "Pipeline", "Live projects"). Each list's first chip
+     is its default (the server's `pipeline` and `live`); the others narrow it.
+     Pipeline's Open leaves declined projects a filter away. Live's chips are the
+     server's named lists: delivery badges, and Payment due, which is anything
+     with a sent invoice unpaid. Complete projects belong to their client, so no
+     chip finds them: they are under Clients. */
   const PIPELINE_CHIPS = [
     ['pipeline', 'Open'],
     ['draft', 'Draft'],
@@ -34,8 +35,10 @@ const ProjectCard = (() => {
   ];
   const LIVE_CHIPS = [
     ['live', 'All'],
-    ['accepted', 'Accepted'],
-    ['invoiced', 'Invoiced'],
+    ['in-production', 'In production'],
+    ['in-review', 'In review'],
+    ['revisions', 'Revisions'],
+    ['payment-due', 'Payment due'],
   ];
 
   /* Where a project belongs in the admin, from its stage, not from how you
@@ -45,13 +48,15 @@ const ProjectCard = (() => {
      project is a level below the row); `path` is where the Back link goes and
      `crumb` what it says. A project with no client record has nowhere under
      Clients to go yet, so it falls back to the list that holds it. */
+  const clientPath = (id) => '/clients/' + encodeURIComponent(id) + '/projects';
+
   function placeOf(project) {
     const stage = project && project.stage;
     if (stage === 'accepted' || stage === 'invoiced' || stage === 'paid') {
       const client = (project && project.client) || {};
       const name = client.businessName || client.contactName || '';
       if (client.id) {
-        return { area: 'clients', page: null, path: '/clients/' + encodeURIComponent(client.id), crumb: 'Clients / ' + (name || 'Client') };
+        return { area: 'clients', page: null, path: clientPath(client.id), crumb: 'Clients / ' + (name || 'Client') };
       }
       return stage === 'paid'
         ? { area: 'clients', page: null, path: '/clients', crumb: 'Clients' }
@@ -70,9 +75,9 @@ const ProjectCard = (() => {
     const behind = LSCRouter.behindPath();
     if (!behind || behind === place.path) return { path: place.path, crumb: place.crumb };
     if (LIST_CRUMBS[behind]) return { path: behind, crumb: LIST_CRUMBS[behind] };
-    if (behind.startsWith('/clients/') && behind.split('/').length === 3) {
+    if (/^\/clients\/[^/]+\/(projects|invoices)$/.test(behind)) {
       const client = (project && project.client) || {};
-      const own = client.id && behind === '/clients/' + encodeURIComponent(client.id);
+      const own = client.id && behind.startsWith('/clients/' + encodeURIComponent(client.id) + '/');
       return { path: behind, crumb: own ? 'Clients / ' + (client.businessName || client.contactName || 'Client') : 'Back' };
     }
     return { path: place.path, crumb: place.crumb };
@@ -162,6 +167,15 @@ const ProjectCard = (() => {
     }
   }
 
+  /* Where the job stands, from the server's one state model (delivery.js
+     deliveryState): words on every list after acceptance, tinted by what it asks
+     of the studio. Nothing while it's a quote: the stage line says that. */
+  function badgeMarkup(project) {
+    const d = project.delivery;
+    if (!d || d.group === 'pipeline' || !/^[a-z_]+$/.test(d.badge || '')) return '';
+    return '<span class="delivery-badge is-' + d.badge + '">' + esc(d.label) + '</span>';
+  }
+
   /* The line as markup. The square before it is the stage's mark; the word
      beside it says the same thing, so colour is never the only sign. */
   function stageMarkup(project, today) {
@@ -209,6 +223,8 @@ const ProjectCard = (() => {
       case 'invoices_created': return 'Invoices created' + invoicesText(d);
       case 'declined': return 'Declined';
       case 'reopened': return 'Reopened';
+      case 'archived': return 'Archived';
+      case 'unarchived': return 'Unarchived, back in Complete';
       case 'invoice_sent': return (d.by === 'hnry' ? (d.hnryNumber || d.number || 'Invoice') : (d.number || 'Invoice')) +
         (d.by === 'email' ? ' emailed' + (d.late ? ' late' : '') : d.by === 'link' ? ' sent by link' : d.by === 'hnry' ? ' sent from Hnry' : ' marked sent') +
         (C.isDate(d.dueAt) ? ', due ' + dayMonth(d.dueAt, today) : '');
@@ -263,16 +279,24 @@ const ProjectCard = (() => {
     );
   }
 
-  function cardMarkup(project, today) {
+  /* `opts.hideClient`: the list is one client's. `opts.action`: { act, label,
+     says }, a button of the screen's own on the card, which the card's click
+     leaves alone (the screen delegates on data-act). */
+  function cardMarkup(project, today, opts) {
     const client = project.client || {};
+    const { hideClient, action } = opts || {};
     return (
       '<div class="proj-card project-card" data-id="' + esc(project.id) + '" role="listitem">' +
       upidMarkup(project) +
       '<h2 class="card-name"><button type="button" class="card-open">' + esc(project.name || 'Untitled') + '</button></h2>' +
-      '<div class="card-client">' + esc(client.businessName || '—') + '</div>' +
+      (hideClient ? '' : '<div class="card-client">' + esc(client.businessName || '—') + '</div>') +
       '<div class="card-gross-label">Total (inc GST)</div>' +
       '<div class="card-gross">' + fmt(project.totalIncGst) + '</div>' +
-      '<div class="card-foot project-foot">' + stageMarkup(project, today) + nextDayMarkup(project, today) + '</div>' +
+      '<div class="card-foot project-foot">' + badgeMarkup(project) + stageMarkup(project, today) + nextDayMarkup(project, today) + '</div>' +
+      (action
+        ? '<div class="card-actions"><button type="button" class="btn btn-sm" data-write data-act="' + esc(action.act) + '"' +
+          ' data-id="' + esc(project.id) + '" aria-label="' + esc(action.says) + '">' + esc(action.label) + '</button></div>'
+        : '') +
       '</div>'
     );
   }
@@ -284,9 +308,13 @@ const ProjectCard = (() => {
   function bind(container, projects, onOpen) {
     container.querySelectorAll('.project-card').forEach((card) => {
       const project = projects.find((p) => p.id === card.dataset.id);
-      if (project) card.addEventListener('click', () => onOpen(project));
+      if (project) {
+        card.addEventListener('click', (e) => {
+          if (!e.target.closest('.card-actions')) onOpen(project);
+        });
+      }
     });
   }
 
-  return { PIPELINE_CHIPS, LIVE_CHIPS, placeOf, backOf, redirectForStage, stageLine, stageMarkup, cardMarkup, bind, pathOf, dayMonth, localDate, activityText };
+  return { PIPELINE_CHIPS, LIVE_CHIPS, placeOf, backOf, redirectForStage, stageLine, stageMarkup, badgeMarkup, cardMarkup, bind, pathOf, dayMonth, localDate, activityText };
 })();

@@ -1051,6 +1051,19 @@ const MIGRATIONS = [
       require('./migrations/v22-deliverables').migrateV22(db, nowIso());
     },
   },
+  {
+    version: 23,
+    name: 'one spelling for client emails',
+    up(db) {
+      // Trimmed and lower-cased, in JS as src/clients.js does: SQLite's lower()
+      // folds only ASCII. Two clients left on one address stay as they are (S13).
+      const fix = db.prepare('UPDATE clients SET email = ? WHERE id = ?');
+      db.prepare('SELECT id, email FROM clients').all().forEach((c) => {
+        const email = String(c.email == null ? '' : c.email).trim().toLowerCase();
+        if (email !== c.email) fix.run(email, c.id);
+      });
+    },
+  },
 ];
 
 /**

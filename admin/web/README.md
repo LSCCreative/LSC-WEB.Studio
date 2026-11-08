@@ -61,7 +61,9 @@ js/views/estimates.js    switches between the three estimate screens
 js/views/estimate-list.js    the cards grid
 js/views/estimate-detail.js  the read-only estimate
 js/views/estimate-editor.js  the editor
-js/views/clients.js      the client list, one client's record + estimate history
+js/views/clients.js      the client list, and a client's three tabs: Projects,
+                         Client details, Invoice index
+js/subtabs.js            sub-tabs inside a record (LSCSubTabs), css/subtabs.css
 js/views/pricing.js      the Rate Card
 js/views/finance.js      Finance: routes Pricing / Overhead / Goals into
                          #finance-sub. A router, not a screen

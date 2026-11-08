@@ -2345,6 +2345,8 @@ test('projects list: one card per project, searched, filtered by stage and count
   const paidNew = await mk('Paid lately', 'T17-PAIDNEW');
   db.prepare("INSERT INTO invoices (id, project_id, kind, number, status, paid_at, created_at, updated_at) VALUES ('inv_t17n', ?, 'single', 'INV-T17-PAIDNEW', 'paid', '2026-09-01', '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z')")
     .run(paidNew.projectId);
+  // An empty checklist never completes a project on its own (R1).
+  for (const e of [paidOld, paidNew]) db.prepare("UPDATE projects SET no_deliverables_at = '2026-01-01T00:00:00.000Z' WHERE id = ?").run(e.projectId);
   const declined = await mk('Declined', 'T17-DECL', { days: [{ id: 'd_t17_decl', date: '2026-10-05', status: 'confirmed' }] });
   db.prepare("UPDATE estimates SET status = 'declined' WHERE id = ?").run(declined.id);
   db.prepare("UPDATE projects SET declined_at = '2026-01-01T00:00:00.000Z' WHERE id = ?").run(declined.projectId);
@@ -2362,13 +2364,14 @@ test('projects list: one card per project, searched, filtered by stage and count
   assert.deepEqual(new Set(ids(found)),
     new Set([draft, sent, paidOld, paidNew, declined].map((e) => e.projectId)));
   assert.deepEqual(found.body.counts,
-    { active: 5, all: 5, open: 2, pipeline: 2, live: 0, draft: 1, sent: 1, accepted: 0, invoiced: 0, paid: 2, declined: 1 });
+    { active: 5, all: 5, open: 2, pipeline: 2, live: 0, 'in-production': 0, 'in-review': 0, revisions: 0, 'payment-due': 0,
+      current: 4, complete: 2, archived: 0, draft: 1, sent: 1, accepted: 0, invoiced: 0, paid: 2, declined: 1 });
   // The admin's lists (L3): Pipeline is draft and sent (Declined is its own
-  // filter); Live is accepted and invoiced.
+  // filter); Live is the state model's group, and these paid ones are Complete.
   assert.deepEqual(new Set(ids(await listProjects({ today, q: 't17', stage: 'pipeline' }))),
     new Set([draft, sent].map((e) => e.projectId)));
   assert.deepEqual(ids(await listProjects({ today, q: 't17', stage: 'live' })), []);
-  // Open (the Dashboard's list): every stage short of paid or declined, however old.
+  // Open (the Dashboard's list): awaiting a reply or live, however old.
   assert.deepEqual(new Set(ids(await listProjects({ today, q: 't17', stage: 'open' }))),
     new Set([draft, sent].map((e) => e.projectId)));
   assert.equal(found.body.total, 5);
@@ -2447,6 +2450,8 @@ test('projects list: Live is accepted and invoiced, never paid; the Pipeline is 
     .run(invoiced.projectId);
   db.prepare("INSERT INTO invoices (id, project_id, kind, number, status, paid_at, created_at, updated_at) VALUES ('inv_l3lp', ?, 'single', 'INV-L3L-PAID', 'paid', '2026-10-02', '2026-10-02T00:00:00.000Z', '2026-10-02T00:00:00.000Z')")
     .run(paid.projectId);
+  // Complete, not Live, is what takes a paid job off the list (R2): an empty checklist never completes on its own.
+  db.prepare("UPDATE projects SET no_deliverables_at = '2026-10-02T00:00:00.000Z' WHERE id = ?").run(paid.projectId);
   const ids = (reply) => new Set(reply.body.projects.map((p) => p.id));
   const live = await listProjects({ today, q: 'l3l', stage: 'live' });
   assert.equal(live.status, 200);
@@ -2926,7 +2931,7 @@ test('L4 / S11: a project holding portal data, and a client with projects, can\'
       const r = await del(url);
       assert.deepEqual([table, r.status, r.body.error], [table, 409, 'has_client_data']);
       // One clean sentence pair, and no Archive yet (R2 adds it).
-      assert.match(r.body.message, /^This (project|estimate is the last one on a project that) has a published portal record, so it can’t be deleted\. The client still uses it\.$/);
+      assert.match(r.body.message, /^This (project|estimate is the last one on a project that) has a published portal record, so it can’t be deleted\. The client still uses it\./);
       assert.ok(projectRow(pid), 'project kept');
       assert.ok(db.prepare('SELECT 1 FROM estimates WHERE id = ?').get(est.id), 'estimate kept');
     }
@@ -2981,7 +2986,7 @@ test('R1: accepting opens one checklist item per quoted deliverable, "3 × Cut-d
   // No client record: one is made from the quote, and the project and its estimate are linked to it.
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM clients').get().n, clientsBefore + 1);
   const c = db.prepare('SELECT * FROM clients WHERE id = ?').get(projectRow(est.projectId).client_id);
-  assert.deepEqual([c.business_name, c.contact_name, c.email, c.phone], ['R1 Fresh Co', 'Ana Ruiz', 'Ana@R1Fresh.example', '0400 000 001']);
+  assert.deepEqual([c.business_name, c.contact_name, c.email, c.phone], ['R1 Fresh Co', 'Ana Ruiz', 'ana@r1fresh.example', '0400 000 001']);
   assert.equal(db.prepare('SELECT client_id FROM estimates WHERE id = ?').get(est.id).client_id, c.id);
   assert.equal(f.project.client.id, c.id);
 
@@ -3027,7 +3032,7 @@ test('R1: an accepted project finds its client by email, then by name, and a quo
   assert.equal(db.prepare('SELECT email FROM clients WHERE id = ?').get(bare.id).email, 'hello@r1bare.example');
   const differs = await accept('R1-DIFF', { businessName: 'R1 Harbour Pty', email: 'someone@elsewhere.example' });
   assert.deepEqual([differs.clientId, differs.how], [owner.id, 'matched_name']);
-  assert.equal(db.prepare('SELECT email FROM clients WHERE id = ?').get(owner.id).email, 'Owner@R1Harbour.example');
+  assert.equal(db.prepare('SELECT email FROM clients WHERE id = ?').get(owner.id).email, 'owner@r1harbour.example');
   const noted = (await folderOf(differs.pid)).body.activity.find((a) => a.kind === 'accepted').detail;
   assert.deepEqual(noted.clientNote, { kind: 'email_differs', quoteEmail: 'someone@elsewhere.example' });
   assert.equal(filled.note, undefined);
@@ -3048,10 +3053,17 @@ test('R1: an accepted project finds its client by email, then by name, and a quo
 });
 
 test('R1: two clients sharing an email are told apart by name, else the oldest is taken and noted; an email alone names a new one', async () => {
-  const mk = (businessName, email) => api('/api/clients', { method: 'POST', body: JSON.stringify({ businessName, email }) })
-    .then((x) => x.json()).then((b) => b.client);
-  const agency = await mk('R1 Agency', 'bookings@r1shared.example');
-  const brand = await mk('R1 Brand', 'Bookings@R1Shared.example');
+  // Straight in the table: since R2 (S13) only a list from before the rule can hold two.
+  const mk = (businessName, email) => {
+    const id = 'cl_' + businessName.replace(/\W/g, '');
+    db.prepare(`
+      INSERT INTO clients (id, business_name, contact_name, email, phone, abn, address, notes, created_at, updated_at)
+      VALUES (?, ?, '', ?, '', '', '', '', ?, ?)
+    `).run(id, businessName, email, nowIso(), nowIso());
+    return { id };
+  };
+  const agency = mk('R1 Agency', 'bookings@r1shared.example');
+  const brand = mk('R1 Brand', 'bookings@r1shared.example');
   const accept = async (upid, client) => {
     const est = (await saveEstimate({ name: 'R1 Shared ' + upid, upid, client })).body.estimate;
     assert.equal((await act(est.projectId, 'accept', { invoicing: 'single' })).status, 200);

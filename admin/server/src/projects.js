@@ -182,7 +182,6 @@ function clientDataHeld(db, projectId) {
  * The 409 body for a project the client side holds: what holds it (`held`,
  * from clientDataHeld) and why that stays. `subject` opens the sentence ("This project"),
  * `verb` is what can't happen to it, `advice` an optional last sentence.
- * R2 adds Archive, and this is where the message starts pointing at it.
  */
 function clientDataRefusal(held, subject, verb = 'deleted', advice = '') {
   return {
@@ -191,6 +190,9 @@ function clientDataRefusal(held, subject, verb = 'deleted', advice = '') {
       (advice ? ' ' + advice : ''),
   };
 }
+
+/* What to do instead of deleting accepted work (brief S11: "Archive is the way out"). */
+const ARCHIVE_ADVICE = 'Once it’s Complete you can archive it from its client’s page.';
 
 /** After an estimate is deleted: a project with no estimate left goes too. */
 function dropEmptyProject(db, projectId) {
@@ -294,6 +296,6 @@ function settledAt(project, invoices, stage) {
 
 module.exports = {
   normUpid, upidTakenBy, upidTakenReply, upidLocked, planProjectWrite, applyProjectWrite, dropEmptyProject,
-  clientDataHeld, clientDataRefusal,
+  clientDataHeld, clientDataRefusal, ARCHIVE_ADVICE,
   STAGES, projectStage, settledAt,
 };

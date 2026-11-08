@@ -203,6 +203,43 @@ function registerInvoiceRoutes(app, db, opts = {}) {
     });
   });
 
+  /* A client's Invoice index (IA "Client record"; Content Growth: "Per client,
+     newest first"): every invoice of their projects, void and draft included,
+     from the stored figures. `outstanding` is the Dashboard's rule for it. */
+  app.get('/api/clients/:id/invoices', (req, res) => {
+    if (!db.prepare('SELECT 1 FROM clients WHERE id = ?').get(req.params.id)) {
+      return res.status(404).json({ error: 'not_found' });
+    }
+    const rows = db.prepare(`
+      SELECT i.id, i.project_id, i.kind, i.number, i.hnry_number, i.status, i.totals_json, i.issued_at, i.due_at, i.paid_at,
+             i.created_at, p.upid, p.client_id
+        FROM invoices i JOIN projects p ON p.id = i.project_id
+       WHERE p.client_id = ?
+       ORDER BY COALESCE(i.issued_at, i.created_at) DESC, i.id DESC
+    `).all(req.params.id);
+    const projectOf = projectBriefs(db);
+    const invoices = rows.map((r) => ({
+      id: r.id,
+      projectId: r.project_id,
+      kind: r.kind,
+      number: r.number || null,
+      hnryNumber: r.hnry_number || null,
+      status: r.status,
+      amountDue: amountDue(r.kind, parseJson(r.totals_json, {})),
+      issuedAt: r.issued_at || null,
+      dueAt: r.due_at || null,
+      paidAt: r.paid_at || null,
+      project: projectOf(r),
+    }));
+    const sum = (keep) => Math.round(invoices.filter(keep).reduce((a, i) => a + i.amountDue, 0) * 100) / 100;
+    res.json({
+      ok: true,
+      invoices,
+      outstanding: sum((i) => i.status === 'sent' || (i.kind === 'legacy' && !['paid', 'void'].includes(i.status))),
+      paid: sum((i) => i.status === 'paid'),
+    });
+  });
+
   app.get('/api/invoices/:id', (req, res) => reply(req, res, req.params.id));
 
   app.put('/api/invoices/:id', (req, res) => {

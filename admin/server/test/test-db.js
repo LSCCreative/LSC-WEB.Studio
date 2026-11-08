@@ -817,8 +817,8 @@ test('the v9 steps leave their inputs alone', () => {
   assert.equal(neg.notes.length, 1);
 });
 
-test('the schema knows it is at v22', () => {
-  assert.equal(LATEST_VERSION, 22);
+test('the schema knows it is at v23', () => {
+  assert.equal(LATEST_VERSION, 23);
 });
 
 /**
@@ -1667,7 +1667,7 @@ test('v22 adds the checklist tables, and marks only fully paid projects as needi
 
   const tables = everyTableBut(db, ['schema_version']);
   const before = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
-  const result = migrate(db);
+  const result = migrate(db, { to: 22 });
   assert.deepEqual([result.from, result.to, result.applied], [21, 22, 1]);
 
   for (const t of tables.filter((x) => x !== 'projects')) assert.deepEqual(dump(db, t), before[t], t);

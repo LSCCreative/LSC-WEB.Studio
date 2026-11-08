@@ -4,13 +4,14 @@
  * 17; D58, IA "Projects"; split in merged-admin L3). One card per project,
  * newest activity first, from GET /api/projects. The Pipeline (Scope & Sales)
  * is what hasn't been accepted: draft, sent and declined. Live projects
- * (Clients) is what was accepted and isn't paid yet. Paid projects are found
- * under their client. One screen draws both, from a MODES entry; it replaces
+ * (Clients) is the state model's Live group: accepted, and neither Complete nor
+ * Archived, which are found under their client. One screen draws both, from a MODES entry; it replaces
  * the estimates list, whose first-run checklist and UPID fix-up banner it keeps.
  * An old `#/projects?stage=sent` is sent to the list that holds those
  * projects (ProjectCard.redirectForStage).
  *
- * THE FILTER IS IN THE ADDRESS: `?stage=` (a chip; the whole list when absent) and
+ * THE FILTER IS IN THE ADDRESS: `?stage=` or `?status=` (a chip, the mode's
+ * `param`; the whole list when absent) and
  * `?q=` (the search). A chip is a step in history, so Back returns to the last
  * one; typing replaces the entry instead of adding one per keystroke. When
  * only the query changes, the router calls show() again with this screen
@@ -30,7 +31,9 @@ const ProjectsView = (() => {
      leaves out. */
   const MODES = {
     pipeline: {
-      path: '/pipeline', title: 'Pipeline', chips: ProjectCard.PIPELINE_CHIPS, def: 'pipeline',
+      path: '/pipeline', title: 'Pipeline', chips: ProjectCard.PIPELINE_CHIPS, def: 'pipeline', param: 'stage',
+      // The whole list, whichever chip is on: Declined sits outside Open.
+      whole: ['pipeline', 'declined'],
       noun: 'pipeline', canCreate: true,
       noneSub: 'Nothing in the pipeline',
       emptyAll: 'Nothing open in the pipeline',
@@ -39,12 +42,13 @@ const ProjectsView = (() => {
       chipNote: 'Open searches drafts and sent estimates.',
     },
     live: {
-      path: '/projects', title: 'Live projects', chips: ProjectCard.LIVE_CHIPS, def: 'live',
+      path: '/projects', title: 'Live projects', chips: ProjectCard.LIVE_CHIPS, def: 'live', param: 'status',
+      whole: ['live'],
       noun: 'live projects', canCreate: false,
       noneSub: 'None live',
       emptyAll: 'No live projects',
-      emptyAllNote: 'A project is live from the day its estimate is accepted until it’s paid. Paid projects are under Clients.',
-      searchNote: 'Search looks at every live project’s UPID, name and client. Drafts and sent estimates are under Pipeline; paid projects are under Clients.',
+      emptyAllNote: 'A project is live from the day its estimate is accepted until it’s Complete. Complete projects are under their client.',
+      searchNote: 'Search looks at every live project’s UPID, name and client. Drafts and sent estimates are under Pipeline; Complete and Archived projects are under Clients.',
       chipNote: 'All searches every live project.',
     },
   };
@@ -66,7 +70,7 @@ const ProjectsView = (() => {
   /* '/pipeline?stage=sent&q=acme', leaving out what is the default. */
   function pathFor(f) {
     const params = new URLSearchParams();
-    if (f.stage !== mode.def) params.set('stage', f.stage);
+    if (f.stage !== mode.def) params.set(mode.param, f.stage);
     if (f.q) params.set('q', f.q);
     const qs = params.toString();
     return qs ? mode.path + '?' + qs : mode.path;
@@ -247,10 +251,9 @@ const ProjectsView = (() => {
 
   const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many || one + 's');
 
-  /* The whole list, whichever chip is on: the sum of its one-stage chips, so
-     the Pipeline's Declined (outside Open) is counted in it. Under a search,
-     every match in this list; without one, every project in it. */
-  const listTotal = (reply) => mode.chips.slice(1).reduce((sum, [key]) => sum + (reply.counts[key] || 0), 0);
+  /* The whole list, whichever chip is on. Under a search, every match in this
+     list; without one, every project in it. */
+  const listTotal = (reply) => mode.whole.reduce((sum, key) => sum + (reply.counts[key] || 0), 0);
 
   function subText(reply) {
     const all = listTotal(reply);
@@ -428,10 +431,10 @@ const ProjectsView = (() => {
     show(route, kind) {
       if (route.segments.length > 1 || !MODES[kind]) return false;
       const wantedMode = MODES[kind];
-      const asked = route.query.get('stage');
+      const asked = route.query.get(wantedMode.param);
       // An address from before the split, or for a stage whose projects live
       // elsewhere now (Paid is under Clients).
-      const moved = kind === 'live' ? ProjectCard.redirectForStage(asked) : null;
+      const moved = kind === 'live' ? ProjectCard.redirectForStage(route.query.get('stage')) : null;
       if (moved && !moved.startsWith(wantedMode.path)) {
         // The search goes along where the screen reads one (Clients doesn't).
         const q = (route.query.get('q') || '').trim();

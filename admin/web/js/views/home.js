@@ -638,7 +638,7 @@ const HomeView = (() => {
     },
     out: {
       title: 'Outstanding invoices',
-      act: { href: '/projects?stage=invoiced', label: 'Invoiced projects', icon: ICON.open },
+      act: { href: '/projects?status=payment-due', label: 'Payment due', icon: ICON.open },
       url: () => '/api/invoices?state=outstanding&limit=' + LIST_COUNT,
       what: 'outstanding invoices',
       empty: 'Nothing outstanding: every invoice sent has been paid.',

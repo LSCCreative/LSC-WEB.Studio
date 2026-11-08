@@ -182,6 +182,14 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   once. Where a project stands is `deliveryState()`, the IA's table, read from `readDelivery`; later
   tasks add inputs to the loader, not new badge logic elsewhere. An empty checklist never completes a
   project unless `projects.no_deliverables_at` is set (v22 set it once on projects already paid).
+- A client's email is their portal login (merged-admin R2, S13; `src/clients.js`): one spelling (trimmed, lower-case,
+  on every write) and one holder (a new address another client has is refused, 409 `email_taken`; no unique index,
+  because two clients left sharing one from before stay until changed, and the record says so). Changing it moves
+  their projects' `private_auth` rows in the same transaction. C1's invite must refuse no email and a shared one.
+- Live projects, the client's groups and the Dashboard's Open read the state model (`project.delivery`, on every
+  `GET /api/projects` row through `deliveryReader`), not the money stage: a paid job with open items is Live. The
+  `payment-due` list is wider than the badge: anything live with a sent invoice unpaid, so Outstanding invoices' link
+  isn't empty mid-job. Archive is Complete only; a new list goes in `LISTS` (routes/projects.js).
 
 ## Frontend traps
 
@@ -226,6 +234,10 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
 - Dashboard layout: below 768 the column wrappers (`.dash-main`, `.dash-side`) are `display: contents`,
   so Coming up can sit between the lists and Recent activity. Any `grid-area` on their children must be
   reset to `auto` at ≥768. View-transition names go on only while the calendar resizes (`.is-moving`).
+- Sub-tabs (`js/subtabs.js`, for R3 too): each tab is an address, and the screen keeps the tabs on the page and redraws
+  only the panel, or a keyboard user loses their place. The router resets the title on every route, so a panel move
+  sets it again. `--shadow-focus` is two shadows, so `inset var(--shadow-focus)` draws its outer ring outside the box
+  (side bars in a clipped row): write the inset ring out.
 - Module globals are top-level `const`s: `window.LSCData` is undefined; use `typeof`.
 - Ad blockers hide by name, on every site: `ad-*` and its like are off limits for a class or id (the day dialog's
   `.ad-box` was hidden by EasyList, leaving only its backdrop; it is `dd-*` now). `test-blocker-names.js` guards the prefix.
