@@ -2692,6 +2692,8 @@ test('accept: one transaction makes the deposit + final pair from the stored tot
     [['deposit', 'INV-T19-PAIR-D', deposit.totalIncGst], ['final', 'INV-T19-PAIR-F', final.balanceDue]]);
   assert.deepEqual([r.body.activity[0].kind, r.body.activity[0].detail], ['accepted', {
     estimateId: est.id, invoicing: 'pair', depositPct: 33, invoices: ['INV-T19-PAIR-D', 'INV-T19-PAIR-F'], rebook: [],
+    // R1: no deliverable lines on this quote, and no client details to find or make one from.
+    checklist: 0, client: null,
   }]);
   assert.deepEqual(r.body.rebook, []);
 
@@ -2946,6 +2948,226 @@ test('L4 / S11: a project holding portal data, and a client with projects, can\'
   assert.equal((await del(`/api/projects/${pid}`)).status, 200);
   assert.equal(projectRow(pid), undefined);
   assert.equal((await del(`/api/clients/${client.id}`)).status, 200);
+});
+
+/* ── R1: a project opens with its checklist (merged-admin) ─────────────── */
+
+const delivery = require('../src/delivery');
+
+test('R1: accepting opens one checklist item per quoted deliverable, "3 × Cut-down" makes three', async () => {
+  const est = (await saveEstimate({
+    name: 'R1 Checklist', upid: 'R1-CHK',
+    client: { businessName: 'R1 Fresh Co', contactName: 'Ana Ruiz', email: ' Ana@R1Fresh.example ', phone: '0400 000 001' },
+    activeRows: { deliverables: [
+      { id: 'dA', name: 'Brand film', format: '16:9', duration: '2 min', qty: 1 },
+      { id: 'dB', name: 'Cut-down', format: '9:16', duration: '15 s', qty: 3 },
+      { id: 'dC', name: '', qty: 2 }, // no name: not quoted work
+      { id: 'dD', name: 'Teaser', qty: 0 }, // nothing quoted
+    ] },
+  })).body.estimate;
+  const clientsBefore = db.prepare('SELECT COUNT(*) AS n FROM clients').get().n;
+
+  const r = await act(est.projectId, 'accept', { invoicing: 'single' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const f = (await folderOf(est.projectId)).body;
+  assert.deepEqual(f.deliverables.map((d) => [d.position, d.title, d.format, d.duration, d.quoteLineId, d.stage]), [
+    [1, 'Brand film', '16:9', '2 min', 'dA', 'draft'],
+    [2, 'Cut-down (1 of 3)', '9:16', '15 s', 'dB', 'draft'],
+    [3, 'Cut-down (2 of 3)', '9:16', '15 s', 'dB', 'draft'],
+    [4, 'Cut-down (3 of 3)', '9:16', '15 s', 'dB', 'draft'],
+  ]);
+  assert.ok(f.deliverables.every((d) => d.estimateId === est.id && d.versions.length === 0 && d.notNeededAt === null));
+
+  // No client record: one is made from the quote, and the project and its estimate are linked to it.
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM clients').get().n, clientsBefore + 1);
+  const c = db.prepare('SELECT * FROM clients WHERE id = ?').get(projectRow(est.projectId).client_id);
+  assert.deepEqual([c.business_name, c.contact_name, c.email, c.phone], ['R1 Fresh Co', 'Ana Ruiz', 'Ana@R1Fresh.example', '0400 000 001']);
+  assert.equal(db.prepare('SELECT client_id FROM estimates WHERE id = ?').get(est.id).client_id, c.id);
+  assert.equal(f.project.client.id, c.id);
+
+  // The state: Live, in production, four open; Mark accepted leaves no signed agreement.
+  assert.deepEqual(f.project.delivery, {
+    badge: 'in_production', group: 'live', label: 'In production', client: 'We’re working on it',
+    flags: ['no_agreement'], asks: [], checklist: { total: 4, approved: 0, notNeeded: 0, open: 4 },
+  });
+  const log = f.activity.find((a) => a.kind === 'accepted');
+  assert.deepEqual([log.detail.checklist, log.detail.client], [4, 'created']);
+
+  // A checklist is made once: the studio's from here on.
+  assert.equal(delivery.createChecklist(db, est.projectId, { activeRows: { deliverables: [{ name: 'X', qty: 2 }] } }, 'x'), 0);
+  // And it holds the project (S11): the folder's Delete refuses.
+  const del = await api(`/api/projects/${est.projectId}`, { method: 'DELETE' }).then(async (x) => ({ status: x.status, body: await x.json() }));
+  assert.deepEqual([del.status, del.body.error], [409, 'has_client_data']);
+  assert.match(del.body.message, /^This project has a deliverables checklist, so it can’t be deleted\./);
+});
+
+test('R1: an accepted project finds its client by email, then by name, and a quote with neither stays without', async () => {
+  const owner = (await api('/api/clients', { method: 'POST', body: JSON.stringify({ businessName: 'R1 Harbour Pty', email: 'Owner@R1Harbour.example' }) })
+    .then((x) => x.json())).client;
+  const count = () => db.prepare('SELECT COUNT(*) AS n FROM clients').get().n;
+  const accept = async (upid, client) => {
+    const est = (await saveEstimate({ name: 'R1 Match ' + upid, upid, client })).body.estimate;
+    const r = await act(est.projectId, 'accept', { invoicing: 'single' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const f = (await folderOf(est.projectId)).body;
+    return { pid: est.projectId, clientId: projectRow(est.projectId).client_id, how: f.activity.find((a) => a.kind === 'accepted').detail.client };
+  };
+  const before = count();
+  // By email, ignoring case and spaces, even under another business name.
+  const byEmail = await accept('R1-MAIL', { businessName: 'Harbour Films', email: '  owner@r1harbour.EXAMPLE' });
+  assert.deepEqual([byEmail.clientId, byEmail.how], [owner.id, 'matched_email']);
+  // No email: by business name, which the client editor keeps unique.
+  const byName = await accept('R1-NAME', { businessName: ' r1 harbour pty ' });
+  assert.deepEqual([byName.clientId, byName.how], [owner.id, 'matched_name']);
+  // No email on the client: the quote's fills it in. A different one is kept, and noted.
+  const bare = (await api('/api/clients', { method: 'POST', body: JSON.stringify({ businessName: 'R1 Bare Studio' }) })
+    .then((x) => x.json())).client;
+  const filled = await accept('R1-FILL', { businessName: 'R1 BARE STUDIO', email: 'hello@r1bare.example' });
+  assert.deepEqual([filled.clientId, filled.how], [bare.id, 'matched_name']);
+  assert.equal(db.prepare('SELECT email FROM clients WHERE id = ?').get(bare.id).email, 'hello@r1bare.example');
+  const differs = await accept('R1-DIFF', { businessName: 'R1 Harbour Pty', email: 'someone@elsewhere.example' });
+  assert.deepEqual([differs.clientId, differs.how], [owner.id, 'matched_name']);
+  assert.equal(db.prepare('SELECT email FROM clients WHERE id = ?').get(owner.id).email, 'Owner@R1Harbour.example');
+  const noted = (await folderOf(differs.pid)).body.activity.find((a) => a.kind === 'accepted').detail;
+  assert.deepEqual(noted.clientNote, { kind: 'email_differs', quoteEmail: 'someone@elsewhere.example' });
+  assert.equal(filled.note, undefined);
+  // Names fold as the editor folds them, accents included (SQLite's lower() would miss É).
+  const cafe = (await api('/api/clients', { method: 'POST', body: JSON.stringify({ businessName: 'R1 Café Ltd' }) })
+    .then((x) => x.json())).client;
+  const accented = await accept('R1-CAFE', { businessName: 'r1 CAFÉ LTD' });
+  assert.deepEqual([accented.clientId, accented.how], [cafe.id, 'matched_name']);
+  // Nothing to find one by or make one from.
+  const none = await accept('R1-NONE', {});
+  assert.deepEqual([none.clientId, none.how], [null, null]);
+  assert.equal(count(), before + 2, 'no client made by acceptance (two made above by hand)');
+  // A project already linked keeps its client, whatever the quote says.
+  const est = (await saveEstimate({ name: 'R1 Linked', upid: 'R1-LINK', clientId: owner.id, client: { businessName: 'Someone Else', email: 'x@else.example' } })).body.estimate;
+  assert.equal((await act(est.projectId, 'accept', { invoicing: 'single' })).status, 200);
+  assert.equal(projectRow(est.projectId).client_id, owner.id);
+  assert.equal(count(), before + 2);
+});
+
+test('R1: two clients sharing an email are told apart by name, else the oldest is taken and noted; an email alone names a new one', async () => {
+  const mk = (businessName, email) => api('/api/clients', { method: 'POST', body: JSON.stringify({ businessName, email }) })
+    .then((x) => x.json()).then((b) => b.client);
+  const agency = await mk('R1 Agency', 'bookings@r1shared.example');
+  const brand = await mk('R1 Brand', 'Bookings@R1Shared.example');
+  const accept = async (upid, client) => {
+    const est = (await saveEstimate({ name: 'R1 Shared ' + upid, upid, client })).body.estimate;
+    assert.equal((await act(est.projectId, 'accept', { invoicing: 'single' })).status, 200);
+    return { clientId: projectRow(est.projectId).client_id, detail: (await folderOf(est.projectId)).body.activity.find((a) => a.kind === 'accepted').detail };
+  };
+  const named = await accept('R1-SH1', { businessName: 'r1 brand', email: 'bookings@r1shared.example' });
+  assert.deepEqual([named.clientId, named.detail.client, named.detail.clientNote], [brand.id, 'matched_email', undefined]);
+  const guessed = await accept('R1-SH2', { businessName: 'Someone New', email: 'BOOKINGS@r1shared.example' });
+  assert.deepEqual([guessed.clientId, guessed.detail.client, guessed.detail.clientNote],
+    [agency.id, 'matched_email', { kind: 'shared_email', among: 2 }]);
+
+  // Only an email on the quote: the new client is named by it, so the editor and Hnry have a name.
+  const only = await accept('R1-ONLY', { email: 'solo@r1only.example' });
+  const c = db.prepare('SELECT business_name, email FROM clients WHERE id = ?').get(only.clientId);
+  assert.deepEqual([only.detail.client, c.business_name, c.email], ['created', 'solo@r1only.example', 'solo@r1only.example']);
+  // And a contact name alone names it by the contact.
+  const contact = await accept('R1-CONTACT', { contactName: 'Jo Bloggs' });
+  assert.equal(db.prepare('SELECT business_name FROM clients WHERE id = ?').get(contact.clientId).business_name, 'Jo Bloggs');
+});
+
+test('R1: the state model reads its table top down, flags beside the badge', () => {
+  const S = (input) => delivery.deliveryState({ project: { upid: 'UP-1' }, signed: true, ...input });
+  const open = { notNeeded: false, approved: false, awaitingClient: false, notesSubmitted: false };
+  const ok = { ...open, approved: true };
+  const skip = { ...open, notNeeded: true };
+  const badge = (input) => S(input).badge;
+
+  // The Pipeline: the money stage, whatever the checklist says.
+  for (const money of ['draft', 'sent', 'declined']) {
+    const st = S({ money, items: [open] });
+    assert.deepEqual([st.badge, st.group, st.client, st.flags], [money, 'pipeline', null, []], money);
+  }
+  // Live, in the table's order: notes beat review, review beats production.
+  assert.equal(badge({ money: 'accepted', items: [{ ...open, notesSubmitted: true }, { ...open, awaitingClient: true }] }), 'revisions');
+  assert.equal(badge({ money: 'accepted', items: [{ ...open, awaitingClient: true }, open] }), 'in_review');
+  assert.equal(badge({ money: 'invoiced', items: [ok, open] }), 'in_production');
+  // An approved item's old notes don't hold the project in Revisions.
+  assert.equal(badge({ money: 'accepted', items: [{ ...ok, notesSubmitted: true }] }), 'complete');
+
+  // An empty checklist never completes: it asks for an item, paid or not.
+  for (const money of ['accepted', 'invoiced', 'paid']) {
+    const st = S({ money, items: [] });
+    assert.deepEqual([st.badge, st.group, st.asks], ['in_production', 'live', ['checklist_empty']], money);
+  }
+  // ...unless the studio said none are expected (and the v22 mark on old paid projects).
+  assert.equal(badge({ money: 'paid', items: [], project: { upid: 'U', noDeliverablesAt: 'x' } }), 'complete');
+  // Adding an item reopens it.
+  assert.equal(badge({ money: 'paid', items: [open], project: { upid: 'U', noDeliverablesAt: 'x' } }), 'in_production');
+  // Approved or not needed is done; all not needed counts too.
+  assert.equal(badge({ money: 'accepted', items: [ok, skip] }), 'complete');
+  assert.equal(badge({ money: 'accepted', items: [skip] }), 'complete');
+
+  // Payment required: the invoice rows come before Complete.
+  const pay = { upid: 'U', paymentRequired: true };
+  assert.equal(badge({ money: 'accepted', items: [ok], project: pay, invoices: [{ kind: 'deposit', status: 'paid' }, { kind: 'final', status: 'draft' }] }), 'send_invoice');
+  assert.equal(badge({ money: 'accepted', items: [ok], project: pay, invoices: [] }), 'send_invoice');
+  assert.equal(badge({ money: 'invoiced', items: [ok], project: pay, invoices: [{ kind: 'single', status: 'sent' }] }), 'payment_due');
+  assert.equal(badge({ money: 'invoiced', items: [ok], project: { ...pay, paymentClaimedAt: 'x' }, invoices: [{ kind: 'final', status: 'sent' }] }), 'payment_claimed');
+  assert.equal(badge({ money: 'paid', items: [ok], project: pay, invoices: [{ kind: 'single', status: 'paid' }] }), 'complete');
+  assert.equal(badge({ money: 'paid', items: [ok], project: { ...pay, downloadsLocked: true } }), 'downloads_locked');
+  // Scheduled is queued: nothing for the studio to send.
+  assert.equal(badge({ money: 'accepted', items: [ok], project: pay, invoices: [{ kind: 'final', status: 'scheduled' }] }), 'payment_due');
+  // A void final doesn't count as sent.
+  assert.equal(badge({ money: 'invoiced', items: [ok], project: pay, invoices: [{ kind: 'final', status: 'void' }, { kind: 'deposit', status: 'sent' }] }), 'send_invoice');
+  // Payment not required: approval is enough, money or not.
+  assert.equal(badge({ money: 'invoiced', items: [ok], invoices: [{ kind: 'single', status: 'sent' }] }), 'complete');
+
+  // Archived wins over everything after the Pipeline, and still reads as Done.
+  const arch = S({ money: 'paid', items: [{ ...open, awaitingClient: true }], project: { upid: 'U', archivedAt: 'x' } });
+  assert.deepEqual([arch.badge, arch.group], ['archived', 'done']);
+  assert.equal(badge({ money: 'sent', items: [], project: { archivedAt: 'x' } }), 'sent');
+
+  // Flags: no UPID anywhere; no agreement only once accepted; payment required.
+  assert.deepEqual(S({ money: 'draft', items: [], project: { upid: '' }, signed: false }).flags, ['no_upid']);
+  assert.deepEqual(S({ money: 'accepted', items: [open], project: { upid: null, paymentRequired: true }, signed: false }).flags,
+    ['no_upid', 'no_agreement', 'payment_required']);
+  assert.deepEqual(S({ money: 'accepted', items: [ok, skip, open] }).checklist, { total: 3, approved: 1, notNeeded: 1, open: 1 });
+});
+
+test('R1: the quote\'s lines as checklist items, from what can be typed', () => {
+  const titles = (deliverables) => delivery.quotedDeliverables({ activeRows: { deliverables } }).map((d) => d.title);
+  assert.deepEqual(titles([{ name: 'Film', qty: 1 }, { name: 'Cut', qty: 2 }]), ['Film', 'Cut (1 of 2)', 'Cut (2 of 2)']);
+  assert.deepEqual(titles([{ name: 'Half', qty: 0.4 }, { name: 'Two', qty: 1.6 }]), ['Half', 'Two (1 of 2)', 'Two (2 of 2)']);
+  assert.deepEqual(titles([{ name: 'None', qty: 0 }, { name: 'Neg', qty: -1 }, { name: 'NaN', qty: 'x' }, { name: '  ', qty: 1 }, null]), []);
+  assert.equal(titles([{ name: 'Slip', qty: 300 }]).length, delivery.MAX_PER_LINE);
+  assert.deepEqual(titles(undefined), []);
+  assert.deepEqual(delivery.quotedDeliverables(null), []);
+});
+
+test('R1: an old project reads as the IA says: accepted is Live with an empty checklist, paid before v22 is Complete', async () => {
+  // Accepted the old way (no checklist made): Live, asking for an item.
+  const est = (await saveEstimate({ name: 'R1 Old', upid: 'R1-OLD' })).body.estimate;
+  const now = '2026-10-01T00:00:00.000Z';
+  db.prepare("UPDATE estimates SET status = 'accepted' WHERE id = ?").run(est.id);
+  db.prepare('UPDATE projects SET accepted_at = ? WHERE id = ?').run(now, est.projectId);
+  let st = (await folderOf(est.projectId)).body.project.delivery;
+  assert.deepEqual([st.badge, st.group, st.asks], ['in_production', 'live', ['checklist_empty']]);
+  // Paid, and marked by v22: Complete.
+  db.prepare(`INSERT INTO invoices (id, project_id, kind, number, status, paid_at, created_at, updated_at)
+    VALUES ('inv_r1old', ?, 'single', 'INV-R1-OLD', 'paid', '2026-10-02', ?, ?)`).run(est.projectId, now, now);
+  db.prepare('UPDATE projects SET no_deliverables_at = ? WHERE id = ?').run(now, est.projectId);
+  st = (await folderOf(est.projectId)).body.project.delivery;
+  assert.deepEqual([st.badge, st.group, st.asks], ['complete', 'done', []]);
+  // A published version waits on the client.
+  db.prepare('UPDATE projects SET no_deliverables_at = NULL WHERE id = ?').run(est.projectId);
+  db.prepare(`INSERT INTO deliverables (id, project_id, position, title, created_at, updated_at) VALUES ('dlv_r1old', ?, 1, 'Film', ?, ?)`)
+    .run(est.projectId, now, now);
+  db.prepare(`INSERT INTO deliverable_versions (id, deliverable_id, project_id, n, stage, created_at, published_at)
+    VALUES ('dv_r1old', 'dlv_r1old', ?, 1, 'draft', ?, ?)`).run(est.projectId, now, now);
+  const f = (await folderOf(est.projectId)).body;
+  assert.equal(f.project.delivery.badge, 'in_review');
+  assert.deepEqual(f.deliverables[0].versions.map((v) => [v.n, v.stage, v.publishedAt]), [[1, 'draft', now]]);
+  // A pipeline project has no checklist and reads as its money stage.
+  const draft = (await saveEstimate({ name: 'R1 Draft', upid: 'R1-DRAFTONLY' })).body.estimate;
+  const d = (await folderOf(draft.projectId)).body;
+  assert.deepEqual([d.project.delivery.badge, d.deliverables], ['draft', []]);
 });
 
 /* ── The invoice screen's routes (task 20; D35–D37, D100) ──────────────── */

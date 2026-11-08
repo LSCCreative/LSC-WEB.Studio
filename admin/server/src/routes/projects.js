@@ -7,6 +7,7 @@ const {
 const { readDays } = require('../days');
 const { readRentals } = require('../rentals');
 const { loadEstimate } = require('../estimate');
+const { clientForAcceptance, createChecklist, readDelivery } = require('../delivery');
 const { readSettings } = require('../ratecard');
 const { depositAmount, finalInvoiceTotals, singleInvoiceTotals, tripLineQty } = require('../calc');
 const { amountDue, hnryFields } = require('../invoices');
@@ -232,6 +233,9 @@ function readFolder(db, id, today) {
   project.upidLocked = upidLocked(db, id);
   // Proposed dates on the quote the client has that another project has since confirmed (C6).
   project.takenDays = takenDays(db, id).get(id) || [];
+  // Where it stands, money and delivery in one badge, and its checklist (merged-admin R1).
+  const delivery = readDelivery(db, p, project.stage, bills);
+  project.delivery = delivery.state;
   const rows = db.prepare('SELECT * FROM estimates WHERE project_id = ?').all(id);
   const flags = rebookFlags(db, rows.map((r) => r.id));
   const sent = versionsOf(db, rows.map((r) => r.id));
@@ -260,6 +264,7 @@ function readFolder(db, id, today) {
   return {
     project,
     estimates,
+    deliverables: delivery.deliverables,
     invoices: bills.map((i) => ({
       id: i.id,
       kind: i.kind,
@@ -610,7 +615,9 @@ function confirmDays(db, estimateId, ownIds, now) {
  * signature (task 27). The estimate becomes accepted, its dated days are
  * confirmed with any clash flagged (confirmDays), the invoices are made
  * unsent (createInvoices), and the project records the choice and the
- * moment. One activity row says so.
+ * moment. The project opens under its client (found or made from the quote)
+ * with one checklist item per quoted deliverable (delivery.js, merged-admin
+ * R1). One activity row says so.
  *
  * @param {object} p        the project row
  * @param {string} lead     the estimate accepted
@@ -627,21 +634,34 @@ function acceptEstimate(db, p, lead, ownIds, choice, now, opts = {}) {
   // An estimate email still waiting would ask the client to accept again.
   cancelPending(db, 'estimate', ownIds, now);
   const rebook = confirmDays(db, lead, ownIds, now);
-  const made = choice ? createInvoices(db, p, lead, choice, now, opts.frozen) : [];
+  // The quote as accepted, read once: the version the client signed, else the
+  // row as it now stands (accepted, its days confirmed). The invoices keep it
+  // as their snapshot; the client and the checklist come from it.
+  const row = db.prepare('SELECT * FROM estimates WHERE id = ?').get(lead);
+  const quote = opts.frozen || loadEstimate(row, readDays(db, lead), readRentals(db, lead));
+  // Before the invoices, so they (and the Hnry push after commit) find the project's client.
+  const client = clientForAcceptance(db, p, { ...quote, clientId: row.client_id || quote.clientId || null }, now);
+  if (client.clientId) p = { ...p, client_id: client.clientId };
+  const made = choice ? createInvoices(db, p, lead, choice, now, quote) : [];
   db.prepare(`
     UPDATE projects SET accepted_at = ?, invoicing = COALESCE(?, invoicing), deposit_pct = COALESCE(?, deposit_pct),
            updated_at = ?
      WHERE id = ?
   `).run(now, choice ? choice.invoicing : null, choice ? choice.pct : null, now, p.id);
+  const checklist = createChecklist(db, p.id, { ...quote, id: lead }, now);
   logActivity(db, p.id, opts.kind || 'accepted', {
     estimateId: lead,
     invoicing: choice ? choice.invoicing : null,
     depositPct: choice ? choice.pct : null,
     invoices: made.map((i) => i.number),
     rebook: rebook.map((r) => r.date),
+    checklist,
+    client: client.how,
+    // A choice the studio may want to check: a shared email, or the quote's differing one.
+    ...(client.note ? { clientNote: client.note } : {}),
     ...(opts.detail || {}),
   }, now);
-  return { rebook, made };
+  return { rebook, made, checklist, client };
 }
 
 /**

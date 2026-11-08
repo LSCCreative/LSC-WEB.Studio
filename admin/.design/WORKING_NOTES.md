@@ -177,6 +177,11 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   account 2026-10-23). So the main line is "<project>: Deposit invoice (N%)" then "Shoot: …" (confirmed
   days, read at push time) and "Deliverables: …" lines, max 500 chars, and the shoot sets Hnry's Period
   (`hnry-push.js` `mainDescription`/`periodOf`). Accepting confirms every dated day (`confirmDays`).
+- Accepting also opens the project (merged-admin R1, `delivery.js`): it links a client (found by email,
+  then business name, else made from the quote) and makes one checklist item per quoted deliverable,
+  once. Where a project stands is `deliveryState()`, the IA's table, read from `readDelivery`; later
+  tasks add inputs to the loader, not new badge logic elsewhere. An empty checklist never completes a
+  project unless `projects.no_deliverables_at` is set (v22 set it once on projects already paid).
 
 ## Frontend traps
 

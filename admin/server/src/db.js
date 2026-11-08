@@ -1044,6 +1044,13 @@ const MIGRATIONS = [
       require('./migrations/v21-hub').migrateV21(db);
     },
   },
+  {
+    version: 22,
+    name: 'project checklists: deliverables, versions, delivery status',
+    up(db) {
+      require('./migrations/v22-deliverables').migrateV22(db, nowIso());
+    },
+  },
 ];
 
 /**

@@ -105,7 +105,28 @@ publishes its own ids, so it can no longer publish; live hub never had records).
 "<Name> — Clients"; its Delete explains at once when the client has projects; a deleted project returns where
 Back would. Root CLAUDE.md's responsive rules now name the marketing site only. 952/952; checked in the browser.
 
-**Next: R1 Open a project with its checklist | Model: Opus 5.5 | Effort: High.**
+**R1 done 2026-11-08 (not committed when written).** Migration v22 (`src/migrations/v22-deliverables.js`):
+`deliverables` (checklist items: title, format, duration, quote line, `stage` draft|final, `not_needed_at`) and
+`deliverable_versions` (numbered per item, own stage, `source_path`, `published_at`; Bunny and C5 approvals hang
+off a version), neither cascading from projects; projects gain `archived_at`, `no_deliverables_at`,
+`payment_required` (0). v22 marks every already fully paid project `no_deliverables_at` once (IA: Complete at
+import), so R4 needn't. `src/delivery.js`: `acceptEstimate` (both accept paths) links the client (project's, then
+the quote's record, then match by email, then business name, else create from the quote; a quote with neither
+stays without) and makes one item per quoted deliverable ("3 × Cut-down" = "Cut-down (1 of 3)".., max 50 a line),
+once; activity detail gains `checklist` and `client`. `deliveryState()` is the IA table (Archived checked before
+Live rows; empty checklist asks `checklist_empty` and never completes unless `no_deliverables_at`; payment off =
+approval completes; payment claimed / downloads locked read future columns, absent today; flags `no_upid`,
+`no_agreement`, `payment_required`). Folder reply: `project.delivery` + `deliverables`. `deliverables` added to
+`CLIENT_DATA`. Mark accepted can't accept a project with no UPID (invoice numbers), so "No UPID" only arises via
+signing; covered in the state tests. Old accepted projects with no client still get theirs in R4.
+R1 review fixed (same day): matching folds in JS like the editor (accents); two clients sharing an email are
+told apart by business name, else the oldest + activity `clientNote: shared_email`; a name match fills a missing
+client email, or keeps its own and notes `email_differs`; a new client is named business || contact || email;
+scheduled final counts as sent; the quote is loaded once after `confirmDays` and is the invoices' snapshot;
+CLIENT_DATA rows carry their own reason (a checklist: "Accepted work stays on record…"); ROADMAP updated.
+959/959; scratch admin migrated v21→v22 (backup taken), folder page clean.
+
+**Next: R2 Build the client record | Model: Sonnet 5.5 | Effort: Medium.**
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
 `routes.js` (`createHubRouter(db, opts)`, not mounted yet), `url-signing.js` (was signing.js), `admin-auth.js`,

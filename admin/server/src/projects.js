@@ -148,43 +148,46 @@ function applyProjectWrite(db, plan, clientId, now) {
  * S11: what the client side holds for a project. Deleting the project would
  * orphan it (these tables have no foreign key to projects), so every delete
  * path asks first. Add a table here when a task starts keeping project data in
- * one (R1: deliverables and versions; the Bunny rows). Their `project_id` is
+ * one (R3: approvals and client notes; the Bunny rows). Their `project_id` is
  * billing's `projects.id`: /hub/publish refuses any other id, so nothing the
  * client holds can sit under an id this check doesn't see.
  */
+const IN_USE = 'The client still uses it.';
 const CLIENT_DATA = [
-  ['records', 'a published portal record'],
-  ['private_auth', 'portal access for the client'],
-  ['agreement_evidence', 'a client sign-off'],
+  // Made the moment a quote is accepted, before the client sees anything.
+  ['deliverables', 'a deliverables checklist', 'Accepted work stays on record with what it owes.'],
+  ['records', 'a published portal record', IN_USE],
+  ['private_auth', 'portal access for the client', IN_USE],
+  ['agreement_evidence', 'a client sign-off', IN_USE],
 ];
 
 // One set of prepared lookups per database, made on first use.
 const clientDataLookups = new WeakMap();
 
-/** The first thing the client side holds for this project, or null. */
+/** The first thing the client side holds for this project, as { what, why }, or null. */
 function clientDataHeld(db, projectId) {
   let lookups = clientDataLookups.get(db);
   if (!lookups) {
-    lookups = CLIENT_DATA.map(([table, what]) =>
-      [db.prepare(`SELECT 1 FROM ${table} WHERE project_id = ? LIMIT 1`), what]);
+    lookups = CLIENT_DATA.map(([table, what, why]) =>
+      [db.prepare(`SELECT 1 FROM ${table} WHERE project_id = ? LIMIT 1`), { what, why }]);
     clientDataLookups.set(db, lookups);
   }
-  for (const [stmt, what] of lookups) {
-    if (stmt.get(projectId)) return what;
+  for (const [stmt, held] of lookups) {
+    if (stmt.get(projectId)) return held;
   }
   return null;
 }
 
 /**
- * The 409 body for a project the client side holds: what holds it, and that
- * the client still uses it. `subject` opens the sentence ("This project"),
+ * The 409 body for a project the client side holds: what holds it (`held`,
+ * from clientDataHeld) and why that stays. `subject` opens the sentence ("This project"),
  * `verb` is what can't happen to it, `advice` an optional last sentence.
  * R2 adds Archive, and this is where the message starts pointing at it.
  */
 function clientDataRefusal(held, subject, verb = 'deleted', advice = '') {
   return {
     error: 'has_client_data',
-    message: `${subject} has ${held}, so it can’t be ${verb}. The client still uses it.` +
+    message: `${subject} has ${held.what}, so it can’t be ${verb}. ${held.why}` +
       (advice ? ' ' + advice : ''),
   };
 }
