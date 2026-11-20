@@ -77,6 +77,24 @@ the active project.
   user can set it before work starts, and note it again in `scratchpad.md`'s
   handoff notes.
 
+## Model & Effort Recommendation (always)
+
+For every task, before starting work, tell the user which Claude model and effort
+level to set so it gets done properly. Start the line with the 🎯 emoji so it
+stands out, e.g. "🎯 **Recommended: Opus 5.5 | Effort: High**" plus one short
+reason (e.g. "touches the player contract and the database").
+
+- Do this when the user asks "what's next" or names a new task, not only at
+  slice handoff. Use the slice's `Model:` / `Effort:` tag from `buildplan.md`
+  (or the task's tag in `.design/merged-admin/TASKS.md`) when one exists;
+  otherwise judge it from the work.
+- Rule of thumb: Opus 5.5 + High for schema/migrations, auth, payment, the video
+  player and anything hard to undo; Sonnet 5.5 + Medium for contained UI or
+  endpoint work; Sonnet 5.5 + Low for copy, small CSS tweaks and docs.
+- If the session is probably on a weaker setting than needed, say so plainly and
+  ask the user to switch before you start, rather than carrying on.
+- This is in addition to the handoff rule above, not a replacement.
+
 ## Secrets & SSH (1Password MCP)
 
 The `1password` MCP server is configured in `.mcp.json` (command `1password-mcp`, STDIO; no secrets in the
