@@ -43,7 +43,7 @@ GOOGLE_OAUTH_CLIENT_SECRET=
 GOOGLE_OAUTH_REDIRECT_URI=https://app.lsccreative.studio/api/google/oauth/callback
 ZAPIER_CREDENTIALS_CLIENT_ID=         # Hnry: 1Password Environment "ZAPIER_CREDENTIALS"
 ZAPIER_CREDENTIALS_CLIENT_SECRET=
-HUB_SIGNING_SECRET=  HUB_ADMIN_PIN_HASH=  HUB_ADMIN_EMAIL=
+HUB_SIGNING_SECRET=
 HUB_CORS_ORIGINS=https://lsccreative.studio
 CORS_ORIGINS=https://app.lsccreative.studio   # only until 2026-11-14 (the switch from Pages), then remove
 ```

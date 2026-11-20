@@ -7,7 +7,7 @@
       "runtimeExecutable": "sh",
       "runtimeArgs": [
         "-c",
-        "cd server && GOOGLE_CALENDAR_WRITE=0 DATA_DIR=/tmp/lsc-admin-scratch PORT=8090 COOKIE_SECURE=1 APP_URL=http://localhost:8090/ node scripts/dev-stub-mail.js"
+        "cd server && GOOGLE_CALENDAR_WRITE=0 DATA_DIR=/tmp/lsc-admin-scratch DELIVERABLES_DIR=/tmp/lsc-admin-scratch/deliverables PORT=8090 COOKIE_SECURE=1 APP_URL=http://localhost:8090/ node scripts/dev-stub-mail.js"
       ],
       "port": 8090
     },

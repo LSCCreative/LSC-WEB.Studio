@@ -1,0 +1,592 @@
+'use strict';
+
+/* A project's Deliverables tab (merged-admin R3; IA "Project: Deliverables"): the
+ * checklist, and one item's page under it at .../deliverables/<itemId>. The hub
+ * editor's asset list, on real records (server/src/routes/deliverables.js).
+ *
+ * ProjectFolder owns the screen and calls draw() with the panel and a context:
+ *   folder              the reply on screen
+ *   itemId              the item asked for, or null for the checklist
+ *   apply(reply, focus) the folder a write answered with: redraw, then focus that
+ *   confirm(el, opts)   its dialog
+ *   authLost(), missing()
+ *
+ * Every write answers with the folder, so nothing here patches itself. A write
+ * outcome can land after the screen has gone: apply() checks that.
+ */
+
+const ProjectDeliverables = (() => {
+  const { esc } = LSCUtil;
+
+  const STAGE = { draft: 'Draft Cut', final: 'Final' };
+  /* Rounds per Final (brief, Revision rounds). C5 counts the ones used. */
+  const ROUNDS = 2;
+  const PHOTOS_SHOWN = 12;
+
+  let ctx = null;
+  let box = null;
+  const $ = (id) => box.querySelector('#' + id);
+  const apiBase = () => '/api/projects/' + encodeURIComponent(ctx.folder.project.id) + '/deliverables';
+  const folderPathOf = () => '/projects/' + encodeURIComponent(ctx.folder.project.id) + '/deliverables';
+  const itemPath = (id) => folderPathOf() + '/' + encodeURIComponent(id);
+  const versionUrl = (item, v, tail) => apiBase() + '/' + encodeURIComponent(item.id) + '/versions/' + encodeURIComponent(v.id) + (tail || '');
+  const newestOf = (item) => item.versions[item.versions.length - 1] || null;
+  /* Filed away: nothing changes until it's unarchived (the server refuses it), so
+     nothing here offers to. */
+  const filed = () => Boolean(ctx.folder.project.archivedAt);
+  const today = () => LSCUtil.today();
+  const when = (value) => ProjectCard.dayMonth(value, today());
+
+  function showError(message) {
+    const el = $('dlv-error');
+    if (!el) return;
+    el.textContent = message;
+    el.classList.add('show');
+  }
+  function clearError() {
+    const el = $('dlv-error');
+    if (!el) return;
+    el.textContent = '';
+    el.classList.remove('show');
+  }
+
+  /* Every field a redraw would wipe, by form. A write's `saves` names the ones the
+     reply now answers for; whatever else is half-typed comes back after the redraw.
+     Restored text differs from the field's default, so it still counts as unsaved. */
+  const ADD_ITEM = ['dlv-add-title', 'dlv-add-format', 'dlv-add-duration'];
+  const DETAILS = ['dlv-title', 'dlv-format', 'dlv-duration'];
+  const ADD_VERSION = ['dlv-path', 'dlv-new-drive'];
+  const DRIVE = ['dlv-drive-link'];
+  const FIELDS = [...ADD_ITEM, ...DETAILS, ...ADD_VERSION, ...DRIVE];
+
+  function halfTyped(saved) {
+    const kept = [];
+    FIELDS.forEach((id) => {
+      const el = (saved || []).includes(id) ? null : $(id);
+      if (el && el.value !== el.defaultValue) kept.push([id, el.value]);
+    });
+    return kept;
+  }
+
+  const failureText = (err) => (err.kind === 'network' ? 'The server is unreachable.' : err.message || 'The server refused.');
+
+  /* A write that answers with the folder. On a refusal the message goes in the
+     panel's error line, or rejects for a dialog to show (`rethrow`). */
+  async function write(method, url, body, opts) {
+    const o = opts || {};
+    clearError();
+    if (o.working) Toast.working(o.working);
+    const sep = url.includes('?') ? '&' : '?';
+    try {
+      const reply = await LSCApi[method](url + sep + 'today=' + today(), body);
+      if (o.ok) Toast.ok(o.ok);
+      else Toast.hide();
+      const kept = halfTyped(o.saves);
+      ctx.apply(reply, o.focus);
+      kept.forEach(([id, value]) => {
+        const el = $(id);
+        if (el) el.value = value;
+      });
+      return reply;
+    } catch (err) {
+      Toast.hide();
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (err.kind === 'auth') {
+        ctx.authLost();
+        return null;
+      }
+      // The record is gone. A path with nothing at it (file_not_found) is a refusal.
+      if (err.code === 'not_found') {
+        ctx.missing();
+        return null;
+      }
+      if (o.rethrow) throw err;
+      if (o.onRefused) o.onRefused(err);
+      else showError(failureText(err));
+      return null;
+    }
+  }
+
+  /* While a write is out, its own button waits. */
+  async function busyWhile(button, run) {
+    if (button.disabled) return;
+    button.disabled = true;
+    try {
+      await run();
+    } finally {
+      if (button.isConnected) button.disabled = false;
+    }
+  }
+
+  // ── The checklist ─────────────────────────────────────────────────────────
+
+  function progressText(checklist) {
+    const counted = checklist.total - checklist.notNeeded;
+    if (!checklist.total) return 'Nothing on it yet';
+    return checklist.approved + ' of ' + counted + ' approved' + (checklist.notNeeded ? ' · ' + checklist.notNeeded + ' not needed' : '');
+  }
+
+  function fileLine(item) {
+    const newest = newestOf(item);
+    if (!newest) return 'No file yet';
+    const published = item.versions.filter((v) => v.publishedAt).pop();
+    if (newest.publishedAt) return 'v' + newest.n + ' published ' + when(newest.publishedAt);
+    return 'v' + newest.n + ' not published' + (published ? ' · v' + published.n + ' is with the client' : '');
+  }
+
+  function roundsLine(item) {
+    return item.stage === 'final' ? '<span class="dlv-rounds">0 of ' + ROUNDS + ' rounds used</span>' : '';
+  }
+
+  function rowMarkup(item) {
+    const newest = newestOf(item);
+    const off = Boolean(item.notNeededAt);
+    const meta = [item.format, item.duration].filter(Boolean).join(' · ');
+    const named = item.title;
+    const canPublish = newest && !newest.publishedAt && !off && !filed();
+    const primary = filed()
+      ? '<button type="button" class="btn btn-sm" data-dlv="open" data-id="' + esc(item.id) + '" aria-label="Open ' + esc(named) + '">Open</button>'
+      : off
+      ? '<button type="button" class="btn btn-sm" data-write data-dlv="needed" data-id="' + esc(item.id) + '" aria-label="Mark needed: ' + esc(named) + '">Mark needed</button>'
+      : canPublish
+        ? '<button type="button" class="btn btn-sm" data-write data-dlv="publish" data-id="' + esc(item.id) + '" aria-label="Publish v' + newest.n + ' of ' + esc(named) + '">Publish v' + newest.n + '…</button>'
+        : '<button type="button" class="btn btn-sm" data-dlv="open" data-id="' + esc(item.id) + '" aria-label="' + (newest ? 'Open ' : 'Add a file to ') + esc(named) + '">' + (newest ? 'Open' : 'Add file') + '</button>';
+    const extra = !item.estimateId && !item.quoteLineId && !item.versions.some((v) => v.publishedAt);
+    const items = filed() ? [] : [
+      canPublish ? { text: 'Open', attrs: { 'data-dlv': 'open', 'data-id': item.id } } : null,
+      off ? null : { text: 'Mark not needed', attrs: { 'data-dlv': 'not-needed', 'data-id': item.id, 'data-write': '' } },
+      extra ? { text: 'Remove…', danger: true, attrs: { 'data-dlv': 'remove', 'data-id': item.id, 'data-write': '' } } : null,
+    ].filter(Boolean);
+    return (
+      '<li class="dlv-row' + (off ? ' is-off' : '') + '">' +
+      '<div class="dlv-row-id"><h3 class="dlv-row-title"><a href="#' + esc(itemPath(item.id)) + '" data-go="' + esc(itemPath(item.id)) + '">' + esc(named) + '</a></h3>' +
+      (meta ? '<p class="dlv-row-meta">' + esc(meta) + '</p>' : '') + '</div>' +
+      '<div class="dlv-row-state">' +
+      (off
+        ? '<span class="pf-chip">Not needed</span>'
+        : '<span class="pf-chip' + (item.stage === 'final' ? ' is-info' : '') + '">' + STAGE[item.stage] + '</span>' +
+          '<span class="dlv-file">' + esc(fileLine(item)) + '</span>' + roundsLine(item)) +
+      '</div>' +
+      '<div class="dlv-row-acts">' + primary +
+      (items.length ? LSCMenu.markup({ id: 'dlv-menu-' + item.id, label: 'More', ariaLabel: 'More for ' + named, items }) : '') +
+      '</div></li>'
+    );
+  }
+
+  function emptyMarkup(project) {
+    if (filed()) return '<div class="panel-body"><p class="pf-empty">No deliverables on this project.</p></div>';
+    if (project.noDeliverablesAt) {
+      return (
+        '<div class="panel-body dlv-ask"><p>You said no deliverables are expected on this project.</p>' +
+        '<button type="button" class="btn btn-sm" data-write data-dlv="expected">Deliverables are expected after all</button></div>'
+      );
+    }
+    return (
+      '<div class="panel-body dlv-ask"><p><strong>This project has no deliverables yet.</strong> ' +
+      'Its quote had none on it. Add the first below, or say none are expected. An empty checklist never completes a project.</p>' +
+      '<button type="button" class="btn btn-sm" data-write data-dlv="none-expected">No deliverables expected</button></div>'
+    );
+  }
+
+  function addFormMarkup() {
+    return (
+      '<form class="dlv-add" id="dlv-add" novalidate>' +
+      '<div class="form-grid">' +
+      '<div class="field full"><label for="dlv-add-title">Title *</label><input id="dlv-add-title" type="text" maxlength="200" autocomplete="off"></div>' +
+      '<div class="field"><label for="dlv-add-format">Format</label><input id="dlv-add-format" type="text" maxlength="100" placeholder="e.g. 16:9" autocomplete="off"></div>' +
+      '<div class="field"><label for="dlv-add-duration">Length</label><input id="dlv-add-duration" type="text" maxlength="100" placeholder="e.g. 30s" autocomplete="off"></div>' +
+      '</div>' +
+      '<div class="form-actions"><button type="submit" class="btn" data-write>Add deliverable</button></div>' +
+      '</form>'
+    );
+  }
+
+  function checklistMarkup() {
+    const { project, deliverables } = ctx.folder;
+    const state = project.delivery;
+    return (
+      (filed() ? '<p class="pf-notice dlv-filed" role="note">Archived, so this is read-only. Unarchive it from Actions to change anything here.</p>' : '') +
+      '<section class="panel" aria-labelledby="dlv-h">' +
+      '<div class="panel-head"><h2 class="panel-title" id="dlv-h">Checklist</h2>' +
+      '<p class="dlv-progress">' + esc(progressText(state.checklist)) + '</p></div>' +
+      (deliverables.length
+        ? '<div class="panel-body is-flush"><ol class="dlv-list">' + deliverables.map(rowMarkup).join('') + '</ol></div>'
+        : emptyMarkup(project)) +
+      '<div class="dlv-error" id="dlv-error" role="alert"></div>' +
+      '</section>' +
+      (filed() ? '' : '<section class="panel dlv-add-panel" aria-labelledby="dlv-add-h"><div class="panel-head"><h2 class="panel-title" id="dlv-add-h">Add an extra deliverable</h2></div>' +
+      '<div class="panel-body">' + addFormMarkup() + '</div></section>')
+    );
+  }
+
+  function publish(item, opener) {
+    const v = newestOf(item);
+    if (!v) return;
+    ctx.confirm(opener, {
+      title: 'Publish v' + v.n + '?',
+      body: 'v' + v.n + ' (' + (v.fileName || v.sourcePath) + ') becomes the ' + STAGE[v.stage] + ' the client reviews, and the project goes In review. ' +
+        'A published version can’t be changed, only followed by a new one. No email goes out.',
+      confirm: 'Publish',
+      run: () => write('post', versionUrl(item, v, '/publish'), undefined, {
+        working: 'Publishing…',
+        ok: 'v' + v.n + ' published.',
+        rethrow: true,
+      }),
+    });
+  }
+
+  function setNotNeeded(item, on, button) {
+    return busyWhile(button, () => write('put', apiBase() + '/' + encodeURIComponent(item.id), { notNeeded: on }, {
+      working: 'Saving…',
+      ok: on ? 'Marked not needed.' : 'Back on the checklist.',
+      focus: '.dlv-row-title a',
+    }));
+  }
+
+  function removeItem(item, opener) {
+    ctx.confirm(opener, {
+      title: 'Remove this deliverable?',
+      body: 'This takes “' + item.title + '” off the checklist' + (item.versions.length ? ', with its unpublished ' + (item.versions.length === 1 ? 'version' : 'versions') : '') + '.',
+      confirm: 'Remove',
+      danger: true,
+      run: () => write('del', apiBase() + '/' + encodeURIComponent(item.id), undefined, {
+        working: 'Removing…',
+        ok: 'Removed.',
+        rethrow: true,
+        focus: '#dlv-add-title',
+      }),
+    });
+  }
+
+  /* Rows' actions: the menu's items are clicked in place, so these find them too. */
+  function bindChecklist() {
+    const { deliverables } = ctx.folder;
+    const itemOf = (el) => deliverables.find((d) => d.id === el.dataset.id);
+    box.querySelectorAll('[data-go]').forEach((a) => a.addEventListener('click', (e) => {
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      LSCRouter.go(a.dataset.go);
+    }));
+    box.querySelectorAll('[data-dlv]').forEach((b) => b.addEventListener('click', () => {
+      const opener = b.closest('.menu') ? b.closest('.menu').querySelector('.menu-btn') : b;
+      const item = itemOf(b);
+      const act = b.dataset.dlv;
+      if (act === 'open') return LSCRouter.go(itemPath(item.id));
+      if (act === 'publish') return publish(item, opener);
+      if (act === 'not-needed') return setNotNeeded(item, true, opener);
+      if (act === 'needed') return setNotNeeded(item, false, b);
+      if (act === 'remove') return removeItem(item, opener);
+      if (act === 'none-expected' || act === 'expected') {
+        return busyWhile(b, () => write('post', '/api/projects/' + encodeURIComponent(ctx.folder.project.id) + '/no-deliverables',
+          { on: act === 'none-expected' }, {
+            working: 'Saving…',
+            ok: act === 'none-expected' ? 'Noted: no deliverables expected.' : 'Noted: deliverables are expected.',
+            focus: '#dlv-add-title',
+          }));
+      }
+      return undefined;
+    }));
+    const form = $('dlv-add');
+    if (form) form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const button = form.querySelector('button[type="submit"]');
+      const title = $('dlv-add-title');
+      if (!title.value.trim()) {
+        showError('Give the deliverable a title.');
+        title.focus();
+        return;
+      }
+      busyWhile(button, () => write('post', apiBase(), {
+        title: title.value, format: $('dlv-add-format').value, duration: $('dlv-add-duration').value,
+      }, { working: 'Adding…', ok: 'Added to the checklist.', focus: '#dlv-add-title', saves: ADD_ITEM }));
+    });
+  }
+
+  // ── One deliverable ───────────────────────────────────────────────────────
+
+  function stageMarkup(item) {
+    const newest = newestOf(item);
+    const radio = (value) =>
+      '<label class="dlv-stage-opt"><input type="radio" name="dlv-stage" value="' + value + '"' + (item.stage === value ? ' checked' : '') + (filed() ? ' disabled' : ' data-write') + '>' +
+      '<span>' + STAGE[value] + '</span></label>';
+    const note = newest && newest.publishedAt && newest.stage !== item.stage
+      ? 'v' + newest.n + ' went out as a ' + STAGE[newest.stage] + '. Add the ' + STAGE[item.stage] + '’s file as a new version.'
+      : item.stage === 'final'
+        ? 'The client approves, or sends notes that use a revision round. ' + ROUNDS + ' rounds per Final.'
+        : 'The client approves or sends notes. It’s never downloadable and no round is used.';
+    return (
+      '<fieldset class="dlv-stage"><legend>Stage</legend><div class="dlv-stage-opts">' + radio('draft') + radio('final') + '</div>' +
+      '<p class="dlv-note" id="dlv-stage-note">' + esc(note) + '</p></fieldset>'
+    );
+  }
+
+  function versionStatus(v) {
+    return v.publishedAt ? 'Published ' + when(v.publishedAt) : 'Not published';
+  }
+
+  function currentMarkup(item) {
+    const v = newestOf(item);
+    if (!v) return '';
+    const what = v.kind === 'photos' ? v.photoCount + (v.photoCount === 1 ? ' photo' : ' photos') : 'Video';
+    const off = Boolean(item.notNeededAt);
+    const live = !filed();
+    return (
+      '<section class="panel" aria-labelledby="dlv-file-h">' +
+      '<div class="panel-head"><h3 class="panel-title" id="dlv-file-h">Version ' + v.n + '</h3>' +
+      '<span class="pf-chip' + (v.publishedAt ? ' is-ok' : '') + '">' + esc(versionStatus(v)) + '</span></div>' +
+      '<div class="panel-body dlv-current">' +
+      '<p class="dlv-file-name">' + esc(v.fileName || v.sourcePath) + '</p>' +
+      '<p class="dlv-note">' + esc(what) + ' · ' + STAGE[v.stage] + '</p>' +
+      '<p class="dlv-path ref">' + esc(v.sourcePath) + '</p>' +
+      '<div class="dlv-acts">' +
+      (live && !v.publishedAt && !off ? '<button type="button" class="btn" data-write id="dlv-publish">Publish v' + v.n + '…</button>' : '') +
+      '<button type="button" class="btn" id="dlv-preview">Preview</button>' +
+      (live && !v.publishedAt ? '<button type="button" class="btn btn-ghost" data-write id="dlv-remove-version">Remove this version</button>' : '') +
+      '</div>' +
+      '<div class="dlv-preview" id="dlv-preview-box" hidden></div>' +
+      (live
+        ? '<form class="dlv-drive" id="dlv-drive" novalidate>' +
+          '<div class="field"><label for="dlv-drive-link">Google Drive backup</label>' +
+          '<input id="dlv-drive-link" type="url" inputmode="url" autocomplete="off" value="' + esc(v.driveLink || '') + '" aria-describedby="dlv-drive-hint">' +
+          '<p class="client-field-hint" id="dlv-drive-hint">What the client is offered if the video won’t load.</p></div>' +
+          '<button type="submit" class="btn btn-sm" data-write>Save link</button>' +
+          '</form>'
+        : '') +
+      '</div></section>'
+    );
+  }
+
+  function addVersionMarkup(item) {
+    if (item.notNeededAt || filed()) return '';
+    const newest = newestOf(item);
+    return (
+      '<section class="panel" aria-labelledby="dlv-add-v-h">' +
+      '<div class="panel-head"><h3 class="panel-title" id="dlv-add-v-h">' + (newest ? 'Add a new version' : 'Add the file') + '</h3>' +
+      '<span class="dlv-note">As ' + (newest ? 'v' + (newest.n + 1) + ', ' : '') + 'a ' + STAGE[item.stage] + '</span></div>' +
+      '<div class="panel-body"><form id="dlv-add-version" novalidate>' +
+      '<div class="field"><label for="dlv-path">Path on the NAS *</label>' +
+      '<input id="dlv-path" type="text" spellcheck="false" autocomplete="off" aria-describedby="dlv-path-hint">' +
+      '<p class="client-field-hint" id="dlv-path-hint">Copy it from the UGREEN file manager. A video takes the path to the file, ' +
+      'a photo library the path to its folder (.jpg, .png, .webp, up to 200).</p></div>' +
+      '<div class="field"><label for="dlv-new-drive">Google Drive backup</label>' +
+      '<input id="dlv-new-drive" type="url" inputmode="url" autocomplete="off"></div>' +
+      '<div class="form-actions"><button type="submit" class="btn" data-write>Add version</button></div>' +
+      '</form></div></section>'
+    );
+  }
+
+  function historyMarkup(item) {
+    const older = item.versions.slice(0, -1).reverse();
+    if (!older.length) return '';
+    return (
+      '<section class="panel" aria-labelledby="dlv-history-h">' +
+      '<div class="panel-head"><h3 class="panel-title" id="dlv-history-h">Earlier versions<span class="panel-count">' + older.length + '</span></h3></div>' +
+      '<div class="panel-body is-flush"><ol class="dlv-history">' + older.map((v) =>
+        '<li><span class="dlv-history-n">v' + v.n + '</span><span class="dlv-history-file">' + esc(v.fileName || v.sourcePath) + '</span>' +
+        '<span class="dlv-note">' + STAGE[v.stage] + ' · ' + esc(versionStatus(v)) + '</span></li>').join('') + '</ol></div></section>'
+    );
+  }
+
+  function detailsFormMarkup(item) {
+    return (
+      '<section class="panel" aria-labelledby="dlv-details-h">' +
+      '<div class="panel-head"><h3 class="panel-title" id="dlv-details-h">Details</h3></div>' +
+      '<div class="panel-body"><form id="dlv-details" novalidate><div class="form-grid">' +
+      '<div class="field full"><label for="dlv-title">Title *</label><input id="dlv-title" type="text" maxlength="200" value="' + esc(item.title) + '" autocomplete="off"></div>' +
+      '<div class="field"><label for="dlv-format">Format</label><input id="dlv-format" type="text" maxlength="100" value="' + esc(item.format || '') + '" autocomplete="off"></div>' +
+      '<div class="field"><label for="dlv-duration">Length</label><input id="dlv-duration" type="text" maxlength="100" value="' + esc(item.duration || '') + '" autocomplete="off"></div>' +
+      '</div><div class="form-actions">' +
+      '<button type="button" class="btn btn-ghost" data-write id="dlv-toggle-needed">' + (item.notNeededAt ? 'Mark needed' : 'Mark not needed') + '</button>' +
+      '<button type="submit" class="btn" data-write>Save details</button></div></form></div></section>'
+    );
+  }
+
+  function clientSideMarkup(item) {
+    return (
+      '<section class="panel" aria-labelledby="dlv-client-h">' +
+      '<div class="panel-head"><h3 class="panel-title" id="dlv-client-h">From the client</h3>' +
+      (item.stage === 'final' ? '<span class="dlv-rounds">0 of ' + ROUNDS + ' rounds used</span>' : '') + '</div>' +
+      '<div class="panel-body"><p class="pf-empty">No notes or approval yet.</p></div></section>'
+    );
+  }
+
+  function itemMarkup(item) {
+    const meta = [item.format, item.duration].filter(Boolean).join(' · ');
+    const off = Boolean(item.notNeededAt);
+    return (
+      '<button type="button" class="back-btn" id="dlv-back">← All deliverables</button>' +
+      '<div class="dlv-item-head"><h2 class="dlv-item-title" id="dlv-item-h" tabindex="-1">' + esc(item.title) + '</h2>' +
+      (meta ? '<p class="dlv-note">' + esc(meta) + '</p>' : '') +
+      (off ? '<p class="pf-notice" role="note">Marked not needed. It’s left out of the checklist’s count, and takes no files.</p>' : '') +
+      (filed() ? '<p class="pf-notice" role="note">Archived, so this is read-only. Unarchive it from Actions to change anything here.</p>' : '') +
+      '</div>' +
+      '<div class="dlv-error" id="dlv-error" role="alert"></div>' +
+      '<div class="dlv-item-grid"><div class="dlv-item-main">' +
+      currentMarkup(item) + addVersionMarkup(item) + historyMarkup(item) +
+      '</div><div class="dlv-item-side">' +
+      '<section class="panel" aria-label="Stage"><div class="panel-body">' + stageMarkup(item) + '</div></section>' +
+      clientSideMarkup(item) + (filed() ? '' : detailsFormMarkup(item)) +
+      '</div></div>'
+    );
+  }
+
+  async function togglePreview(item, v, button) {
+    const area = $('dlv-preview-box');
+    if (!area.hidden) {
+      area.hidden = true;
+      area.innerHTML = '';
+      button.textContent = 'Preview';
+      return;
+    }
+    button.textContent = 'Hide preview';
+    area.hidden = false;
+    const base = window.LSC_API_BASE + versionUrl(item, v, '/file');
+    if (v.kind !== 'photos') {
+      area.innerHTML = '<video class="dlv-video" controls preload="metadata" playsinline src="' + esc(base) + '"></video>';
+      area.querySelector('video').addEventListener('error', () => {
+        area.innerHTML = '<p class="pf-empty">That file couldn’t be played here. It may have moved on the NAS, or this browser can’t play its format.</p>';
+      });
+      return;
+    }
+    area.innerHTML = '<p class="pf-empty" role="status">Loading the photos…</p>';
+    try {
+      const { photos } = await LSCApi.get(versionUrl(item, v, '/file'));
+      if (!area.isConnected) return;
+      const shown = (photos || []).slice(0, PHOTOS_SHOWN);
+      const more = (photos || []).length - shown.length;
+      area.innerHTML = shown.length
+        ? '<ul class="dlv-photos">' + shown.map((name) =>
+          '<li><img loading="lazy" alt="' + esc(name) + '" src="' + esc(base + '?name=' + encodeURIComponent(name)) + '"></li>').join('') + '</ul>' +
+          (more > 0 ? '<p class="dlv-note">and ' + more + ' more</p>' : '')
+        : '<p class="pf-empty">No images in that folder any more.</p>';
+    } catch (err) {
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (err.kind === 'auth') return ctx.authLost();
+      if (area.isConnected) area.innerHTML = '<p class="pf-empty">' + esc(failureText(err)) + '</p>';
+    }
+    return undefined;
+  }
+
+  function bindItem(item) {
+    const url = apiBase() + '/' + encodeURIComponent(item.id);
+    const newest = newestOf(item);
+    $('dlv-back').addEventListener('click', () => LSCRouter.leaveTo(folderPathOf()));
+
+    box.querySelectorAll('input[name="dlv-stage"]').forEach((radio) => radio.addEventListener('change', () => {
+      write('put', url, { stage: radio.value }, {
+        working: 'Saving…',
+        ok: 'Now a ' + STAGE[radio.value] + '.',
+        focus: 'input[name="dlv-stage"]:checked',
+        onRefused: (err) => {
+          showError(failureText(err));
+          box.querySelector('input[name="dlv-stage"][value="' + item.stage + '"]').checked = true;
+        },
+      });
+    }));
+
+    const publishBtn = $('dlv-publish');
+    if (publishBtn) publishBtn.addEventListener('click', () => publish(item, publishBtn));
+    const previewBtn = $('dlv-preview');
+    if (previewBtn) previewBtn.addEventListener('click', () => togglePreview(item, newest, previewBtn));
+    const removeBtn = $('dlv-remove-version');
+    if (removeBtn) {
+      removeBtn.addEventListener('click', () => ctx.confirm(removeBtn, {
+        title: 'Remove v' + newest.n + '?',
+        body: 'The client hasn’t seen it. This only takes it off the list: the file stays on the NAS.',
+        confirm: 'Remove',
+        danger: true,
+        run: () => write('del', versionUrl(item, newest), undefined, { working: 'Removing…', ok: 'Version removed.', rethrow: true, focus: '#dlv-item-h', saves: DRIVE }),
+      }));
+    }
+    const drive = $('dlv-drive');
+    if (drive) {
+      drive.addEventListener('submit', (e) => {
+        e.preventDefault();
+        busyWhile(drive.querySelector('button'), () => write('put', versionUrl(item, newest), { driveLink: $('dlv-drive-link').value }, {
+          working: 'Saving…', ok: 'Backup link saved.', focus: '#dlv-drive-link', saves: DRIVE,
+        }));
+      });
+    }
+    const addVersion = $('dlv-add-version');
+    if (addVersion) {
+      addVersion.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const field = $('dlv-path');
+        if (!field.value.trim()) {
+          showError('Paste the file or folder’s path from the NAS.');
+          field.focus();
+          return;
+        }
+        busyWhile(addVersion.querySelector('button[type="submit"]'), () => write('post', url + '/versions', {
+          path: field.value, driveLink: $('dlv-new-drive').value,
+        }, {
+          working: 'Checking the NAS…',
+          ok: 'Version added.',
+          focus: '#dlv-publish',
+          // The Drive field now belongs to the new version, so what was typed for the old one goes.
+          saves: [...ADD_VERSION, ...DRIVE],
+          // Next to the field, where the path can be fixed: the message says what's wrong.
+          onRefused: (err) => {
+            LSCUtil.showFieldErrors($('dlv-error'), [{ msg: failureText(err), field: err.code === 'link_invalid' ? $('dlv-new-drive') : field }]);
+          },
+        }));
+      });
+    }
+    if (filed()) return;
+    const details = $('dlv-details');
+    details.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!$('dlv-title').value.trim()) {
+        LSCUtil.showFieldErrors($('dlv-error'), [{ msg: 'Give the deliverable a title.', field: $('dlv-title') }]);
+        return;
+      }
+      busyWhile(details.querySelector('button[type="submit"]'), () => write('put', url, {
+        title: $('dlv-title').value, format: $('dlv-format').value, duration: $('dlv-duration').value,
+      }, { working: 'Saving…', ok: 'Details saved.', focus: '#dlv-title', saves: DETAILS }));
+    });
+    const toggle = $('dlv-toggle-needed');
+    toggle.addEventListener('click', () => busyWhile(toggle, () => write('put', url, { notNeeded: !item.notNeededAt }, {
+      working: 'Saving…',
+      ok: item.notNeededAt ? 'Back on the checklist.' : 'Marked not needed.',
+      focus: '#dlv-toggle-needed',
+    })));
+
+    /* What's typed in the two forms is what a route away would lose. */
+    const snapshot = () => JSON.stringify(['dlv-title', 'dlv-format', 'dlv-duration', 'dlv-path', 'dlv-new-drive', 'dlv-drive-link']
+      .map((id) => ($(id) ? $(id).value.trim() : '')));
+    const baseline = snapshot();
+    LSCUnsaved.watch('deliverable-item', {
+      label: 'this deliverable',
+      onScreen: () => box.isConnected && Boolean(box.querySelector('#dlv-details')),
+      dirty: () => snapshot() !== baseline,
+    });
+  }
+
+  /* The panel, for ctx.itemId. False when that item doesn't exist. */
+  function draw(panel, context) {
+    box = panel;
+    ctx = context;
+    if (ctx.itemId) {
+      const item = ctx.folder.deliverables.find((d) => d.id === ctx.itemId);
+      if (!item) {
+        box.innerHTML =
+          '<div class="empty-state"><h3>That deliverable isn’t on this project any more</h3>' +
+          '<button type="button" class="btn" id="dlv-back" style="margin-top:16px">All deliverables</button></div>';
+        $('dlv-back').addEventListener('click', () => LSCRouter.go(folderPathOf(), { replace: true }));
+        return;
+      }
+      box.innerHTML = itemMarkup(item);
+      bindItem(item);
+      return;
+    }
+    box.innerHTML = checklistMarkup();
+    bindChecklist();
+  }
+
+  /* Is anything half-typed in the panel? A follow-up redraw waits for it. */
+  function holdsInput(panel) {
+    return Array.from(panel.querySelectorAll('input[type="text"], input[type="url"]')).some((i) => i.value !== i.defaultValue);
+  }
+
+  return { draw, holdsInput };
+})();

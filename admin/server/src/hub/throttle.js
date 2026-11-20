@@ -1,7 +1,7 @@
 'use strict';
 
-/* A sliding-window count of attempts per key, for the portal's sign-ins: the
-   editor's PIN (by address) and a client's code (by email). In memory: one
+/* A sliding-window count of attempts per key, for the portal's sign-in: a
+   client's code, by email. In memory: one
    process, and a restart forgetting the counts is harmless. Keys that have
    stopped trying are swept out, since this lives as long as the admin does. */
 

@@ -547,7 +547,8 @@ const InvoiceView = (() => {
   }
 
   function bind() {
-    $('js-back').addEventListener('click', () => LSCRouter.leaveTo(folderPath(data.project.id)));
+    // Invoices are the Payments tab's (R3).
+    $('js-back').addEventListener('click', () => LSCRouter.leaveTo(ProjectCard.folderBack(data.project.id, folderPath(data.project.id) + '/payments')));
     // Buttons and closed menus' items alike: menu.js clicks a chosen item in place.
     root.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => runAction(b.dataset.act, b)));
     root.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () =>

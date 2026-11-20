@@ -210,3 +210,193 @@
     justify-content: center;
   }
 }
+
+/* ── The old hub's import, #/setup/hub-import (merged-admin R4) ───────────
+   Panels stacked one per column; a row is the hub project on the left and
+   what to do with it on the right, stacking on a phone. Same muted text and
+   accent-as-rule as the UPID fix-up above. */
+.hubi-screen {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  max-width: 980px;
+}
+.hubi-screen .panel-body {
+  padding-bottom: var(--space-4);
+}
+.hubi-note,
+.hubi-group-hint {
+  max-width: 68ch;
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.hubi-group-hint {
+  padding: 0 var(--panel-pad-x);
+}
+.hubi-tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.hubi-tally strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.hubi-orphans,
+.hubi-done,
+.hubi-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.hubi-orphans li,
+.hubi-done li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+.hubi-steps {
+  margin: 0 0 16px;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.65;
+}
+.hubi-steps li + li {
+  margin-top: 8px;
+}
+.hubi-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 6px;
+}
+.hubi-line code {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.hubi-read p {
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+.hubi-error:empty {
+  display: none;
+}
+.hubi-error {
+  margin: 8px 0 12px;
+  font-size: 13px;
+  color: var(--err-text, var(--text));
+}
+.hubi-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  gap: 12px 24px;
+  padding: 16px var(--panel-pad-x);
+  border-top: 1px solid var(--border);
+}
+.hubi-row-title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.hubi-row-facts {
+  margin: 0;
+  color: var(--muted);
+}
+.hubi-row-who,
+.hubi-row-why {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.hubi-row-why {
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
+  color: var(--text);
+}
+.hubi-row-do .field {
+  margin: 0;
+}
+.hubi-row-do select {
+  width: 100%;
+}
+.hubi-join {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.hubi-join input {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.hubi-row-do .hubi-note {
+  margin: 10px 0 0;
+}
+.hubi-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+}
+.hubi-action-text {
+  flex: 1 1 320px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.hubi-action-text strong {
+  color: var(--text);
+}
+.hubi-action-btns {
+  display: flex;
+  gap: 8px;
+}
+.hubi-action .hubi-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* ── Phone: the choice goes under the project, buttons full width ──── */
+@media (max-width: 767px) {
+  .hubi-row {
+    grid-template-columns: minmax(0, 1fr);
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .hubi-group-hint {
+    padding: 0 16px;
+  }
+  .hubi-action {
+    padding: 16px;
+  }
+  .hubi-action-btns {
+    width: 100%;
+  }
+  .hubi-action-btns .btn {
+    flex: 1;
+    justify-content: center;
+  }
+}

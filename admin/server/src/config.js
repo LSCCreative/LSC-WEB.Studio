@@ -109,13 +109,10 @@ const config = {
   isTest: process.env.NODE_ENV === 'test',
   // The Client Portal's /hub/* routes (merge task M2), moved from the hub's own
   // server. Its env names gained HUB_ where billing's would be ambiguous: the
-  // hub's SIGNING_SECRET, ADMIN_EMAIL, ADMIN_PIN_HASH, CORS_ORIGIN and
-  // PUBLIC_BASE_URL. The secrets are read here and passed in; the hub code
-  // reads nothing from the environment itself.
+  // hub's SIGNING_SECRET, CORS_ORIGIN and PUBLIC_BASE_URL. The secret is read
+  // here and passed in; the hub code reads nothing from the environment itself.
   hub: {
     signingSecret: (process.env.HUB_SIGNING_SECRET || '').trim(),
-    adminEmail: (process.env.HUB_ADMIN_EMAIL || 'lachlan@creativelsc.com').trim(),
-    adminPinHash: (process.env.HUB_ADMIN_PIN_HASH || '').trim(),
     corsOrigins: (process.env.HUB_CORS_ORIGINS || 'https://lsccreative.studio')
       .split(',').map((s) => s.trim()).filter(Boolean),
     publicBaseUrl: (process.env.HUB_PUBLIC_BASE_URL || 'https://hub-api.lsccreative.studio').trim(),

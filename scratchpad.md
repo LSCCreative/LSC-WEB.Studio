@@ -134,7 +134,29 @@ Screens: client list search (project names, UPIDs), `#/clients/<id>/projects|det
 archive focus, invoice table stacked, deep links, unknown client, unknown tab. Scratch DB now holds the R2 sample clients (ids `cl_r2*`) at v23.
 Decisions to confirm are under R2 in TASKS.md.
 
-**Next: R3 Build the project page | Model: Opus 5.5 | Effort: High.**
+**R3 done 2026-11-08 (not committed when written).** Schema v24. Accepted projects are four tabs, `ProjectFolder` + `project-deliverables.js`;
+checklist, stage, versions and publish in `routes/deliverables.js`. PIN and hub editor routes gone; `/hub/publish-asset|status` behind billing's
+login until Slice 2. 978+ tests. Checked on the scratch admin at desktop and 375: refusals beside the path field, publish dialog, stage flip, preview,
+archive from the header, acceptance moving into the tabs, invoice Back to Payments, a hostile signer name rendered as text. Launch configs gained
+`DELIVERABLES_DIR=/tmp/lsc-admin-scratch/deliverables`. Not checked: a real video playing in the preview (no small sample here; the error branch ran,
+the Range route is tested), a day's Travel view link (scratch has no trips). Decisions to confirm are under R3 in TASKS.md.
+
+R3 review fixed (same day, 10 findings): `streamFile` survives a failed read and lets a file go when the client leaves; `folderBack` only goes to a tab; a
+deliverable counts as with the client from its first published version; adding an item clears "none expected"; publish says when the NAS is away; archived
+projects are read-only on screen; a save keeps what's half-typed in the other forms; photo preview no longer lists per image; the real login on the Bunny
+routes is tested and settings can't replace it.
+
+**R4 done 2026-11-20 (not committed; R3 isn't committed either: last commit is R2).** Schema v25, `src/hub/adopt.js`,
+`routes/hub-import.js`, screen `#/setup/hub-import` reached from Settings → Old hub. Details and calls to confirm under R4
+in TASKS.md. This session finished what an earlier session left: wired the screen in (script tag, route, Settings section,
+CSS), added `POST …/restore` (Bring back), the Documents "From the old hub" panel, fixed a 503-not-404 test setup, a
+double change handler, the list forgetting imported projects when nothing is pasted, and phone overflow. Review fixes (same day): "Paste another list" reloads the server list; Bring back hands a browser-only copy back to the page; "New client" only reuses a same-named client with no other address; duplicate decisions are a 400; v25 carries a frozen copy of clientForAcceptance instead of calling live code. 1009/1009.
+Scratch admin at `/tmp/lsc-admin-scratch` was re-seeded (it had been wiped): dev account, clients `cl_acme`, `cl_b1`/`cl_b2`
+(shared email), and two imported test hub projects.
+Trap: the import screen's unsaved guard (a list held only in the page) silently reverts a scripted hash change; test other
+pages in a new tab.
+
+**Next: R5 Build the Needs you queue | Model: Sonnet 5.5 | Effort: Medium.**
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
 `routes.js` (`createHubRouter(db, opts)`, not mounted yet), `url-signing.js` (was signing.js), `admin-auth.js`,

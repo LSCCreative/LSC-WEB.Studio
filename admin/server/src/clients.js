@@ -48,19 +48,26 @@ function emailTakenReply(email, holder) {
   };
 }
 
+/* The ids a client's portal logins sit under: their projects', and for work
+   brought over from the old hub, the hub's own (R4). Takes the client id twice. */
+const LOGIN_IDS = `
+  SELECT id FROM projects WHERE client_id = ?
+  UNION
+  SELECT i.hub_id FROM hub_imports i JOIN projects p ON p.id = i.project_id WHERE p.client_id = ?`;
+
 /** Does a project of this client have a portal login? */
 function hasPortalLogin(db, clientId) {
   return Boolean(db.prepare(`
-    SELECT 1 FROM private_auth a JOIN projects p ON p.id = a.project_id WHERE p.client_id = ? LIMIT 1
-  `).get(clientId));
+    SELECT 1 FROM private_auth a WHERE a.project_id IN (${LOGIN_IDS}) LIMIT 1
+  `).get(clientId, clientId));
 }
 
 /** The client's new address onto their projects' logins, inside the caller's transaction. */
 function moveLogin(db, clientId, email, now) {
   db.prepare(`
     UPDATE private_auth SET client_email = ?, email_hash = ?, updated_at = ?
-     WHERE project_id IN (SELECT id FROM projects WHERE client_id = ?)
-  `).run(email, sha256Hex(email), now, clientId);
+     WHERE project_id IN (${LOGIN_IDS})
+  `).run(email, sha256Hex(email), now, clientId, clientId);
 }
 
 module.exports = { normEmail, emailHolder, emailSharedWith, emailTakenReply, hasPortalLogin, moveLogin };

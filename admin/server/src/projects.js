@@ -148,9 +148,10 @@ function applyProjectWrite(db, plan, clientId, now) {
  * S11: what the client side holds for a project. Deleting the project would
  * orphan it (these tables have no foreign key to projects), so every delete
  * path asks first. Add a table here when a task starts keeping project data in
- * one (R3: approvals and client notes; the Bunny rows). Their `project_id` is
- * billing's `projects.id`: /hub/publish refuses any other id, so nothing the
- * client holds can sit under an id this check doesn't see.
+ * one (approvals and client notes; the Bunny rows). Their `project_id` is
+ * billing's `projects.id`. The old hub's rows are the exception: they keep the
+ * hub's id, and `hub_imports` is what holds a project linked to them (R4). A
+ * hub record linked to no project yet has no project to delete.
  */
 const IN_USE = 'The client still uses it.';
 const CLIENT_DATA = [
@@ -159,6 +160,8 @@ const CLIENT_DATA = [
   ['records', 'a published portal record', IN_USE],
   ['private_auth', 'portal access for the client', IN_USE],
   ['agreement_evidence', 'a client sign-off', IN_USE],
+  // Linked to the old hub's records, which keep the hub's id (R4).
+  ['hub_imports', 'work brought over from the old hub', IN_USE],
 ];
 
 // One set of prepared lookups per database, made on first use.

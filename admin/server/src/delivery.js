@@ -250,6 +250,7 @@ function checklistOf(items, versions) {
     estimateId: d.estimate_id,
     quoteLineId: d.quote_line_id,
     stage: d.stage,
+    hubStatus: d.hub_status || null,
     notNeededAt: d.not_needed_at || null,
     versions: versions.filter((v) => v.deliverable_id === d.id).map((v) => ({
       id: v.id,
@@ -257,6 +258,9 @@ function checklistOf(items, versions) {
       stage: v.stage,
       sourcePath: v.source_path,
       fileName: v.file_name,
+      kind: v.kind,
+      photoCount: v.photo_count,
+      driveLink: v.drive_link,
       createdAt: v.created_at,
       publishedAt: v.published_at || null,
     })),
@@ -271,33 +275,34 @@ function readChecklist(db, projectId) {
   );
 }
 
-/* Did the client sign one of this project's quotes? Mark accepted leaves none
-   (brief: "The project page says so plainly; delivery isn't blocked by it"). */
+/* Did the client sign one of this project's quotes, or the old hub's sign-off?
+   Mark accepted leaves neither (brief: "The project page says so plainly; delivery
+   isn't blocked by it"). */
 function projectSigned(db, projectId) {
   return Boolean(db.prepare(`
     SELECT 1 FROM signatures s
       JOIN estimate_versions v ON v.id = s.version_id
       JOIN estimates e ON e.id = v.estimate_id
      WHERE e.project_id = ? LIMIT 1
+  `).get(projectId)) || Boolean(db.prepare(`
+    SELECT 1 FROM agreement_evidence a JOIN hub_imports i ON i.hub_id = a.project_id WHERE i.project_id = ? LIMIT 1
   `).get(projectId));
 }
 
 /**
  * The state of a project row from its checklist, whose money stage the caller
- * already has (projectStage). An item is waiting on the client while its newest
- * version is published; approvals (C5) and submitted notes (C4) join here when
- * they exist.
+ * already has (projectStage). An item is waiting on the client from its first
+ * published version: a newer one still unpublished doesn't take back what they
+ * have. Approvals (C5) and submitted notes (C4) join here when they exist.
  */
 function stateOf(p, money, invoices, deliverables, signed) {
-  const items = deliverables.map((d) => {
-    const newest = d.versions[d.versions.length - 1];
-    return {
-      notNeeded: Boolean(d.notNeededAt),
-      approved: false,
-      awaitingClient: Boolean(newest && newest.publishedAt),
-      notesSubmitted: false,
-    };
-  });
+  const items = deliverables.map((d) => ({
+    notNeeded: Boolean(d.notNeededAt),
+    // Where the old hub left it (R4), until the item's next file. C5's approvals join here.
+    approved: d.hubStatus === 'approved' || d.hubStatus === 'delivered',
+    awaitingClient: d.versions.some((v) => v.publishedAt),
+    notesSubmitted: d.hubStatus === 'changes',
+  }));
   return deliveryState({
     money,
     project: {
@@ -336,6 +341,8 @@ function deliveryReader(db) {
     SELECT DISTINCT e.project_id FROM signatures s
       JOIN estimate_versions v ON v.id = s.version_id
       JOIN estimates e ON e.id = v.estimate_id
+    UNION
+    SELECT i.project_id FROM agreement_evidence a JOIN hub_imports i ON i.hub_id = a.project_id WHERE i.project_id IS NOT NULL
   `).all().map((r) => r.project_id));
   const byProject = (rows) => {
     const map = new Map();

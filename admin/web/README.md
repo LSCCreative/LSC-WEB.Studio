@@ -64,6 +64,9 @@ js/views/estimate-editor.js  the editor
 js/views/clients.js      the client list, and a client's three tabs: Projects,
                          Client details, Invoice index
 js/subtabs.js            sub-tabs inside a record (LSCSubTabs), css/subtabs.css
+js/views/project-folder.js  a project: one page before acceptance, four tabs after
+js/views/project-deliverables.js  its Deliverables tab and one item's page,
+                         css/deliverables.css
 js/views/pricing.js      the Rate Card
 js/views/finance.js      Finance: routes Pricing / Overhead / Goals into
                          #finance-sub. A router, not a screen

@@ -206,6 +206,7 @@
     InvoiceView.init(main, { onAuthLost });
     HomeView.init(main, { onAuthLost });
     SetupView.init(main, { onAuthLost });
+    HubImportView.init(main, { onAuthLost });
     ClientsView.init(main, { onAuthLost, onOpenProject: openProject });
     SettingsView.init(main, { onAuthLost });
     // Whatever the address says, even if it is the screen that was there before
@@ -236,8 +237,8 @@
       shown = ProjectsView.show(route, 'pipeline');
     } else if (area === 'projects') {
       /* Live projects; `new`, a new project's editor (IA flow 1: the project
-         is made on its first save); a project's folder (task 18); its
-         estimate's editor and read-only view under it; and each of its
+         is made on its first save); a project's folder (task 18), in tabs once
+         it's accepted (R3); its estimate's editor and read-only view under it; and each of its
          invoices (task 20). A project lights the tab its record's state says,
          which its screens report once loaded (LSCShell.placeProject); until
          then the last one placed for it, else Scope & Sales. */
@@ -248,7 +249,7 @@
       setNav(at.area, at.page);
       if (id === undefined) shown = ProjectsView.show(route, 'live');
       else if (id === 'new') shown = sub === undefined && EstimatesView.showNew();
-      else if (sub === undefined) shown = ProjectFolder.show(id);
+      else if (sub === undefined || ProjectFolder.TABS.some(([key]) => key === sub)) shown = ProjectFolder.show(id, sub, more);
       else if (sub === 'estimate') shown = EstimatesView.showInProject(id, more, state, route.query);
       else if (sub === 'invoices') shown = InvoiceView.show(id, more, state);
     } else if (area === 'estimates') {
@@ -265,9 +266,15 @@
       setNav('clients', rest.length ? null : 'clients');
       shown = ClientsView.show(route, state);
     } else if (area === 'setup') {
-      // The UPID fix-up (task 16) is reached from the Projects list.
-      setNav('sales', null);
-      shown = SetupView.show(rest, state);
+      // The UPID fix-up (task 16) is reached from the Projects list; the old
+      // hub's import (R4) from Settings, so it sits under the account menu.
+      if (rest[0] === 'hub-import') {
+        setNav(null, 'settings');
+        shown = HubImportView.show(rest);
+      } else {
+        setNav('sales', null);
+        shown = SetupView.show(rest, state);
+      }
     } else if (area === 'settings') {
       // #/settings, or one of its sections (task 21, D65).
       setNav(null, 'settings');

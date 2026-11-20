@@ -186,6 +186,10 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   on every write) and one holder (a new address another client has is refused, 409 `email_taken`; no unique index,
   because two clients left sharing one from before stay until changed, and the record says so). Changing it moves
   their projects' `private_auth` rows in the same transaction. C1's invite must refuse no email and a shared one.
+- A deliverable's version never changes once published, because the client may have commented on it and C5's approvals name it:
+  the next file is a new version. The item's `stage` says what the next version is, and carries the newest along only while it's
+  unpublished. Files are NAS paths checked on add and on publish (`routes/deliverables.js`); the studio's preview reads them behind the
+  login and mints no public token. `/hub/*` writes nothing to `records` since R3: C1-C3 build the portal's reply from these rows.
 - Live projects, the client's groups and the Dashboard's Open read the state model (`project.delivery`, on every
   `GET /api/projects` row through `deliveryReader`), not the money stage: a paid job with open items is Live. The
   `payment-due` list is wider than the badge: anything live with a sent invoice unpaid, so Outstanding invoices' link
@@ -234,7 +238,10 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
 - Dashboard layout: below 768 the column wrappers (`.dash-main`, `.dash-side`) are `display: contents`,
   so Coming up can sit between the lists and Recent activity. Any `grid-area` on their children must be
   reset to `auto` at ≥768. View-transition names go on only while the calendar resizes (`.is-moving`).
-- Sub-tabs (`js/subtabs.js`, for R3 too): each tab is an address, and the screen keeps the tabs on the page and redraws
+- A project's shape follows its state, not its address: `ProjectFolder.draw` puts the address right (`held` carries the reply over the
+  redirect, so it isn't read twice). A checklist write redraws through `applyReply`, leaving the tabs up. In `project-deliverables.js`, a
+  404 with the code `not_found` is the record gone; `file_not_found` is a 404 too and is only a refusal.
+- Sub-tabs (`js/subtabs.js`): each tab is an address, and the screen keeps the tabs on the page and redraws
   only the panel, or a keyboard user loses their place. The router resets the title on every route, so a panel move
   sets it again. `--shadow-focus` is two shadows, so `inset var(--shadow-focus)` draws its outer ring outside the box
   (side bars in a clipped row): write the inset ring out.
@@ -282,5 +289,5 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
 - **Tests and the clock:** public accept, re-send and retry read the real clock, not the app's injected `today`. A test that passes through them needs a date worked out from `Date.now()`, because a fixed one starts failing the day after it passes.
 - **Migrations copy first:** `openDatabase` takes a `premigrate-*.db` copy before migrating an existing database, into the `backups/` folder beside it unless `backupDir` says otherwise, and refuses to start if it can't. The scripts get it too; `backupDir: false` opts out.
 - **Hub routes:** their writes take the same pre-write copy as `/api`, after the request is checked. Client sign-in is rate-limited per address and stops after 10 wrong codes per email in 15 minutes. They read the client's address through billing's `clientIp`.
-- **Portal boundaries (M3):** `app.js` always trusts one proxy hop; `TRUST_PROXY` is retired and `clientIp` reads `CF-Connecting-IP` first. The hub's hostname (from `HUB_PUBLIC_BASE_URL`, read off the Host header in one spelling: no port, no trailing dot) serves `/hub/*` and `/health` only. `/health` is plain liveness; the deliverables folder's state is `GET /hub/deliverables-health` (editor) and the start-up log. Billing's CORS skips `/hub` and never grants a `HUB_CORS_ORIGINS` origin. The portal router mounts before billing's `express.json`; raw-body routes go above both.
+- **Portal boundaries (M3):** `app.js` always trusts one proxy hop; `TRUST_PROXY` is retired and `clientIp` reads `CF-Connecting-IP` first. The hub's hostname (from `HUB_PUBLIC_BASE_URL`, read off the Host header in one spelling: no port, no trailing dot) serves `/hub/*` and `/health` only. `/health` is plain liveness; the deliverables folder's state is the start-up log and the checklist's own refusals. Billing's CORS skips `/hub` and never grants a `HUB_CORS_ORIGINS` origin. The portal router mounts before billing's `express.json`; raw-body routes go above both.
 - **A full run can stall on a Mac** (seen 2026-11-06, local disk too, not Google Drive as first thought): a file that renders real PDFs (`test-api`, `test-hnry-send`) finishes its tests, then sits at 0% CPU. Its headless Chrome's `chrome_crashpad_handler` outlived Chrome and still holds the test's pipe. Find it with `lsof -p <test pid>` (a unix socket to `chrome_cr`), kill that handler only, or rerun. The flags `--disable-crash-reporter --disable-breakpad` didn't clearly stop it. Not seen on the NAS, which renders with Linux Chromium. Under the same load a real render can also time out (`test-pdf`'s "renders a real PDF", 500 after 30 s); it passes alone.

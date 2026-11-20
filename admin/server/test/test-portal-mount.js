@@ -25,19 +25,16 @@ delete process.env.TRUST_PROXY;
 
 const { openDatabase } = require('../src/db');
 const { createApp } = require('../src/app');
+const { hashPassword } = require('../src/auth');
 
 const PORTAL = 'https://lsccreative.studio';
 const ADMIN_ORIGIN = 'https://app.lsccreative.studio';
 const HUB_HOST = 'hub.example';
-const PIN = '4821';
-const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const DELIVERABLES = path.join(TMP, 'deliverables');
 fs.mkdirSync(path.join(DELIVERABLES, 'Acme'), { recursive: true });
 
 const hubSettings = (over = {}) => ({
   signingSecret: 'test-signing-secret',
-  adminEmail: 'owner@lsc.example',
-  adminPinHash: sha(PIN),
   corsOrigins: [PORTAL],
   publicBaseUrl: `https://${HUB_HOST}`,
   deliverablesDir: DELIVERABLES,
@@ -48,7 +45,7 @@ const hubSettings = (over = {}) => ({
 
 async function start(opts = {}) {
   const db = openDatabase(path.join(TMP, `app-${crypto.randomBytes(4).toString('hex')}.db`));
-  // /hub/publish takes billing projects only (S11).
+  // Portal rows are billing projects (S11).
   db.prepare("INSERT INTO projects (id, created_at, updated_at) VALUES ('p_ip', 'x', 'x')").run();
   const app = createApp(db, { hub: hubSettings(), ...opts });
   const server = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
@@ -124,15 +121,36 @@ test('the portal’s hostname serves the portal and /health only (S4)', async ()
 });
 
 test('a forged X-Forwarded-For can’t change the IP an agreement records (S7)', async () => {
-  const signIn = await s.call('/hub/admin-auth', { host: HUB_HOST, method: 'POST', body: { email: 'owner@lsc.example', pin: PIN } });
-  const cookie = signIn.headers['set-cookie'][0].split(';')[0];
-  await s.call('/hub/publish', { host: HUB_HOST, method: 'POST', headers: { cookie }, body: { record: { id: 'p_ip' }, priv: {} } });
+  s.db.prepare("INSERT INTO records (project_id, data, updated_at) VALUES ('p_ip', '{}', 'x')").run();
   const signed = await s.call('/hub/agreement', { host: HUB_HOST, method: 'POST',
     headers: { 'x-forwarded-for': '6.6.6.6, 203.0.113.9' },
     body: { projectId: 'p_ip', signerName: 'P', signedAt: 'x', signatureDataUrl: 'data:,', consentText: 'ok', consentChecked: true } });
   assert.equal(signed.status, 200, signed.text);
-  const got = await s.call('/hub/agreement/p_ip', { host: HUB_HOST, headers: { cookie } });
-  assert.equal(got.body.ipAddress, '203.0.113.9', 'the hop the tunnel added, not the one the client wrote');
+  const got = s.db.prepare("SELECT ip_address FROM agreement_evidence WHERE project_id = 'p_ip'").get();
+  assert.equal(got.ip_address, '203.0.113.9', 'the hop the tunnel added, not the one the client wrote');
+});
+
+test('the Bunny publish routes take billing’s real login, and settings can’t replace it (R3)', async () => {
+  const open = await start({ hub: hubSettings({ requireAdmin: (_req, _res, next) => next() }) });
+  try {
+    open.db.prepare("INSERT INTO account (id, username, password_hash, created_at, updated_at) VALUES (1, 'tester', ?, 'x', 'x')")
+      .run(await hashPassword('a-long-test-password'));
+    const routes = [['/hub/publish-asset', 'POST'], ['/hub/publish-status?path=Acme/x.mp4', 'GET']];
+    for (const [p, method] of routes) {
+      const refused = await open.call(p, { method, body: method === 'POST' ? { path: 'Acme/x.mp4' } : undefined });
+      assert.equal(refused.status, 401, p);
+    }
+    const login = await open.call('/api/login', { method: 'POST', body: { username: 'tester', password: 'a-long-test-password' } });
+    assert.equal(login.status, 200, login.text);
+    const cookie = login.headers['set-cookie'][0].split(';')[0];
+    for (const [p, method] of routes) {
+      // Past the login; these settings have no Bunny keys.
+      const r = await open.call(p, { method, headers: { cookie }, body: method === 'POST' ? { path: 'Acme/x.mp4' } : undefined });
+      assert.deepEqual([r.status, r.body], [503, { error: 'bunny not set up' }], p);
+    }
+    const stray = await open.call('/hub/publish-asset', { method: 'POST', headers: { cookie: 'other=%E0%A4%A' }, body: {} });
+    assert.equal(stray.status, 401, 'another site’s malformed cookie is a refusal, not a server error');
+  } finally { await open.close(); }
 });
 
 test('the portal reads its own bodies, ahead of billing’s parser (S20)', async () => {
@@ -157,18 +175,14 @@ test('one /health: plain ok, saying nothing about the deliverables folder', asyn
   } finally { await gone.close(); }
 });
 
-test('without the portal’s secrets billing still starts and /hub says so; half of them stops it', async () => {
-  const none = await start({ hub: hubSettings({ signingSecret: '', adminPinHash: '' }) });
+test('without the portal’s secret billing still starts and /hub says so', async () => {
+  const none = await start({ hub: hubSettings({ signingSecret: '' }) });
   try {
     const r = await none.call('/hub/auth', { method: 'POST', body: {} });
     assert.deepEqual([r.status, r.body], [503, { error: 'portal not set up' }]);
     assert.equal((await none.call('/api/session', { host: HUB_HOST })).status, 404, 'the hostname rule holds anyway');
     assert.equal((await none.call('/api/session')).status, 401);
   } finally { await none.close(); }
-  const db = openDatabase(path.join(TMP, 'half.db'));
-  assert.throws(() => createApp(db, { hub: hubSettings({ adminPinHash: '' }) }), /HUB_ADMIN_PIN_HASH/);
-  assert.throws(() => createApp(db, { hub: hubSettings({ signingSecret: '' }) }), /HUB_SIGNING_SECRET/);
-  db.close();
 });
 
 test('a test that passes no portal settings never reads the real ones', async () => {

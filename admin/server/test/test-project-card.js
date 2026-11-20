@@ -17,6 +17,8 @@ const { projectStage } = require('../src/projects');
 const webDir = join(__dirname, '..', '..', 'web', 'js');
 const sandbox = { console, Intl };
 sandbox.globalThis = sandbox;
+let behind = null; // the entry one Back away, as the router would say
+sandbox.LSCRouter = { behindPath: () => behind };
 const ctx = vm.createContext(sandbox);
 // Same order as index.html. Top-level consts don't land on the sandbox, so
 // the card is read back out by name.
@@ -36,6 +38,18 @@ test('project-card.js loads after util.js and calendar.js, as index.html orders 
   const at = (f) => html.indexOf('js/' + f);
   assert.ok(at('util.js') < at('calendar.js') && at('calendar.js') < at('project-card.js'));
   assert.ok(at('project-card.js') < at('views/project-list.js') && at('project-card.js') < at('views/clients.js'));
+});
+
+test('leaving for a project goes back to a tab only', () => {
+  const back = (from, fallback) => { behind = from; return ProjectCard.folderBack('p1', fallback); };
+  for (const tab of ['/projects/p1/deliverables', '/projects/p1/deliverables/d1', '/projects/p1/production', '/projects/p1/payments', '/projects/p1/documents']) {
+    assert.equal(back(tab), tab);
+  }
+  // The project's other screens aren't where Back ends: one of them is the editor itself under its ?trip entry.
+  for (const other of ['/projects/p1/estimate', '/projects/p1/estimate/view', '/projects/p1/invoices/i1', '/projects/p1/production/x', '/projects/p2/payments', '/pipeline', null]) {
+    assert.equal(back(other), '/projects/p1', String(other));
+  }
+  assert.equal(back('/projects/p1/invoices/i1', '/projects/p1/payments'), '/projects/p1/payments');
 });
 
 test('the stage line words every step', () => {

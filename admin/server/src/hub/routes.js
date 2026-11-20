@@ -17,12 +17,9 @@ const { createBackup } = require('../backup');
 const { sha256Hex, randomToken } = require('./tokens');
 const { createUrlSigner } = require('./url-signing');
 const { createHubCors } = require('./cors');
-const { createAdminAuth } = require('./admin-auth');
 const { createBunny, missingBunnySettings, statusFromVideo } = require('./bunny');
-const { createDeliverables, streamFile, MAX_PHOTOS_PER_FOLDER } = require('./deliverables');
+const { createDeliverables, streamFile, VIDEO_EXTENSIONS } = require('./deliverables');
 const { createAttemptThrottle } = require('./throttle');
-
-const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.webm', '.m4v']);
 
 /* How long a publish may wait for Bunny to list the fetched video before it is
    reported as failed. Without it a lost fetch job stays "processing" forever. */
@@ -52,7 +49,7 @@ function publishTag(seed) {
 
 /**
  * opts (config.hub, see config.js; its defaults live there, not here):
- *   signingSecret, adminEmail, adminPinHash  required; the router won't build without the secrets
+ *   signingSecret   required; the router won't build without the secret
  *   publicBaseUrl   required: this API's public address, used in the links it hands out
  *   deliverablesDir required: the read-only NAS deliverables folder
  *   backupDir       required: where the copy before each write goes (billing's backups)
@@ -60,7 +57,9 @@ function publishTag(seed) {
  *   bunny           Bunny settings; with any missing, publishing answers 503
  *   rateLimit       required: billing's per-address limiter (routes/public.js)
  *   clientIp        required: billing's client address (routes/public.js), so the
- *                   PIN throttle and the agreement's evidence read what billing's do
+ *                   agreement's evidence reads what billing's does
+ *   requireAdmin    required: billing's login check (auth.js requireAuth). The studio's
+ *                   routes here are the Bunny publish pair, until Slice 2 moves them to /api
  *   limits          overrides LIMITS, for tests
  * Tests only: bunnyFetch swaps fetch for Bunny calls, videoLookupGapMs the wait
  * between looking for a fetched video.
@@ -69,41 +68,21 @@ function createHubRouter(db, opts = {}) {
   for (const [key, name] of [['publicBaseUrl', 'HUB_PUBLIC_BASE_URL'], ['deliverablesDir', 'DELIVERABLES_DIR'], ['backupDir', 'the backups folder']]) {
     if (!opts[key]) throw new Error(`The hub router needs ${key} (${name}); config.hub carries it.`);
   }
-  for (const key of ['rateLimit', 'clientIp']) {
-    if (typeof opts[key] !== 'function') throw new Error(`The hub router needs ${key}, from billing's routes/public.js; app.js passes it.`);
+  for (const key of ['rateLimit', 'clientIp', 'requireAdmin']) {
+    if (typeof opts[key] !== 'function') throw new Error(`The hub router needs ${key}, from billing's code; app.js passes it.`);
   }
-  const { publicBaseUrl, backupDir, clientIp } = opts;
+  const { publicBaseUrl, backupDir, clientIp, requireAdmin } = opts;
   const limits = { ...LIMITS, ...(opts.limits || {}) };
   const limit = (name) => opts.rateLimit(limits[name]);
   const codeFailures = createAttemptThrottle({ limit: CODE_FAILURE_LIMIT, windowMs: CODE_FAILURE_WINDOW_MS });
   const lookupGapMs = opts.videoLookupGapMs ?? 1000;
   const signer = createUrlSigner(opts.signingSecret);
   const { credentialedCors, openCors } = createHubCors(opts.corsOrigins || []);
-  const auth = createAdminAuth(db, { adminEmail: opts.adminEmail, adminPinHash: opts.adminPinHash });
   const deliverables = createDeliverables(opts.deliverablesDir);
   const bunnyMissing = missingBunnySettings(opts.bunny);
   const bunny = bunnyMissing.length ? null : createBunny(opts.bunny, { fetchImpl: opts.bunnyFetch });
-  const { requireAdmin } = auth;
 
-  const upsertRecord = db.prepare(`
-    INSERT INTO records (project_id, data, updated_at)
-    VALUES (@project_id, @data, @updated_at)
-    ON CONFLICT(project_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at
-  `);
-  const upsertPrivateAuth = db.prepare(`
-    INSERT INTO private_auth (project_id, client_email, email_hash, code_hash, invite_token, delivered, updated_at)
-    VALUES (@project_id, @client_email, @email_hash, @code_hash, @invite_token, @delivered, @updated_at)
-    ON CONFLICT(project_id) DO UPDATE SET
-      client_email = excluded.client_email,
-      email_hash   = excluded.email_hash,
-      code_hash    = excluded.code_hash,
-      invite_token = excluded.invite_token,
-      delivered    = excluded.delivered,
-      updated_at   = excluded.updated_at
-  `);
   const getRecord = db.prepare('SELECT data FROM records WHERE project_id = ?');
-  const getProject = db.prepare('SELECT 1 FROM projects WHERE id = ?');
-  const getAgreementEvidence = db.prepare('SELECT * FROM agreement_evidence WHERE project_id = ?');
   const findByEmailHash = db.prepare('SELECT * FROM private_auth WHERE email_hash = ?');
   const findByInviteToken = db.prepare('SELECT * FROM private_auth WHERE invite_token = ?');
 
@@ -307,46 +286,6 @@ function createHubRouter(db, opts = {}) {
   // the exact bytes for their signature check (merge safeguard S20).
   router.use('/hub', express.json({ limit: '2mb' }));
 
-  // ── POST /hub/admin-auth: email + PIN → HttpOnly session cookie
-  router.use('/hub/admin-auth', credentialedCors);
-  router.post('/hub/admin-auth', (req, res) => {
-    const ip = clientIp(req);
-    if (auth.isRateLimited(ip)) return res.status(429).json({ error: 'too many attempts' });
-    auth.recordAttempt(ip);
-    const { email, pin } = req.body || {};
-    if (!auth.verifyAdminPin(email, pin)) return res.status(401).json({ error: 'invalid credentials' });
-    auth.setAdminSessionCookie(res, auth.createAdminSession());
-    res.json({ ok: true });
-  });
-
-  // ── POST /hub/publish (admin): { record, priv }
-  router.use('/hub/publish', credentialedCors);
-  router.post('/hub/publish', requireAdmin, async (req, res) => {
-    const { record, priv } = req.body || {};
-    if (!record || !record.id || !priv) return res.status(400).json({ error: 'bad payload' });
-    // Portal rows are keyed by billing's projects.id (merged-admin S11): that is
-    // what the admin's delete guard (projects.js clientDataHeld) looks under, so
-    // a record under any other id could be orphaned by a delete it never saw.
-    if (!getProject.get(String(record.id))) return res.status(404).json({ error: 'unknown_project' });
-    await backupBeforeWrite();
-
-    const now = new Date().toISOString();
-    const clientEmail = String(priv.clientEmail || '').trim();
-    db.transaction(() => {
-      upsertRecord.run({ project_id: record.id, data: JSON.stringify(record), updated_at: now });
-      upsertPrivateAuth.run({
-        project_id: record.id,
-        client_email: clientEmail,
-        email_hash: clientEmail ? sha256Hex(clientEmail.toLowerCase()) : null,
-        code_hash: priv.codeHash || null,
-        invite_token: priv.inviteToken || null,
-        delivered: priv.delivered ? 1 : 0,
-        updated_at: now,
-      });
-    })();
-    res.json({ ok: true, publishedAt: now });
-  });
-
   // ── POST /hub/auth: { email, code } or { invite }. Credentialed CORS because
   // the portal sends credentials on every call, though this route reads no cookie.
   router.use('/hub/auth', credentialedCors);
@@ -418,23 +357,6 @@ function createHubRouter(db, opts = {}) {
     res.json({ ok: true });
   });
 
-  // ── GET /hub/agreement/:projectId (admin): the evidence bundle; 404 if never signed
-  router.get('/hub/agreement/:projectId', requireAdmin, (req, res) => {
-    const row = getAgreementEvidence.get(req.params.projectId);
-    if (!row) return res.status(404).json({ error: 'not found' });
-    res.json({
-      signerName: row.signer_name,
-      signedAt: row.signed_at,
-      signatureDataUrl: row.signature_data_url,
-      consentText: row.consent_text,
-      consentChecked: Boolean(row.consent_checked),
-      userAgent: row.user_agent,
-      verificationToken: row.verification_token,
-      ipAddress: row.ip_address,
-      receivedAt: row.received_at,
-    });
-  });
-
   // ── GET /hub/records/:projectId?token=&expires=: a signed, short-lived read,
   // reached only through the URLs /hub/auth hands out.
   router.use('/hub/records', openCors);
@@ -448,41 +370,6 @@ function createHubRouter(db, opts = {}) {
     res.type('application/json').send(row.data);
   });
 
-  // ── POST /hub/deliverable-url (admin): { path, downloadable? } → { url }.
-  // A stable link for a file already in the deliverables folder. Asking again
-  // for the same file returns the same link.
-  router.use('/hub/deliverable-url', credentialedCors);
-  router.post('/hub/deliverable-url', requireAdmin, async (req, res) => {
-    const path = String(req.body?.path || '').trim();
-    const downloadable = req.body?.downloadable ? 1 : 0;
-    if (!deliverables.resolveDeliverablePath(path)) return res.status(404).json({ error: 'file not found' });
-    await backupBeforeWrite();
-    res.json({ url: `${publicBaseUrl}/hub/files/${tokenFor(path, downloadable)}` });
-  });
-
-  // ── POST /hub/deliverable-folder (admin): a photo library, one link pair per image
-  router.use('/hub/deliverable-folder', credentialedCors);
-  router.post('/hub/deliverable-folder', requireAdmin, async (req, res) => {
-    const path = String(req.body?.path || '').trim();
-    const names = deliverables.listDeliverableFolderImages(path);
-    if (!names) return res.status(404).json({ error: 'folder not found' });
-    if (!names.length) return res.status(422).json({ error: 'no images in folder' });
-    if (names.length > MAX_PHOTOS_PER_FOLDER) {
-      return res.status(422).json({
-        error: `folder has ${names.length} images (limit ${MAX_PHOTOS_PER_FOLDER}) — point at a single delivery folder`,
-      });
-    }
-    await backupBeforeWrite();
-    const photos = names.map((name) => {
-      // `path` is checked to be inside the folder and `name` comes from
-      // readdir, never the request, so this can't escape it.
-      const relative = `${path.replace(/\/+$/, '')}/${name}`;
-      const [reviewUrl, downloadUrl] = [0, 1].map((d) => `${publicBaseUrl}/hub/files/${tokenFor(relative, d)}`);
-      return { name, reviewUrl, downloadUrl };
-    });
-    res.json({ photos });
-  });
-
   // ── GET /hub/files/:token: the stable link itself. Public by design: the
   // token is the access control, like a pasted Bunny Stream link.
   router.use('/hub/files', openCors);
@@ -494,7 +381,7 @@ function createHubRouter(db, opts = {}) {
     streamFile(req, res, resolved.absolute, resolved.stat, Boolean(row.downloadable));
   });
 
-  // ── POST /hub/publish-asset (admin): { path, kind: 'video', force? }. Once per
+  // ── POST /hub/publish-asset (the studio): { path, kind: 'video', force? }. Once per
   // NAS path unless force:true. Bunny pulls the file from its /hub/files link.
   router.use('/hub/publish-asset', credentialedCors);
   router.post('/hub/publish-asset', requireAdmin, requireBunny, async (req, res) => {
@@ -529,7 +416,7 @@ function createHubRouter(db, opts = {}) {
     }
   });
 
-  // ── GET /hub/publish-status?path=&kind= (admin). Doesn't need the NAS file:
+  // ── GET /hub/publish-status?path=&kind= (the studio). Doesn't need the NAS file:
   // a published video can outlive it.
   router.use('/hub/publish-status', credentialedCors);
   router.get('/hub/publish-status', requireAdmin, requireBunny, async (req, res) => {
@@ -538,22 +425,6 @@ function createHubRouter(db, opts = {}) {
     if (!row) return res.status(404).json({ error: 'not published' });
     const current = await resolveVideoId(row);
     res.json(bunnyAssetResponse(current, deliverables.resolveDeliverablePath(path)?.stat));
-  });
-
-  // ── GET /hub/deliverables-health (admin): whether the NAS folder can be read.
-  // Off the public /health, which says nothing about the data.
-  router.use('/hub/deliverables-health', credentialedCors);
-  router.get('/hub/deliverables-health', requireAdmin, async (_req, res) => {
-    res.json(await deliverables.health());
-  });
-
-  // ── POST /hub/notify (admin): invitation, reset and delivery emails. Not
-  // sent yet: it logs the request, as on the hub.
-  router.use('/hub/notify', credentialedCors);
-  router.post('/hub/notify', requireAdmin, (req, res) => {
-    const payload = req.body || {};
-    console.log('[hub/notify]', JSON.stringify(payload));
-    res.json({ ok: true, dispatched: payload.kind || 'unknown' });
   });
 
   /* The hub's server answered everything in JSON, and the portal reads every

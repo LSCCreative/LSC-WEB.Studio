@@ -32,11 +32,13 @@ const EstimatesView = (() => {
   // work is Pipeline work (merged-admin L3).
   const LIST = '/pipeline';
   const folderPath = (projectId) => '/projects/' + encodeURIComponent(projectId);
+  // Leaving for the project: the tab it was opened from, when that's one Back away.
+  const backTo = (projectId) => ProjectCard.folderBack(projectId);
   // A project as far as these paths need it: its id and its lead estimate.
   const projectOf = (estimate) => ({ id: estimate.projectId, estimateId: estimate.id });
 
   function handlers(project) {
-    const back = project ? folderPath(project.id) : LIST;
+    const back = project ? backTo(project.id) : LIST;
     return {
       onAuthLost,
       onEdit: (estimate) => LSCRouter.go(ProjectFolder.estimatePath(project, estimate, false), { state: { estimate, project } }),
@@ -53,14 +55,14 @@ const EstimatesView = (() => {
          is one Back away, so Back afterwards doesn't reopen the editor; a new
          project's editor entry becomes its folder instead. The form was just
          saved, so there is nothing for the guard to ask about. */
-      onSaved: (estimate) => LSCRouter.leaveTo(folderPath(estimate.projectId), { skipGuard: true, replace: true }),
+      onSaved: (estimate) => LSCRouter.leaveTo(backTo(estimate.projectId), { skipGuard: true, replace: true }),
       /* Autosave (trip-planner task 8). A new project's first save: the
          editor stays, at the project's address (IA flow 4). */
       onCreated: (estimate) => LSCRouter.rename(ProjectFolder.estimatePath(projectOf(estimate), estimate, false)),
       /* Done: the project once saved, else (a new one never saved) where
          Cancel goes. The guard asks about anything still unsaved. */
       onDone: (estimate) => (estimate && estimate.projectId
-        ? LSCRouter.leaveTo(folderPath(estimate.projectId), { replace: true })
+        ? LSCRouter.leaveTo(backTo(estimate.projectId), { replace: true })
         : LSCRouter.leaveTo(back, { replace: true })),
       // Its folder may be gone too (a project's last estimate takes it), so
       // this replaces rather than going Back to it.

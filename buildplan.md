@@ -23,8 +23,9 @@ Full context and decisions: `feature-spec.md`. Work strictly top-to-bottom.
   Publishing is a server action on that version, so nothing has to copy URLs into an asset.
 - **Admin calls go through billing's login.** The admin is same-origin on
   `app.lsccreative.studio`, so publish and status routes live under `/api` behind billing's
-  `requireAuth`. The PIN-based `/hub/publish-asset` and `/hub/publish-status` (Slice 2's
-  first cut, in `admin/server/src/hub/routes.js`) go when R3 retires the PIN.
+  `requireAuth`. `/hub/publish-asset` and `/hub/publish-status` (Slice 2's first cut, in
+  `admin/server/src/hub/routes.js`) lost the PIN in R3 and sit behind billing's login until
+  Slice 2 moves them.
 - **The server builds media URLs when it answers, it doesn't store them.** The portal's
   project reply works out each deliverable's review and download URLs from its Bunny row.
   That's what lets Slice 9 sign them and leave out locked downloads in one place.
@@ -86,7 +87,8 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
         `{ status, error, sourceChanged, posterUrl, progress }` and adopts a video Bunny
         hasn't listed yet (the existing lookup and 30-minute limit).
       - Port the logic out of `hub/routes.js` into a `src/bunny-publish.js` that both the
-        routes and later slices call. Drop the PIN routes when R3 removes the PIN, not before.
+        routes and later slices call, and drop those two `/hub` routes. R3 landed the publish
+        route itself (`routes/deliverables.js`, sets `published_at`): this slice gives it the fetch.
       - Tests (fake Bunny from the OpenAPI shapes, as Slice 2's first cut had 57/57): guards,
         idempotency, 3 simultaneous publishes, force, failure keeps the old video, late
         listing, adoption, timeout, restart, signed source URL expires, another project's

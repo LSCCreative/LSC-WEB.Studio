@@ -83,6 +83,21 @@ const ProjectCard = (() => {
     return { path: place.path, crumb: place.crumb };
   }
 
+  /* An accepted project's tabs, each an address (IA "Project"). */
+  const PROJECT_TABS = [['deliverables', 'Deliverables'], ['production', 'Production'], ['payments', 'Payments'], ['documents', 'Documents']];
+
+  /* Where a screen under a project goes back to: the tab it was opened from when
+     that is one Back away, else `fallback`, else the project (which opens on its
+     default tab once it's accepted). Only a tab, or a deliverable under one: the
+     project's other screens (its estimate, an invoice) aren't where Back ends. */
+  function folderBack(projectId, fallback) {
+    const home = '/projects/' + encodeURIComponent(projectId);
+    const behind = LSCRouter.behindPath();
+    const rest = behind && behind.startsWith(home + '/') ? behind.slice(home.length + 1).split('/') : [];
+    const isTab = PROJECT_TABS.some(([key]) => key === rest[0]) && (rest.length === 1 || (rest.length === 2 && rest[0] === 'deliverables'));
+    return isTab ? behind : fallback || home;
+  }
+
   /* An old address's `?stage=` (from before the Pipeline had its own screen)
      as the screen that now holds those projects, or null when the stage is
      one the lists still use: '/pipeline?stage=sent', '/projects', '/clients'. */
@@ -223,6 +238,16 @@ const ProjectCard = (() => {
       case 'invoices_created': return 'Invoices created' + invoicesText(d);
       case 'declined': return 'Declined';
       case 'reopened': return 'Reopened';
+      case 'deliverable_added': return 'Added “' + (d.title || 'a deliverable') + '” to the checklist';
+      case 'deliverable_removed': return 'Removed “' + (d.title || 'a deliverable') + '” from the checklist';
+      case 'deliverable_not_needed': return 'Marked “' + (d.title || 'a deliverable') + '” not needed';
+      case 'deliverable_needed': return 'Put “' + (d.title || 'a deliverable') + '” back on the checklist';
+      case 'deliverable_stage': return '“' + (d.title || 'A deliverable') + '” is now a ' + (d.stage === 'final' ? 'Final' : 'Draft Cut');
+      case 'version_added': return 'Added v' + d.n + ' of “' + (d.title || 'a deliverable') + '”' + (d.file ? ': ' + d.file : '');
+      case 'version_removed': return 'Removed v' + d.n + ' of “' + (d.title || 'a deliverable') + '”';
+      case 'version_published': return 'Published v' + d.n + ' of “' + (d.title || 'a deliverable') + '” as a ' + (d.stage === 'final' ? 'Final' : 'Draft Cut');
+      case 'no_deliverables': return 'Said no deliverables are expected';
+      case 'deliverables_expected': return 'Said deliverables are expected after all';
       case 'archived': return 'Archived';
       case 'unarchived': return 'Unarchived, back in Complete';
       case 'invoice_sent': return (d.by === 'hnry' ? (d.hnryNumber || d.number || 'Invoice') : (d.number || 'Invoice')) +
@@ -316,5 +341,5 @@ const ProjectCard = (() => {
     });
   }
 
-  return { PIPELINE_CHIPS, LIVE_CHIPS, placeOf, backOf, redirectForStage, stageLine, stageMarkup, badgeMarkup, cardMarkup, bind, pathOf, dayMonth, localDate, activityText };
+  return { PIPELINE_CHIPS, LIVE_CHIPS, PROJECT_TABS, placeOf, backOf, folderBack, redirectForStage, stageLine, stageMarkup, badgeMarkup, cardMarkup, bind, pathOf, dayMonth, localDate, activityText };
 })();

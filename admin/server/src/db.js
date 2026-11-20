@@ -1064,6 +1064,27 @@ const MIGRATIONS = [
       });
     },
   },
+  {
+    version: 24,
+    name: 'deliverable versions: what the file is, and its Drive backup',
+    up(db) {
+      // `kind` and the count are kept because the NAS can be away when a version
+      // is read; the Drive link is the player's fallback (player contract 5).
+      const cols = new Set(db.prepare('PRAGMA table_info(deliverable_versions)').all().map((c) => c.name));
+      if (!cols.has('kind')) {
+        db.exec("ALTER TABLE deliverable_versions ADD COLUMN kind TEXT NOT NULL DEFAULT 'video' CHECK (kind IN ('video', 'photos'))");
+      }
+      if (!cols.has('photo_count')) db.exec('ALTER TABLE deliverable_versions ADD COLUMN photo_count INTEGER NOT NULL DEFAULT 0');
+      if (!cols.has('drive_link')) db.exec("ALTER TABLE deliverable_versions ADD COLUMN drive_link TEXT NOT NULL DEFAULT ''");
+    },
+  },
+  {
+    version: 25,
+    name: 'old hub projects onto billing records, and accepted projects their clients',
+    up(db) {
+      require('./migrations/v25-hub-adoption').migrateV25(db, nowIso());
+    },
+  },
 ];
 
 /**

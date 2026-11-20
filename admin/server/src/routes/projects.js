@@ -8,6 +8,7 @@ const { readDays } = require('../days');
 const { readRentals } = require('../rentals');
 const { loadEstimate } = require('../estimate');
 const { clientForAcceptance, createChecklist, readDelivery, deliveryReader } = require('../delivery');
+const { hubIdOf, hubFacts } = require('../hub/adopt');
 const { readSettings } = require('../ratecard');
 const { depositAmount, finalInvoiceTotals, singleInvoiceTotals, tripLineQty } = require('../calc');
 const { amountDue, hnryFields } = require('../invoices');
@@ -178,7 +179,8 @@ function summarize(p, own, bills, ctx) {
     id: p.id,
     upid: p.upid,
     needsUpid: p.needs_upid === 1,
-    name: lead ? lead.name : '',
+    // No estimate names a project the old hub brought (R4): it keeps the hub's name.
+    name: lead ? lead.name : p.name || '',
     client: {
       id: p.client_id || null,
       businessName: snapshot.businessName || (record && record.business_name) || '',
@@ -261,7 +263,7 @@ function readProjectRows(db, { today, clientId = null }) {
     const settled = settledAt(p, bills, project.stage);
     const lead = own.find((e) => e.id === project.estimateId);
     const snapshot = lead ? JSON.parse(lead.client_json || '{}') : {};
-    const jobText = [p.upid, ...own.map((e) => e.upid), ...own.map((e) => e.name)]
+    const jobText = [p.upid, p.name, ...own.map((e) => e.upid), ...own.map((e) => e.name)]
       .filter(Boolean).join('\n').toLowerCase();
     return {
       project,
@@ -299,6 +301,8 @@ function readFolder(db, id, today) {
     depositPct: p.deposit_pct === null || p.deposit_pct === undefined ? null : p.deposit_pct,
     // What Mark accepted's deposit % starts at (D33).
     depositPctDefault: depositPctFor(db, p),
+    archivedAt: p.archived_at || null,
+    noDeliverablesAt: p.no_deliverables_at || null,
     createdAt: p.created_at,
     updatedAt: p.updated_at,
   });
@@ -333,10 +337,24 @@ function readFolder(db, id, today) {
     })
     .sort((a, b) => (a.id === project.estimateId ? -1 : b.id === project.estimateId ? 1 : 0) ||
       (b.updatedAt > a.updatedAt) - (b.updatedAt < a.updatedAt));
+  // A sign-off the old hub took: the Documents tab's evidence. It stays under the
+  // hub's id, which hub_imports links to this project (R4).
+  const signedOff = db.prepare('SELECT * FROM agreement_evidence WHERE project_id = ?').get(hubIdOf(db, id) || id);
   return {
     project,
     estimates,
     deliverables: delivery.deliverables,
+    hub: hubFacts(db, id),
+    evidence: signedOff ? {
+      signerName: signedOff.signer_name,
+      signedAt: signedOff.signed_at,
+      signatureDataUrl: signedOff.signature_data_url,
+      consentText: signedOff.consent_text,
+      userAgent: signedOff.user_agent,
+      verificationToken: signedOff.verification_token,
+      ipAddress: signedOff.ip_address,
+      receivedAt: signedOff.received_at,
+    } : null,
     invoices: bills.map((i) => ({
       id: i.id,
       kind: i.kind,

@@ -17,6 +17,8 @@ const { registerCalendarRoutes } = require('./routes/calendar');
 const { registerHolidayRoutes } = require('./routes/holidays');
 const { registerSetupRoutes } = require('./routes/setup');
 const { registerProjectRoutes } = require('./routes/projects');
+const { registerDeliverableRoutes } = require('./routes/deliverables');
+const { registerHubImportRoutes } = require('./routes/hub-import');
 const { registerInvoiceRoutes } = require('./routes/invoices');
 const { registerPublicRoutes, rateLimit, clientIp } = require('./routes/public');
 const { registerEmailRoutes, registerSendRoutes } = require('./routes/email');
@@ -101,18 +103,17 @@ function portalHostOnly(portalHost) {
 }
 
 /**
- * The Client Portal's routes, or a 503 for them when its secrets aren't set:
- * billing still starts without them, saying why. Setting only one of the two
- * is a mistake, so that stops the server instead.
+ * The Client Portal's routes, or a 503 for them when its secret isn't set:
+ * billing still starts without it, saying why.
  */
 function buildPortal(db, hub) {
   if (!hub) return null;
-  if (!hub.signingSecret && !hub.adminPinHash) {
-    console.warn('[hub] HUB_SIGNING_SECRET and HUB_ADMIN_PIN_HASH aren\'t set, so the Client Portal\'s /hub routes answer 503');
+  if (!hub.signingSecret) {
+    console.warn('[hub] HUB_SIGNING_SECRET isn\'t set, so the Client Portal\'s /hub routes answer 503');
     return null;
   }
   // Billing's limiter and client address, so both halves count and record visitors alike.
-  const portal = createHubRouter(db, { rateLimit, clientIp, ...hub });
+  const portal = createHubRouter(db, { rateLimit, clientIp, ...hub, requireAdmin: requireAuth(db) });
   portal.deliverablesHealth().then((h) => {
     if (!h.ok) console.warn(`[hub] the deliverables folder can't be read (${h.error}); file links and publishing will fail`);
   });
@@ -153,6 +154,8 @@ function createApp(db, opts = {}) {
   if (portal) app.use(portal);
   else app.use('/hub', (_req, res) => res.status(503).json({ error: 'portal not set up' }));
 
+  // A browser's list of hub projects holds signature images (R4). Only behind the login.
+  app.use('/api/setup/hub-import', requireAuth(db), express.json({ limit: '8mb' }));
   app.use(express.json({ limit: '2mb' }));
 
   // The admin's pages (merge task M4), built here so a missing web/ or a copy
@@ -292,6 +295,8 @@ function createApp(db, opts = {}) {
   // the app sends through …/send, whose checks they don't share.
   const stageD = { markSent: opts.markSentRoutes !== undefined ? opts.markSentRoutes : config.isTest };
   registerProjectRoutes(app, db, { ...stageD, hnryPush });
+  registerDeliverableRoutes(app, db, { deliverablesDir: opts.deliverablesDir || (hub || config.hub).deliverablesDir });
+  registerHubImportRoutes(app, db);
   registerInvoiceRoutes(app, db, { ...stageD, hnryPush });
   registerSendRoutes(app, db, { outbox });
   registerGoogleRoutes(app, db, { oauth, sync: googleSync });
