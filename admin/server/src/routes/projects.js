@@ -343,7 +343,8 @@ function readFolder(db, id, today) {
   return {
     project,
     estimates,
-    deliverables: delivery.deliverables,
+    // The client's notes reach the studio when they send them: unsent ones stay theirs.
+    deliverables: delivery.deliverables.map((d) => ({ ...d, notes: d.notes.filter((n) => n.submittedAt) })),
     hub: hubFacts(db, id),
     evidence: signedOff ? {
       signerName: signedOff.signer_name,

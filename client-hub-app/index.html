@@ -218,6 +218,9 @@
   .lb-notes > * + *{ margin-top:var(--space-4); }
   .note-card{ background:var(--color-bg-panel); border:1px solid var(--color-border-subtle); border-radius:var(--radius-md); padding:var(--space-5); font-size:var(--font-size-base); }
   .notes > * + *{ margin-top:var(--space-4); }
+  .note-text{ white-space:pre-wrap; overflow-wrap:anywhere; }
+  .field-error{ color:var(--color-status-error-text); font-size:var(--font-size-base); }
+  details > summary{ cursor:pointer; }
 
   /* ---- dialogs and toasts ---- */
   .modal-scrim{ position:fixed; inset:0; z-index:30; display:flex; align-items:center; justify-content:center; padding:var(--space-7); background:var(--color-surface-overlay); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
@@ -291,7 +294,6 @@ const HUB = {
   mainSiteUrl: '../index.html',
 };
 
-const nowStr = () => new Date().toLocaleString('en-AU', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
 const isHlsUrl = (v) => /\.m3u8(?:[?#]|$)/i.test(v || '');
 const CODE_FORMAT = /^(?:\d{4}|\d{6})$/;
 
@@ -317,9 +319,9 @@ async function api(path, opts = {}){
 
 /* The project as this page uses it, from the server's allow-listed view. `items`
    is the whole checklist with where each stands; `assets` are the ones with a
-   published version to review, each on its newest. Notes and approvals made here
-   live in this page only until C4 and C5 give them a home on the server. */
-const ITEM_STATUS = { approved:'approved', changes:'changes', review:'reviewing' };
+   published version to review, each on its newest, with the client's notes from the
+   server (C4): `comments` on this version, `earlier` on the ones before. Approval
+   lives in this page only until C5 gives it a home on the server. */
 function portalProject(view){
   return {
     id: view.id, upid: view.upid || '', name: view.name || '', status: view.status || '', past: !!view.past,
@@ -331,19 +333,50 @@ function portalProject(view){
       const v = d.versions[d.versions.length - 1];
       const review = v.review || null;
       const photo = v.kind === 'photos';
-      return {
-        id: d.id, title: d.title || '', stage: v.stage, n: v.n,
+      const a = {
+        id: d.id, title: d.title || '', stage: v.stage, n: v.n, versionId: v.id, submittedAt: v.submittedAt || null,
         type: photo ? 'photo' : 'video',
         reviewLink: (!photo && review && review.url) || '',
         photos: (photo && review && Array.isArray(review.urls))
           ? review.urls.map((url, i) => ({ name: 'Photo ' + (i + 1), reviewLink: url }))
           : [],
-        comments: [],
-        status: ITEM_STATUS[d.status] || 'reviewing',
+        approved: d.status === 'approved',
       };
+      const nOf = Object.fromEntries(d.versions.map(x => [x.id, x.n]));
+      const raw = d.notes || [];
+      const notes = raw.map(n => Object.assign(noteOf(n, a), { n: nOf[n.versionId] || null }));
+      // This version's notes, and any left unsent on an earlier one: those go with the next
+      // Send, so none is stranded. Sent notes on earlier versions are history.
+      const mine = (i) => raw[i].versionId === v.id || !raw[i].submittedAt;
+      a.comments = notes.filter((n, i) => mine(i));
+      a.earlier = notes.filter((n, i) => !mine(i));
+      return a;
     }),
   };
 }
+
+/* A note as the page shows it, from the server's: where it is in the video, or which
+   photo (by the review link that carries the server's key), and when it was saved. */
+function noteOf(n, a){
+  const ph = n.photo ? (a.photos || []).find(x => x.reviewLink.endsWith('photo=' + n.photo)) : null;
+  return {
+    id: n.id, text: n.text || '',
+    seconds: typeof n.seconds === 'number' ? n.seconds : null,
+    timestamp: typeof n.seconds === 'number' ? fmtVideoTime(n.seconds) : null,
+    photoKey: ph ? ph.reviewLink : null, photoName: ph ? ph.name : (n.photo ? 'A photo' : null),
+    at: fmtStamp(n.createdAt), submittedAt: n.submittedAt || null,
+  };
+}
+
+/* Where a deliverable stands for the client on this page: approved, notes sent to the
+   studio (waiting for the next version), notes saved but not sent, or ready. */
+function statusOf(a){
+  if(a.approved) return 'approved';
+  if(a.submittedAt) return 'sent';
+  if(a.comments.some(c => !c.submittedAt)) return 'unsent';
+  return 'reviewing';
+}
+const unsentOf = (a) => a.comments.filter(c => !c.submittedAt);
 
 /* ---------------- addresses ----------------
    #/                         the dashboard
@@ -374,10 +407,15 @@ const fmtDate = (iso) => {
   return d && !isNaN(d) ? d.toLocaleDateString('en-AU', { day:'numeric', month:'short', year:'numeric', timeZone:'UTC' }) : '';
 };
 const fmtMoney = (n) => Number(n || 0).toLocaleString('en-AU', { style:'currency', currency:'AUD' });
+const fmtStamp = (iso) => {
+  const d = new Date(iso || '');
+  return isNaN(d) ? '' : d.toLocaleString('en-AU', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+};
 
 const statusMeta = {
   reviewing:{ label:'Ready for review', cls:'badge-reviewing' },
-  changes:{ label:'Notes added', cls:'badge-changes' },
+  unsent:{ label:'Notes not sent', cls:'badge-changes' },
+  sent:{ label:'Notes sent', cls:'badge-project' },
   approved:{ label:'Approved', cls:'badge-approved' },
 };
 const stageLabel = (stage) => stage === 'final' ? 'Final' : 'Draft cut';
@@ -417,6 +455,16 @@ let state = {
   revisionOpen: false,
   revisionDraft: '',
   pausedAt: null,
+  pausedSeconds: null,     // the same stamp as a number, which is what a note saves
+  noteSaving: false,       // a note is on its way to the server
+  noteError: null,         // why the last note wasn't saved (the text stays in the box)
+  noteKey: null,           // the key of the note being saved, kept for a retry of the same text
+  photoNoteKeys: {},       // the same, per photo
+  lbSaving: false,
+  lbError: null,
+  sendModalAssetId: null,  // "Send notes to the studio?" open for this deliverable
+  sending: false,
+  sendError: null,
   videoFailed: false,      // the <video> failed: shows the fallback card
   lightboxIdx: null,       // index into asset.photos of the open lightbox photo; null = closed
   // Per-photo note drafts, keyed by photo (photoDraftKey): one shared draft would
@@ -480,7 +528,8 @@ function offline(e){
 
 /* Show whatever the address asks for. Signed out, the sign-in screen stays and the
    address is kept, so signing in lands on the page that was asked for. */
-const REVIEW_RESET = { revisionOpen:false, revisionDraft:'', pausedAt:null, videoFailed:false, approveModalAssetId:null };
+const REVIEW_RESET = { revisionOpen:false, revisionDraft:'', pausedAt:null, pausedSeconds:null, videoFailed:false, approveModalAssetId:null,
+  noteError:null, noteSaving:false, lbError:null, lbSaving:false, sendModalAssetId:null, sendError:null, sending:false };
 let routing = 0;
 async function route(){
   const r = parseRoute(location.hash);
@@ -547,17 +596,14 @@ async function loadProject(id, ticket){
   }
 }
 
-/* What the client did in this page, onto a fresh copy: for each deliverable still on the
-   same version, its notes and the status they gave it. A new version starts clean. */
+/* What the client did in this page that the server doesn't keep yet, onto a fresh copy:
+   an approval on the same version (until C5). Notes come from the server (C4). */
 function carryOver(old, fresh){
   fresh.loadedAt = Date.now();
   if(!old) return fresh;
   fresh.assets.forEach(a => {
     const was = old.assets.find(x => x.id === a.id && x.n === a.n);
-    if(was && (was.comments.length || was.status !== a.status)){
-      a.comments = was.comments;
-      if(was.status !== 'reviewing') a.status = was.status;
-    }
+    if(was && was.approved) a.approved = true;
   });
   return fresh;
 }
@@ -812,7 +858,7 @@ function bindClientChrome(){
    payment block joins the top with payment (F tasks). */
 function renderClientLanding(){
   const p = getViewProject();
-  const allApproved = p.assets.length > 0 && p.assets.every(a => a.status === 'approved');
+  const allApproved = p.assets.length > 0 && p.assets.every(a => a.approved);
   const byId = Object.fromEntries(p.assets.map(a => [a.id, a]));
   const cards = p.items.map(item => {
     const a = byId[item.id];
@@ -830,7 +876,7 @@ function renderClientLanding(){
       ${renderAssetThumb(a)}
       <div class="display title-lg mb-3">${escapeHtml(a.title || (a.type === 'video' ? 'Video' : 'Photos'))}</div>
       <div class="row" style="gap:var(--space-4)">
-        <span class="badge ${statusMeta[a.status].cls}"><span class="status-dot"></span>${statusMeta[a.status].label}</span>
+        <span class="badge ${statusMeta[statusOf(a)].cls}"><span class="status-dot"></span>${statusMeta[statusOf(a)].label}</span>
         <span class="badge badge-stage">${stageLabel(a.stage)} · v${a.n}</span>
       </div>
     </a>`;
@@ -950,6 +996,20 @@ function renderClientAsset(){
       </div>
     </div>` : '';
 
+  const unsent = unsentOf(a);
+  const sendModal = state.sendModalAssetId === a.id ? `
+    <div class="modal-scrim">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="send-title">
+        <h2 id="send-title" class="display title-lg mb-3">Send ${unsent.length} ${unsent.length === 1 ? 'note' : 'notes'} to the studio?</h2>
+        <p class="text-sm mb-6">We’ll make the changes to ${escapeHtml(a.title || 'this')} and let you know when the new version is ready. You can’t add notes to this version once they’re sent.</p>
+        ${state.sendError ? `<p class="field-error mb-4" role="alert">${escapeHtml(state.sendError)}</p>` : ''}
+        <div class="row">
+          <button id="confirm-send" class="btn btn-primary" ${state.sending ? 'disabled' : ''}>${state.sending ? 'Sending…' : 'Send notes'}</button>
+          <button id="cancel-send" class="btn btn-quiet" ${state.sending ? 'disabled' : ''}>Go back</button>
+        </div>
+      </div>
+    </div>` : '';
+
   return renderClientChrome(`
     <div class="wrap"><nav class="tabs" aria-label="Deliverables">${tabs}</nav></div>
     <main class="wrap section">
@@ -961,6 +1021,7 @@ function renderClientAsset(){
     </main>
     <div id="lightbox-host">${a.type === 'photo' ? renderPhotoLightbox(a) : ''}</div>
     ${approveModal}
+    ${sendModal}
   `);
 }
 
@@ -968,36 +1029,66 @@ function renderClientAsset(){
 // click repaints JUST this container (refreshAssetInteraction) instead of the screen.
 // render() rebuilds the page, which replaces the <video> and restarts it from 0, so the
 // player and #pause-pill live OUTSIDE this container and a revision click never touches them.
+function noteCard(c, removable){
+  return `
+          <div class="note-card">
+            ${c.timestamp ? `<span class="mono note-time" style="font-size:var(--font-size-xs)">${icon('clock', 12)}${escapeHtml(c.timestamp)}</span>` : ''}
+            ${c.photoName ? `<span class="mono note-photo" style="font-size:var(--font-size-xs)">${escapeHtml(c.photoName)}</span>` : ''}
+            ${removable && c.n && activeAsset() && c.n !== activeAsset().n ? `<span class="meta" style="margin-right:var(--space-4)">ON V${c.n}</span>` : ''}
+            <span class="note-text">${escapeHtml(c.text)}</span>
+            <div class="spread mt-2">
+              <span class="meta">${escapeHtml(c.at)}${c.submittedAt ? ' · SENT' : ' · NOT SENT YET'}</span>
+              ${removable && !c.submittedAt ? `<button class="link" data-remove-note="${escapeAttr(c.id)}">Remove<span class="visually-hidden"> this note</span></button>` : ''}
+            </div>
+          </div>`;
+}
+
 function renderAssetInteraction(a){
-  if(a.status === 'approved'){
+  const st = statusOf(a);
+  const earlier = a.earlier && a.earlier.length ? `
+    <details class="mt-6">
+      <summary class="eyebrow">Notes on earlier versions (${a.earlier.length})</summary>
+      <div class="notes mt-3">${a.earlier.map(c => `<div>${c.n ? `<span class="meta">V${c.n}</span>` : ''}${noteCard(c, false)}</div>`).join('')}</div>
+    </details>` : '';
+
+  if(st === 'approved'){
     return `
     <div class="card pad-sm mt-6" style="text-align:center">
       <span class="badge badge-approved">${icon('check', 13)}Approved</span>
-    </div>`;
+    </div>${earlier}`;
   }
 
-  const commentLog = a.comments.length ? `
+  const log = a.comments.length ? `
     <div class="mt-6">
       <div class="eyebrow mb-3">Your notes</div>
-      <div class="notes">
-        ${a.comments.map(c => `
-          <div class="note-card">
-            ${c.timestamp ? `<span class="mono note-time" style="font-size:var(--font-size-xs)">${icon('clock', 12)}${escapeHtml(c.timestamp)}</span>` : ''}
-            ${c.photoKey ? `<span class="mono note-photo" style="font-size:var(--font-size-xs)">${escapeHtml(c.photoName || 'Photo')}</span>` : ''}
-            <span>${escapeHtml(c.text)}</span>
-            <div class="meta mt-2">${escapeHtml(c.at)}</div>
-          </div>`).join('')}
-      </div>
+      <div class="notes">${a.comments.map(c => noteCard(c, st !== 'sent')).join('')}</div>
     </div>` : '';
 
+  // Sent: the version waits for the studio's next one, so there's nothing more to do here.
+  if(st === 'sent'){
+    return `
+    <div class="card pad-sm notice mt-6" role="status">
+      <span style="color:var(--color-status-info-text);flex:0 0 auto">${icon('check', 18)}</span>
+      <span class="text-sm">Your notes were sent to the studio${a.submittedAt ? ' on ' + escapeHtml(fmtStamp(a.submittedAt)) : ''}. We’ll let you know when the new version is ready.</span>
+    </div>
+    ${log}${earlier}`;
+  }
+
+  const unsent = unsentOf(a);
+  // Approve is off while there are notes the studio hasn't been sent (brief): they'd be lost.
+  const approve = `<button id="approve-asset" class="btn btn-confirm btn-lg" ${unsent.length ? 'disabled aria-describedby="approve-hint"' : ''}>Approve content</button>`;
+  const send = unsent.length
+    ? `<button id="send-notes" class="btn btn-primary btn-lg">Send ${unsent.length} ${unsent.length === 1 ? 'note' : 'notes'} to the studio</button>`
+    : '';
+  const hint = unsent.length ? `<p id="approve-hint" class="meta mt-3">Send or remove your notes before approving.</p>` : '';
+
   // Photo libraries have NO asset-level revision panel: notes are per photo, in the
-  // lightbox, so the only decision left at this level is approval.
+  // lightbox, so what's left at this level is sending them, or approval.
   if(a.type === 'photo'){
     return `
-      <div class="mt-6">
-        <button id="approve-asset" class="btn btn-confirm btn-lg">Approve content</button>
-      </div>
-      ${commentLog}
+      <div class="mt-6 row">${send}${approve}</div>
+      ${hint}
+      ${log}${earlier}
     `;
   }
 
@@ -1006,10 +1097,12 @@ function renderAssetInteraction(a){
   return `
     <div class="mt-6 row">
       <button id="want-revisions" class="btn">${state.revisionOpen ? 'Revision form open' : 'Comment revisions'}</button>
-      ${state.revisionOpen ? '' : `<button id="approve-asset" class="btn btn-confirm btn-lg">Approve content</button>`}
+      ${state.revisionOpen ? '' : approve}
+      ${send}
     </div>
+    ${state.revisionOpen ? '' : hint}
     ${state.revisionOpen ? renderRevisionForm(a) : ''}
-    ${commentLog}
+    ${log}${earlier}
   `;
 }
 
@@ -1178,7 +1271,8 @@ function renderPhotoLightbox(a){
   const ph = photos[i];
   const mine = commentsForPhoto(a, i);
   const draft = state.photoDrafts[photoDraftKey(a, i)] || '';
-  const locked = a.status === 'approved';
+  const st = statusOf(a);
+  const locked = st === 'approved' || st === 'sent';
 
   return `
   <div id="photo-lightbox" class="lb-scrim" role="dialog" aria-modal="true" aria-label="${escapeAttr(ph.name)}">
@@ -1202,18 +1296,20 @@ function renderPhotoLightbox(a){
         ${mine.length
           ? mine.map(c => `
             <div class="note-card">
-              <span>${escapeHtml(c.text)}</span>
-              <div class="meta mt-2">${escapeHtml(c.at)}</div>
+              <span class="note-text">${escapeHtml(c.text)}</span>
+              <div class="meta mt-2">${escapeHtml(c.at)}${c.submittedAt ? ' · SENT' : ' · NOT SENT YET'}</div>
             </div>`).join('')
           : `<p class="meta">No notes on this photo yet.</p>`}
       </div>
 
       ${locked ? `
-        <p class="meta">These photos are approved, so notes are closed.</p>
+        <p class="meta">${st === 'sent' ? 'Your notes on these photos were sent, so notes are closed until the next version.' : 'These photos are approved, so notes are closed.'}</p>
       ` : `
         <label for="lb-text" class="eyebrow" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Note about this photo</label>
-        <textarea id="lb-text" class="field mb-3" rows="3" placeholder="Add a note about this photo…">${escapeHtml(draft)}</textarea>
-        <button id="lb-submit" class="btn btn-primary btn-block">Add note to this photo</button>
+        <textarea id="lb-text" class="field mb-3" rows="3" maxlength="4000" placeholder="Add a note about this photo…" ${state.lbError ? 'aria-describedby="lb-error"' : ''}>${escapeHtml(draft)}</textarea>
+        ${state.lbError ? `<p id="lb-error" class="field-error mb-3" role="alert">${escapeHtml(state.lbError)}</p>` : ''}
+        <button id="lb-submit" class="btn btn-primary btn-block" ${state.lbSaving ? 'disabled' : ''}>${state.lbSaving ? 'Saving…' : 'Add note to this photo'}</button>
+        <p class="meta mt-3">Notes save as you add them. Send them all from the page when you’re done.</p>
       `}
     </aside>
   </div>`;
@@ -1221,16 +1317,46 @@ function renderPhotoLightbox(a){
 
 // Video assets only. Photo notes live in the lightbox, per photo.
 function renderRevisionForm(a){
-  const hasComments = a.comments.length > 0;
+  const hasUnsent = unsentOf(a).length > 0;
   return `
   <div class="card pad-sm mt-3">
     <label for="revision-text" class="eyebrow" style="display:block;margin-bottom:var(--space-3)">Revision note</label>
-    <textarea id="revision-text" class="field mb-3" rows="3" placeholder="Describe the revision needed…">${escapeHtml(state.revisionDraft)}</textarea>
+    <textarea id="revision-text" class="field mb-3" rows="3" maxlength="4000" placeholder="Describe the revision needed…" ${state.noteError ? 'aria-describedby="note-error"' : ''}>${escapeHtml(state.revisionDraft)}</textarea>
+    ${state.noteError ? `<p id="note-error" class="field-error mb-3" role="alert">${escapeHtml(state.noteError)}</p>` : ''}
     <div class="row">
-      <button id="submit-revision" class="btn btn-primary">Submit revision</button>
-      <button id="cancel-revision" class="btn btn-quiet" ${hasComments ? 'disabled title="Remove your notes below to cancel and go back"' : ''}>Cancel revisions</button>
+      <button id="submit-revision" class="btn btn-primary" ${state.noteSaving ? 'disabled' : ''}>${state.noteSaving ? 'Saving…' : 'Add note'}</button>
+      <button id="cancel-revision" class="btn btn-quiet" ${hasUnsent ? 'disabled title="Remove your notes below to cancel and go back"' : ''}>Cancel revisions</button>
     </div>
+    <p class="meta mt-3">Each note saves as you add it. Send them to the studio when you’re done.</p>
   </div>`;
+}
+
+/* Why a note didn't save, in plain words. The text always stays where it was typed. */
+function noteFailure(e){
+  if(!e || e.status === 0) return 'Your note wasn’t saved: there’s no connection. It’s still in the box, so try again.';
+  if(e.status === 401) return 'You’ve been signed out, so your note wasn’t saved. Copy it, then sign in again.';
+  if(e.status === 429) return 'Too many notes at once. Wait a minute, then try again. Your note is still in the box.';
+  if(e.code === 'not_current') return 'There’s a newer version of this now. Copy your note, then reload the page to see the new version.';
+  if(e.code === 'sent') return 'Your notes on this version have already been sent.';
+  if(e.code === 'archived' || e.code === 'approved') return 'Notes are closed on this one.';
+  if(e.code === 'too_many') return 'That’s a lot of notes. Send these to the studio first, then add more.';
+  return 'Your note wasn’t saved. It’s still in the box, so try again.';
+}
+
+/* A key the page gives each note before saving it, kept across retries of the same text:
+   if a save lands but its reply is lost, the retry gets back the note already saved. */
+const newNoteKey = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2, 12)));
+
+/* Saves one note (C4), adds it to the project as it is now (the copy on screen may have been
+   read fresh while it saved), and gives back the page's copy, or throws as api() does. */
+async function saveNote(a, body){
+  const p = getViewProject();
+  const r = await api('/hub/projects/' + encodeURIComponent(p.id) + '/items/' + encodeURIComponent(a.id) + '/notes',
+    { method:'POST', body: Object.assign({ versionId: a.versionId }, body) });
+  const note = Object.assign(noteOf(r.note, a), { n: a.n });
+  const now = state.cache[p.id] && state.cache[p.id].assets.find(x => x.id === a.id && x.versionId === a.versionId);
+  [a, now].forEach(x => { if(x && !x.comments.some(c => c.id === note.id)) x.comments.push(note); });
+  return note;
 }
 
 /* A review copy that won't load may only mean the session ended (it expired, or the
@@ -1294,7 +1420,7 @@ function bindClientAsset(){
       // Timestamps only exist once the client has asked for revisions: an incidental
       // pause while just watching must not stamp anything.
       if(!state.revisionOpen) return;
-      setPausePill(fmtVideoTime(video.currentTime));
+      setPausePill(fmtVideoTime(video.currentTime), video.currentTime);
     };
     // attachReviewSource owns video.onerror (with the hls.js recovery routing).
     attachReviewSource(video, video.dataset.src, videoFailed);
@@ -1312,10 +1438,40 @@ function bindClientAsset(){
 
   const confirmApprove = document.getElementById('confirm-approve');
   if(confirmApprove) confirmApprove.onclick = () => {
-    a.status = 'approved';
-    if(p.assets.every(x => x.status === 'approved')) return go(projectHash(p.id));
+    a.approved = true;
+    if(p.assets.every(x => x.approved)) return go(projectHash(p.id));
     setState({ revisionOpen:false, approveModalAssetId:null });
   };
+
+  // Send: every unsent note on this version, as one set (C4). A failure keeps the dialog
+  // open and says why; nothing is lost, because the notes are already saved.
+  const confirmSend = document.getElementById('confirm-send');
+  if(confirmSend) confirmSend.onclick = async () => {
+    if(state.sending) return;
+    setState({ sending:true, sendError:null });
+    try {
+      const r = await api('/hub/projects/' + encodeURIComponent(p.id) + '/items/' + encodeURIComponent(a.id) + '/submit',
+        { method:'POST', body:{ versionId: a.versionId } });
+      a.submittedAt = r.submittedAt;
+      a.comments.forEach(c => { if(!c.submittedAt) c.submittedAt = r.submittedAt; });
+      setState({ sending:false, sendModalAssetId:null, revisionOpen:false, pausedAt:null, pausedSeconds:null });
+      toast('Your notes were sent to the studio.');
+    } catch(e){
+      if(e.code === 'sent'){
+        // Sent already (another tab, or a retry): read the project again to show it.
+        delete state.cache[p.id];
+        setState({ sending:false, sendModalAssetId:null });
+        return route();
+      }
+      setState({ sending:false, sendError: e.status === 401
+        ? 'You’ve been signed out. Your notes are saved: sign in again to send them.'
+        : e.code === 'no_notes' ? 'There are no unsent notes to send.'
+        : 'Your notes weren’t sent. They’re still saved here, so try again.' });
+    }
+  };
+  const cancelSend = document.getElementById('cancel-send');
+  if(cancelSend) cancelSend.onclick = () => setState({ sendModalAssetId:null, sendError:null });
+  if(confirmSend) confirmSend.focus();
   const cancelApprove = document.getElementById('cancel-approve');
   if(cancelApprove) cancelApprove.onclick = () => setState({ approveModalAssetId:null });
   if(confirmApprove) confirmApprove.focus();
@@ -1345,6 +1501,7 @@ function photoAddress(i){
 
 function openLightbox(i){
   state.lightboxIdx = i;
+  state.lbError = null;
   photoAddress(i);
   refreshLightbox();
   const box = document.getElementById('lb-text') || document.getElementById('lb-close');
@@ -1396,19 +1553,29 @@ function bindPhotoLightbox(a){
     const key = photoDraftKey(a, state.lightboxIdx);
     // Saved under THIS photo's key on every keystroke, so arrowing away and back restores
     // the right text and never bleeds it onto a neighbour.
-    box.addEventListener('input', () => { state.photoDrafts[key] = box.value; });
+    box.addEventListener('input', () => { state.photoDrafts[key] = box.value; delete state.photoNoteKeys[key]; });
   }
 
   const submit = document.getElementById('lb-submit');
-  if(submit) submit.onclick = () => {
+  if(submit) submit.onclick = async () => {
     const i = state.lightboxIdx;
     const key = photoDraftKey(a, i);
     const text = (state.photoDrafts[key] || '').trim();
-    if(!text) return;
+    if(!text || state.lbSaving) return;
     const ph = (a.photos || [])[i] || {};
-    a.comments.push({ text, timestamp: null, photoKey: ph.reviewLink, photoName: ph.name || null, at: nowStr() });
-    a.status = 'changes';
-    delete state.photoDrafts[key];   // this photo only
+    const photo = (/photo=([0-9a-f]{16})/.exec(ph.reviewLink || '') || [])[1];
+    state.lbSaving = true; state.lbError = null;
+    refreshLightbox();
+    if(!state.photoNoteKeys[key]) state.photoNoteKeys[key] = newNoteKey();
+    try {
+      await saveNote(a, { text, photo, key: state.photoNoteKeys[key] });
+      delete state.photoDrafts[key];   // this photo only, and only once it's saved
+      delete state.photoNoteKeys[key];
+    } catch(e){
+      state.lbError = noteFailure(e);  // the draft stays under its key, so the box keeps the text
+    }
+    state.lbSaving = false;
+    if(state.lightboxIdx !== i) return; // the client moved on; the note (or its draft) waits on its photo
     refreshLightbox();
     const again = document.getElementById('lb-text');
     if(again) again.focus();
@@ -1418,6 +1585,7 @@ function bindPhotoLightbox(a){
 // Escape closes, arrows walk the library, but never while the client is typing a note.
 document.addEventListener('keydown', (e) => {
   if(state.approveModalAssetId && e.key === 'Escape'){ e.preventDefault(); setState({ approveModalAssetId:null }); return; }
+  if(state.sendModalAssetId && e.key === 'Escape' && !state.sending){ e.preventDefault(); setState({ sendModalAssetId:null, sendError:null }); return; }
   if(state.lightboxIdx == null) return;
   const typing = e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT');
   if(e.key === 'Escape'){ e.preventDefault(); closeLightbox(); return; }
@@ -1434,8 +1602,9 @@ function fmtVideoTime(seconds){
 
 // #pause-pill sits outside #asset-interaction (next to the player), so it's updated in
 // place rather than re-rendered. null clears the stamp and hides the pill.
-function setPausePill(value){
+function setPausePill(value, seconds){
   state.pausedAt = value || null;
+  state.pausedSeconds = value && typeof seconds === 'number' ? seconds : null;
   const pill = document.getElementById('pause-pill');
   if(!pill) return;
   if(state.pausedAt){
@@ -1453,7 +1622,26 @@ function setPausePill(value){
 // dialog outside this container.
 function bindAssetInteraction(a){
   const approveBtn = document.getElementById('approve-asset');
-  if(approveBtn) approveBtn.onclick = () => setState({ approveModalAssetId: a.id });
+  if(approveBtn) approveBtn.onclick = () => { if(!unsentOf(a).length) setState({ approveModalAssetId: a.id }); };
+  // Send opens its dialog, outside this container, as Approve does.
+  const sendBtn = document.getElementById('send-notes');
+  if(sendBtn) sendBtn.onclick = () => setState({ sendModalAssetId: a.id, sendError:null });
+
+  // Remove an unsent note: only this container repaints.
+  document.querySelectorAll('[data-remove-note]').forEach(btn => {
+    btn.onclick = async () => {
+      const id = btn.dataset.removeNote;
+      const p = getViewProject();
+      btn.disabled = true;
+      try {
+        await api('/hub/projects/' + encodeURIComponent(p.id) + '/notes/' + encodeURIComponent(id), { method:'DELETE' });
+        a.comments = a.comments.filter(c => c.id !== id);
+      } catch(e){
+        toast(e.status === 0 ? 'That note wasn’t removed: there’s no connection.' : e.code === 'sent' ? 'That note was already sent.' : 'That note wasn’t removed. Try again.');
+      }
+      refreshAssetInteraction();
+    };
+  });
 
   const wantRev = document.getElementById('want-revisions');
   if(wantRev) wantRev.onclick = () => {
@@ -1462,7 +1650,7 @@ function bindAssetInteraction(a){
     if(state.revisionOpen){
       // Opening the panel arms the timestamp. Stamp the playhead only if the client is
       // parked on a frame: a stamp taken mid-playback would be stale by the time they type.
-      setPausePill(video && video.paused && video.currentTime > 0 ? fmtVideoTime(video.currentTime) : null);
+      setPausePill(video && video.paused && video.currentTime > 0 ? fmtVideoTime(video.currentTime) : null, video && video.currentTime);
     } else {
       setPausePill(null);
     }
@@ -1472,16 +1660,28 @@ function bindAssetInteraction(a){
   };
 
   const revText = document.getElementById('revision-text');
-  if(revText) revText.addEventListener('input', () => { state.revisionDraft = revText.value; });
+  if(revText) revText.addEventListener('input', () => { state.revisionDraft = revText.value; state.noteKey = null; });
 
+  // Add note (contract point 3): saved on the server as it's added; the panel stays OPEN
+  // with an empty box, because a client usually has more than one. Only
+  // #asset-interaction repaints, so the playhead is untouched. A failure keeps the text
+  // in the box and says why: a note is never silently dropped.
   const submitRev = document.getElementById('submit-revision');
-  if(submitRev) submitRev.onclick = () => {
-    if(!state.revisionDraft.trim()) return;
-    a.comments.push({ text: state.revisionDraft.trim(), timestamp: state.pausedAt || null, photoKey: null, photoName: null, at: nowStr() });
-    a.status = 'changes';
-    // The panel stays OPEN with an empty box: a client usually has more than one note.
-    // Only #asset-interaction repaints, so the playhead is untouched.
-    state.revisionDraft = '';
+  if(submitRev) submitRev.onclick = async () => {
+    const text = state.revisionDraft.trim();
+    if(!text || state.noteSaving) return;
+    state.noteSaving = true; state.noteError = null;
+    refreshAssetInteraction();
+    if(!state.noteKey) state.noteKey = newNoteKey();
+    try {
+      await saveNote(a, { text, seconds: state.pausedAt ? state.pausedSeconds : null, key: state.noteKey });
+      state.revisionDraft = '';
+      state.noteKey = null;
+    } catch(e){
+      state.noteError = noteFailure(e);
+    }
+    state.noteSaving = false;
+    if(activeAsset() !== a) return; // the client moved on while it saved
     refreshAssetInteraction();
     const nextBox = document.getElementById('revision-text');
     if(nextBox) nextBox.focus();
@@ -1489,9 +1689,10 @@ function bindAssetInteraction(a){
 
   const cancelRev = document.getElementById('cancel-revision');
   if(cancelRev) cancelRev.onclick = () => {
-    if(a.comments.length) return;
+    if(unsentOf(a).length) return;
     state.revisionOpen = false;
     state.revisionDraft = '';
+    state.noteError = null;
     setPausePill(null);
     refreshAssetInteraction();
     const again = document.getElementById('want-revisions');

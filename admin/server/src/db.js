@@ -1104,6 +1104,13 @@ const MIGRATIONS = [
       require('./migrations/v27-client-sessions').migrateV27(db);
     },
   },
+  {
+    version: 28,
+    name: 'saved client feedback: notes as the client adds them, and the sets they send (C4)',
+    up(db) {
+      require('./migrations/v28-client-feedback').migrateV28(db);
+    },
+  },
 ];
 
 /**

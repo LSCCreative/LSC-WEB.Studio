@@ -191,7 +191,17 @@ paid deposit and a sent final, a signed quote and an unpublished item; the other
 them across a fresh read for the same version. C4 saves them: `portalProject()` is where server notes come in, and `bindAssetInteraction`/`bindPhotoLightbox` are where a note is added (keep the
 partial repaint: no `setState` there). Photo notes are keyed by `photoKey` (the photo's review URL); the server's key is its `?photo=`.
 
-**Next: C4 Save client feedback | Model: Opus 5.5 | Effort: High.**
+**C3 committed 2026-11-25 (`9354c7f`).**
+
+**C4 done 2026-11-25 (not committed), with its review fixes.** Scratch db got `client_notes.client_key` by hand (v28 changed after
+it ran there; live has never run v28). v28 client notes and submissions; add, remove, send; the studio sees sent sets on the
+item and in Needs you. Details, calls and the S16 check under C4 in TASKS.md. 1050/1050. Scratch: the tester's Hero film v1 and
+Launch stills have sent sets (both items in Revisions); publish a v2 of either to reopen notes.
+**For C5:** approvals join `client_submissions`' neighbours as their own table; `asset.approved` in the page is page-only today
+(`carryOver` keeps it). Rounds: count `client_submissions` with stage 'final' per item. The rounds-used notice goes before the
+revision box opens (`want-revisions`), and Send's dialog says the rounds left.
+
+**Next: C5 Add Finals, rounds and approval | Model: Opus 5.5 | Effort: High.**
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
 `routes.js` (`createHubRouter(db, opts)`, not mounted yet), `url-signing.js` (was signing.js), `admin-auth.js`,

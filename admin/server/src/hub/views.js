@@ -55,9 +55,25 @@ function projectCard(project) {
    yet published. */
 function itemStatus(d) {
   if (d.hubStatus === 'approved' || d.hubStatus === 'delivered') return 'approved';
-  if (d.hubStatus === 'changes') return 'changes';
+  const newest = d.versions.filter((v) => v.publishedAt).pop();
+  if (d.hubStatus === 'changes' || (newest && newest.submittedAt)) return 'changes';
   if (d.versions.some((v) => v.publishedAt)) return 'review';
   return 'production';
+}
+
+/* One of the client's own notes (C4): what they wrote, where in the video or which
+   photo (by its review key, never its file name), when the server saved it, and
+   when they sent it, or null while it's still theirs to change. */
+function noteView(n) {
+  return {
+    id: n.id,
+    versionId: n.versionId,
+    text: str(n.text),
+    seconds: typeof n.seconds === 'number' ? n.seconds : null,
+    photo: n.photoKey || null,
+    createdAt: str(n.createdAt),
+    submittedAt: n.submittedAt || null,
+  };
 }
 
 const INVOICE_LABEL = { deposit: 'Deposit', final: 'Final invoice', single: 'Invoice' };
@@ -87,7 +103,7 @@ function invoiceCard(inv) {
    Bunny's { type: 'hls', url } joins it in Slice 4. Nothing here offers a download.
    `invoices` (C3): the ones actually sent, through invoiceCard. `agreement`: the
    signed quote's page and when it was signed, or null when it wasn't signed here. */
-function projectView(project, checklist, { reviewOf = () => null, invoices = [], agreement = null } = {}) {
+function projectView(project, checklist, { reviewOf = () => null, invoices = [], agreement = null, clientId = null } = {}) {
   return {
     ...projectCard(project),
     invoices: invoices.map(invoiceCard),
@@ -97,6 +113,8 @@ function projectView(project, checklist, { reviewOf = () => null, invoices = [],
       title: str(d.title),
       stage: d.stage,
       status: itemStatus(d),
+      // This client's own notes on the item, every version's, oldest first.
+      notes: (d.notes || []).filter((n) => n.clientId === clientId).map(noteView),
       versions: d.versions.filter((v) => v.publishedAt).map((v) => ({
         id: v.id,
         n: v.n,
@@ -104,10 +122,11 @@ function projectView(project, checklist, { reviewOf = () => null, invoices = [],
         kind: v.kind,
         photoCount: Number(v.photoCount) || 0,
         publishedAt: v.publishedAt,
+        submittedAt: v.submittedAt || null,
         review: reviewOf(v),
       })),
     })),
   };
 }
 
-module.exports = { clientView, projectCard, projectView };
+module.exports = { clientView, projectCard, projectView, noteView };

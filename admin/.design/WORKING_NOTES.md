@@ -198,6 +198,12 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   Media reaches the client by ids through `/hub/projects/:id/versions/:versionId/review`, built at reply time; never a path or file name.
   A photo is `?photo=<key>`, the first 16 hex of SHA-256 of `photo\n<name>`, so links survive the folder changing. The route trusts its
   memory of a client's projects and a folder for 10s (`MEDIA_MEMORY_MS`), and looks up anything it hasn't seen.
+- Client feedback (C4, S10): `client_notes` and `client_submissions` are written only by the portal's routes, never by the studio.
+  A note sits on the version the client saw; the server refuses anything but the item's newest published version (`not_current`).
+  One sent set per version (UNIQUE); after it, that version takes nothing more. Send takes every unsent note on the item, so a
+  note left on an earlier version goes with the next set. `client_key` makes a retried save return the note already saved. The studio's reply carries sent notes only
+  (`readFolder` filters); the portal's carries the client's own, never a photo's file name. Client writes take no pre-write backup
+  (S16): the nightly one (02:00) covers them.
 - Portal invoices (C3): sent or paid only, with the amount `invoiceView` says is due (the client's own page's figure). An invoice in
   Hnry gets Hnry's number and no link to billing's page. The leak test admits an invoice's number and amount, nothing else of money.
 - A deliverable's version never changes once published, because the client may have commented on it and C5's approvals name it:

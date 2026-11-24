@@ -401,12 +401,41 @@ const ProjectDeliverables = (() => {
     );
   }
 
+  /* mm:ss, as the client's player stamped it. */
+  const clock = (s) => {
+    const t = Math.max(0, Math.floor(Number(s) || 0));
+    return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');
+  };
+
+  /* The sets the client sent (C4), newest first, each under the version it was on.
+     Every client-written field goes through esc() (S8): a note is text, whatever it holds. */
+  function clientSetsMarkup(item) {
+    const sent = (item.notes || []).filter((n) => n.submittedAt);
+    if (!sent.length) return '<p class="pf-empty">No notes or approval yet.</p>';
+    const byVersion = new Map();
+    sent.forEach((n) => {
+      if (!byVersion.has(n.versionId)) byVersion.set(n.versionId, []);
+      byVersion.get(n.versionId).push(n);
+    });
+    return [...byVersion.entries()].reverse().map(([versionId, notes]) => {
+      const v = item.versions.find((x) => x.id === versionId);
+      const head = (v ? 'v' + v.n + ' · ' + STAGE[v.stage] : 'An earlier version') + ' · ' +
+        notes.length + (notes.length === 1 ? ' note' : ' notes') + ' sent ' + when(notes[0].submittedAt);
+      return '<div class="dlv-client-set"><p class="dlv-client-head">' + esc(head) + '</p><ol class="dlv-client-notes">' +
+        notes.map((n) => '<li>' +
+          (n.seconds !== null && n.seconds !== undefined ? '<span class="dlv-note-at">' + esc(clock(n.seconds)) + '</span> ' : '') +
+          (n.photoName ? '<span class="dlv-note-at">' + esc(n.photoName) + '</span> ' : '') +
+          '<span class="dlv-note-text">' + esc(n.text) + '</span></li>').join('') +
+        '</ol></div>';
+    }).join('');
+  }
+
   function clientSideMarkup(item) {
     return (
       '<section class="panel" aria-labelledby="dlv-client-h">' +
       '<div class="panel-head"><h3 class="panel-title" id="dlv-client-h">From the client</h3>' +
       (item.stage === 'final' ? '<span class="dlv-rounds">0 of ' + ROUNDS + ' rounds used</span>' : '') + '</div>' +
-      '<div class="panel-body"><p class="pf-empty">No notes or approval yet.</p></div></section>'
+      '<div class="panel-body">' + clientSetsMarkup(item) + '</div></section>'
     );
   }
 
@@ -588,5 +617,6 @@ const ProjectDeliverables = (() => {
     return Array.from(panel.querySelectorAll('input[type="text"], input[type="url"]')).some((i) => i.value !== i.defaultValue);
   }
 
-  return { draw, holdsInput };
+  // clientSetsMarkup: for test-portal-feedback.js, which runs it as the browser does (S8).
+  return { draw, holdsInput, clientSetsMarkup };
 })();

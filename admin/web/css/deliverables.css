@@ -461,3 +461,13 @@
   overflow-wrap: anywhere;
   line-height: 1.55;
 }
+
+/* From the client (C4): the sets of notes the client sent, newest first. */
+.dlv-client-set:first-child { padding-top: var(--space-2); }
+.dlv-client-set:last-child { padding-bottom: var(--space-6); }
+.dlv-client-set + .dlv-client-set { margin-top: var(--space-6); padding-top: var(--space-6); border-top: 1px solid var(--color-border-hairline); }
+.dlv-client-head { margin: 0 0 var(--space-4); font: var(--eyebrow-font); letter-spacing: var(--letter-spacing-wide); text-transform: uppercase; color: var(--color-text-secondary); }
+.dlv-client-notes { margin: 0; padding-left: var(--space-7); }
+.dlv-client-notes li + li { margin-top: var(--space-4); }
+.dlv-note-at { font-family: var(--font-family-mono); font-size: var(--font-size-xs); color: var(--color-accent-text); }
+.dlv-note-text { white-space: pre-wrap; overflow-wrap: anywhere; }

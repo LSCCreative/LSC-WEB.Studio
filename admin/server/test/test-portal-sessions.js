@@ -507,9 +507,9 @@ test('the leak test: every portal reply is exactly its allow-list, with nothing 
   // Exactly these keys, and no others.
   const CLIENT = ['businessName', 'contactName'];
   const CARD = ['id', 'name', 'needsYou', 'nextStep', 'past', 'status', 'upid'];
-  const ITEM = ['deliverables', 'id', 'stage', 'status', 'title', 'versions'];
+  const ITEM = ['deliverables', 'id', 'notes', 'stage', 'status', 'title', 'versions'];
   const INVOICE = ['amount', 'dueOn', 'id', 'issuedOn', 'label', 'number', 'paidOn', 'state', 'url'];
-  const VERSION = ['id', 'kind', 'n', 'photoCount', 'publishedAt', 'review', 'stage'];
+  const VERSION = ['id', 'kind', 'n', 'photoCount', 'publishedAt', 'review', 'stage', 'submittedAt'];
   const sorted = (o) => Object.keys(o).sort();
   assert.deepEqual(sorted(replies.auth.body), ['client', 'ok']);
   assert.deepEqual(sorted(replies.auth.body.client), CLIENT);

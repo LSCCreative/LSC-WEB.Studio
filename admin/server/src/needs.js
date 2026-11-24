@@ -35,6 +35,10 @@ const KINDS = [
 ];
 
 const day = (iso) => String(iso || '').slice(0, 10);
+/* The Sydney day of a moment (S19): a timestamp's UTC date is the day before for
+   anything done in a Sydney morning. */
+const SYDNEY_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit' });
+const sydneyDay = (iso) => (iso && !Number.isNaN(Date.parse(iso)) ? SYDNEY_DAY.format(new Date(iso)) : '');
 const dayNumber = (ymd) => Math.round(Date.parse(ymd + 'T00:00:00Z') / 86400000);
 const daysBetween = (from, to) => dayNumber(to) - dayNumber(from);
 
@@ -57,6 +61,26 @@ function readNeeds(db, { today, briefs, rows }) {
   };
   const items = [];
 
+  // Revision notes (C4): a set the client sent on the newest version they have, until the
+  // studio publishes the next one. One row per item; the oldest waiting first.
+  db.prepare(`
+    SELECT s.deliverable_id, s.note_count, s.submitted_at, d.title, p.id AS project_id, p.client_id, p.upid, p.name
+      FROM client_submissions s
+      JOIN deliverables d ON d.id = s.deliverable_id
+      JOIN projects p ON p.id = s.project_id
+     WHERE p.archived_at IS NULL AND d.not_needed_at IS NULL
+       AND s.version_id = (SELECT v.id FROM deliverable_versions v
+                            WHERE v.deliverable_id = s.deliverable_id AND v.published_at IS NOT NULL
+                            ORDER BY v.n DESC LIMIT 1)
+     ORDER BY s.submitted_at, s.deliverable_id
+  `).all().forEach((s) => {
+    const since = sydneyDay(s.submitted_at);
+    items.push({
+      ...base('revision_notes', s, { itemId: s.deliverable_id, title: s.title || '', notes: s.note_count, since, days: daysBetween(since, today) }),
+      id: 'revision_notes:' + s.deliverable_id,
+    });
+  });
+
   // Invoice overdue: sent, unpaid, past its due date. A void invoice never gets here.
   db.prepare(`
     SELECT i.id, i.project_id, i.number, i.kind, i.due_at, i.totals_json, p.client_id, p.upid, p.name
@@ -74,7 +98,7 @@ function readNeeds(db, { today, briefs, rows }) {
 
   // Quote awaiting reply: still sent after QUOTE_DAYS. Sent today is day 0.
   rows.map((r) => r.project).filter((p) => p.stage === 'sent' && p.stageDetail.at).forEach((p) => {
-    const sent = day(p.stageDetail.at);
+    const sent = sydneyDay(p.stageDetail.at) || day(p.stageDetail.at);
     const waited = daysBetween(sent, today);
     if (waited >= QUOTE_DAYS) {
       items.push({ id: 'quote_awaiting:' + p.id, kind: 'quote_awaiting', projectId: p.id, name: p.name,
@@ -88,8 +112,9 @@ function readNeeds(db, { today, briefs, rows }) {
      WHERE accepted_at IS NOT NULL AND declined_at IS NULL AND archived_at IS NULL
      ORDER BY accepted_at, project_id
   `).all().forEach((p) => {
-    if (!p.upid) items.push(base('no_upid', p, { since: day(p.accepted_at) }));
-    if (!p.opened_at) items.push(base('new_project', p, { since: day(p.accepted_at) }));
+    const since = sydneyDay(p.accepted_at) || day(p.accepted_at);
+    if (!p.upid) items.push(base('no_upid', p, { since }));
+    if (!p.opened_at) items.push(base('new_project', p, { since }));
   });
 
   // Stable sort by the IA's order; each kind keeps its oldest-first order.

@@ -40,6 +40,8 @@ const LSCNeeds = (() => {
   function pathOf(item) {
     const project = '/projects/' + encodeURIComponent(item.projectId);
     if (item.invoiceId) return InvoiceView.pathOf(item.projectId, item.invoiceId);
+    // Revision notes open the item they're on, where the studio reads them (C4).
+    if (item.itemId) return project + '/deliverables/' + encodeURIComponent(item.itemId);
     return item.kind === 'new_project' ? project + '/deliverables' : project;
   }
 
@@ -53,6 +55,8 @@ const LSCNeeds = (() => {
         return ['Accepted without a UPID'];
       case 'new_project':
         return ['Accepted, not opened yet'];
+      case 'revision_notes':
+        return [item.title, plural(item.notes, 'note') + ' sent ' + ago(item.days)];
       default:
         return [];
     }

@@ -239,8 +239,13 @@ function deliveryState(input) {
 
 /* ── Reading it ─────────────────────────────────────────────────────────── */
 
-/* Item and version rows as the admin reads them, each item with its versions. */
-function checklistOf(items, versions) {
+/* Item and version rows as the admin reads them, each item with its versions.
+   `submissions` (C4) mark the versions the client sent notes on; `notes` are the
+   client's, sent or not (each reader decides what it shows: the studio sees a
+   note once it's sent). */
+function checklistOf(items, versions, { submissions = [], notes = [] } = {}) {
+  const sentAt = new Map(submissions.map((s) => [s.version_id, s.submitted_at]));
+  const sentById = new Map(submissions.map((s) => [s.id, s.submitted_at]));
   return items.map((d) => ({
     id: d.id,
     position: d.position,
@@ -263,15 +268,36 @@ function checklistOf(items, versions) {
       driveLink: v.drive_link,
       createdAt: v.created_at,
       publishedAt: v.published_at || null,
+      submittedAt: sentAt.get(v.id) || null,
+    })),
+    notes: notes.filter((n) => n.deliverable_id === d.id).map((n) => ({
+      id: n.id,
+      versionId: n.version_id,
+      clientId: n.client_id,
+      text: n.text,
+      seconds: n.seconds === null || n.seconds === undefined ? null : n.seconds,
+      photoKey: n.photo_key || null,
+      photoName: n.photo_name || null,
+      createdAt: n.created_at,
+      submittedAt: n.submission_id ? sentById.get(n.submission_id) || null : null,
     })),
   }));
 }
 
-/** The checklist as the admin reads it, in order, each item with its versions. */
+/* The newest version the client has been given, or null. */
+function newestPublished(d) {
+  return d.versions.filter((v) => v.publishedAt).pop() || null;
+}
+
+/** The checklist as the admin reads it, in order, each item with its versions and the client's notes. */
 function readChecklist(db, projectId) {
   return checklistOf(
     db.prepare('SELECT * FROM deliverables WHERE project_id = ? ORDER BY position, created_at, id').all(projectId),
     db.prepare('SELECT * FROM deliverable_versions WHERE project_id = ? ORDER BY n').all(projectId),
+    {
+      submissions: db.prepare('SELECT * FROM client_submissions WHERE project_id = ?').all(projectId),
+      notes: db.prepare('SELECT * FROM client_notes WHERE project_id = ? ORDER BY created_at, id').all(projectId),
+    },
   );
 }
 
@@ -301,7 +327,9 @@ function stateOf(p, money, invoices, deliverables, signed) {
     // Where the old hub left it (R4), until the item's next file. C5's approvals join here.
     approved: d.hubStatus === 'approved' || d.hubStatus === 'delivered',
     awaitingClient: d.versions.some((v) => v.publishedAt),
-    notesSubmitted: d.hubStatus === 'changes',
+    // Notes sent on the newest version the client has (C4), until the studio publishes
+    // the next; or where the old hub left it.
+    notesSubmitted: d.hubStatus === 'changes' || Boolean(newestPublished(d) && newestPublished(d).submittedAt),
   }));
   return deliveryState({
     money,
@@ -337,6 +365,7 @@ function readDelivery(db, p, money, invoices) {
 function deliveryReader(db) {
   const versions = db.prepare('SELECT * FROM deliverable_versions ORDER BY n').all();
   const items = db.prepare('SELECT * FROM deliverables ORDER BY position, created_at, id').all();
+  const submissions = db.prepare('SELECT id, project_id, version_id, submitted_at FROM client_submissions').all();
   const signed = new Set(db.prepare(`
     SELECT DISTINCT e.project_id FROM signatures s
       JOIN estimate_versions v ON v.id = s.version_id
@@ -354,11 +383,12 @@ function deliveryReader(db) {
   };
   const itemsOf = byProject(items);
   const versionsOf = byProject(versions);
+  const submissionsOf = byProject(submissions);
   return (p, money, invoices) => stateOf(p, money, invoices,
-    checklistOf(itemsOf.get(p.id) || [], versionsOf.get(p.id) || []), signed.has(p.id));
+    checklistOf(itemsOf.get(p.id) || [], versionsOf.get(p.id) || [], { submissions: submissionsOf.get(p.id) || [] }), signed.has(p.id));
 }
 
 module.exports = {
-  quotedDeliverables, createChecklist, clientForAcceptance, deliveryState, readDelivery, deliveryReader, readChecklist,
+  quotedDeliverables, createChecklist, clientForAcceptance, deliveryState, readDelivery, deliveryReader, readChecklist, newestPublished,
   BADGES, MAX_PER_LINE,
 };

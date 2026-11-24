@@ -146,18 +146,30 @@ check('the portal’s addresses: dashboard, project, review and photo, by id (C3
   assert.match(fnBody('photoAddress'), /history\.replaceState/);
 });
 
-check('a project is read fresh on arrival, keeping what the client did here on the same version', () => {
+check('a project is read fresh on arrival, keeping what only the page knows (an approval) on the same version', () => {
   const carryOver = new Function(`${fnBody('carryOver')}; return carryOver;`)();
-  const asset = (id, n, extra = {}) => ({ id, n, comments: [], status: 'reviewing', ...extra });
-  const old = { assets: [
-    asset('a', 1, { comments: [{ text: 'tighter' }], status: 'changes' }),
-    asset('b', 1, { status: 'approved' }),
-    asset('c', 1, { comments: [{ text: 'old cut' }], status: 'changes' }),
-  ] };
+  const asset = (id, n, extra = {}) => ({ id, n, comments: [], approved: false, ...extra });
+  const old = { assets: [asset('a', 1, { approved: true }), asset('b', 1), asset('c', 1, { approved: true })] };
   const fresh = carryOver(old, { assets: [asset('a', 1), asset('b', 1), asset('c', 2), asset('d', 1)] });
-  assert.deepEqual(fresh.assets.map((a) => [a.id, a.comments.length, a.status]),
-    [['a', 1, 'changes'], ['b', 0, 'approved'], ['c', 0, 'reviewing'], ['d', 0, 'reviewing']], 'a new version starts clean');
+  assert.deepEqual(fresh.assets.map((a) => [a.id, a.approved]),
+    [['a', true], ['b', false], ['c', false], ['d', false]], 'a new version starts clean; notes come from the server');
   assert.equal(typeof fresh.loadedAt, 'number');
   // Only the project already on screen, read within the minute, is used as it is.
   assert.match(fnBody('loadProject'), /state\.project === held && Date\.now\(\) - held\.loadedAt < PROJECT_FRESH_MS/);
+});
+
+check('no download anywhere on the portal, and notes are saved on the server as they are added (C4)', () => {
+  assert.doesNotMatch(page, /\sdownload[\s=>]/, 'no download attribute');
+  assert.doesNotMatch(page, /downloadLink|DOWNLOAD/);
+  // Adding a note posts it, and only #asset-interaction repaints (contract point 3).
+  const bind = fnBody('bindAssetInteraction');
+  const add = bind.slice(bind.indexOf("'submit-revision'"), bind.indexOf("'cancel-revision'"));
+  assert.match(add, /await saveNote\(a, \{[^}]*key: state\.noteKey/, 'with its key, so a retry isn’t saved twice');
+  assert.match(add, /refreshAssetInteraction\(\)/);
+  assert.doesNotMatch(add, /setState|render\(\)/);
+  // A failure keeps the text: the draft is cleared only after the save succeeds.
+  assert.ok(add.indexOf('await saveNote') < add.indexOf("state.revisionDraft = ''"));
+  assert.match(add, /state\.noteError = noteFailure\(e\)/);
+  // Approve is off while notes are unsent.
+  assert.match(fnBody('renderAssetInteraction'), /unsent\.length \? 'disabled/);
 });

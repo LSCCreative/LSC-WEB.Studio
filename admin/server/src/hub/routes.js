@@ -19,7 +19,8 @@ const { sha256Hex, randomToken } = require('./tokens');
 const { createHubCors } = require('./cors');
 const { createPortalAccess, CODE_FORMAT, SESSION_DAYS } = require('../portal-access');
 const { normEmail } = require('../clients');
-const { clientView, projectCard, projectView } = require('./views');
+const { clientView, projectCard, projectView, noteView } = require('./views');
+const { newId, nowIso } = require('../db');
 const { createBunny, missingBunnySettings, statusFromVideo } = require('./bunny');
 const { createDeliverables, streamFile, VIDEO_EXTENSIONS } = require('./deliverables');
 const { createAttemptThrottle } = require('./throttle');
@@ -41,7 +42,13 @@ const LIMITS = {
   sign: { max: 10, windowMs: 10 * 60 * 1000 },
   read: { max: 300, windowMs: 10 * 60 * 1000 },
   media: { max: 3000, windowMs: 10 * 60 * 1000 },
+  note: { max: 300, windowMs: 10 * 60 * 1000 },
 };
+/* A note's length cap: a long paragraph, not a document (the table holds 4000). */
+const NOTE_MAX = 4000;
+/* Unsent notes one client can hold on one item: far past any real review, short of
+   a reply that buries the page. */
+const UNSENT_MAX = 200;
 /* How long the media route trusts what it last read of a client's projects and a
    photo folder (see ownsProject). */
 const MEDIA_MEMORY_MS = 10 * 1000;
@@ -371,6 +378,7 @@ function createHubRouter(db, opts = {}) {
   const authLimit = limit('auth');
   const readLimit = limit('read');
   const mediaLimit = limit('media');
+  const noteLimit = limit('note');
 
   function signedIn(req, res, next) {
     const session = access.readSession(readToken(req));
@@ -511,10 +519,145 @@ function createHubRouter(db, opts = {}) {
       ok: true,
       project: projectView(project, readChecklist(db, project.id), {
         reviewOf: (v) => reviewOf(project.id, v),
+        clientId: req.portal.client.id,
         invoices,
         agreement: signed ? { url: `${appUrl}c/#e/${signed.public_token}`, signedOn: sydneyDay(signed.signed_at) } : null,
       }),
     });
+  });
+
+  /* ── The client's feedback (C4): notes saved as they're added, removed while
+     unsent, and sent as one set per version. Client-written, so in tables of their
+     own (S10), with no backup per write (S16: the nightly one covers them, see
+     WORKING_NOTES). The server sets every date and checks every field (S8). A
+     project, item or note that isn't this client's is the same not found. */
+
+  const getOwnProject = db.prepare('SELECT * FROM projects WHERE id = ? AND client_id = ?');
+  const getItem = db.prepare('SELECT * FROM deliverables WHERE id = ? AND project_id = ?');
+  const newestPublishedOf = db.prepare(`
+    SELECT * FROM deliverable_versions WHERE deliverable_id = ? AND published_at IS NOT NULL ORDER BY n DESC LIMIT 1
+  `);
+  const submissionOf = db.prepare('SELECT * FROM client_submissions WHERE version_id = ?');
+  /* Every unsent note this client has on the item, whichever version it was written on:
+     notes left unsent when the studio published the next version go with the next set,
+     so none is stranded (brief: a note is never silently dropped). */
+  const unsentOn = db.prepare('SELECT id FROM client_notes WHERE deliverable_id = ? AND client_id = ? AND submission_id IS NULL');
+  const noteByKey = db.prepare('SELECT * FROM client_notes WHERE client_id = ? AND client_key = ?');
+  const insertNote = db.prepare(`
+    INSERT INTO client_notes (id, project_id, deliverable_id, version_id, client_id, text, seconds, photo_key, photo_name, created_at, client_key)
+    VALUES (@id, @project_id, @deliverable_id, @version_id, @client_id, @text, @seconds, @photo_key, @photo_name, @created_at, @client_key)
+  `);
+  const sentAtOf = (submissionId) => (submissionId ? (db.prepare('SELECT submitted_at FROM client_submissions WHERE id = ?').get(submissionId) || {}).submitted_at || null : null);
+  const savedNote = (n) => noteView({
+    id: n.id, versionId: n.version_id, text: n.text, seconds: n.seconds, photoKey: n.photo_key, createdAt: n.created_at, submittedAt: sentAtOf(n.submission_id),
+  });
+  const refuseNote = (res, status, error) => res.status(status).json({ error });
+
+  /* The item a client is writing about, on the version they can write on: this
+     client's accepted project, not archived; the item still needed; its newest
+     published version, which must be the one they were looking at; not sent yet;
+     not approved. Answers and returns null when any isn't so. */
+  function writableItem(req, res, versionId) {
+    const clientId = req.portal.client.id;
+    const p = ownsProject(clientId, req.params.id) && getOwnProject.get(req.params.id, clientId);
+    const d = p && getItem.get(req.params.itemId, p.id);
+    if (!d || d.not_needed_at) return refuseNote(res, 404, 'not_found') && null;
+    if (p.archived_at) return refuseNote(res, 409, 'archived') && null;
+    const v = newestPublishedOf.get(d.id);
+    if (!v) return refuseNote(res, 404, 'not_found') && null;
+    // A newer version arrived while the page was open: the client is told, and their text stays with them.
+    if (String(versionId || '') !== v.id) return refuseNote(res, 409, 'not_current') && null;
+    if (submissionOf.get(v.id)) return refuseNote(res, 409, 'sent') && null;
+    if (d.hub_status === 'approved' || d.hub_status === 'delivered') return refuseNote(res, 409, 'approved') && null;
+    return { p, d, v, clientId };
+  }
+
+  // ── POST /hub/projects/:id/items/:itemId/notes: { versionId, text, seconds?, photo? } → the saved note.
+  router.post('/hub/projects/:id/items/:itemId/notes', noteLimit, fromThePortal, signedIn, (req, res) => {
+    const body = req.body || {};
+    const text = typeof body.text === 'string' ? body.text.trim() : '';
+    if (!text || text.length > NOTE_MAX) return refuseNote(res, 400, 'bad_request');
+    // The page's own id for this note: a retry after a lost reply gets back what was saved.
+    const key = body.key === undefined || body.key === null ? null : String(body.key);
+    if (key !== null && !/^[A-Za-z0-9_-]{8,64}$/.test(key)) return refuseNote(res, 400, 'bad_request');
+    if (key !== null) {
+      const already = noteByKey.get(req.portal.client.id, key);
+      if (already) {
+        return already.project_id === req.params.id && already.deliverable_id === req.params.itemId
+          ? res.json({ ok: true, note: savedNote(already) })
+          : refuseNote(res, 400, 'bad_request');
+      }
+    }
+    let seconds = null;
+    if (body.seconds !== undefined && body.seconds !== null) {
+      seconds = Number(body.seconds);
+      if (typeof body.seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0 || seconds > 86400) {
+        return refuseNote(res, 400, 'bad_request');
+      }
+    }
+    const at = writableItem(req, res, body.versionId);
+    if (!at) return undefined;
+    // A video's note can carry a time and no photo; a photo library's names one of its photos.
+    let photoKey = null;
+    let photoName = null;
+    if (at.v.kind === 'photos') {
+      photoKey = String(body.photo || '');
+      photoName = /^[0-9a-f]{16}$/.test(photoKey) ? photosIn(at.v.source_path, photoKey).get(photoKey) : null;
+      if (!photoName || seconds !== null) return refuseNote(res, 400, 'bad_request');
+    } else if (body.photo !== undefined && body.photo !== null) {
+      return refuseNote(res, 400, 'bad_request');
+    }
+    if (unsentOn.all(at.d.id, at.clientId).length >= UNSENT_MAX) return refuseNote(res, 409, 'too_many');
+    const row = {
+      id: newId('cn'), project_id: at.p.id, deliverable_id: at.d.id, version_id: at.v.id, client_id: at.clientId,
+      text, seconds, photo_key: photoKey, photo_name: photoName, created_at: nowIso(), client_key: key,
+    };
+    // Checked and written in one synchronous turn (no await in this route): a Send can't land in between.
+    insertNote.run(row);
+    return res.status(201).json({
+      ok: true,
+      note: noteView({ id: row.id, versionId: row.version_id, text, seconds, photoKey, createdAt: row.created_at, submittedAt: null }),
+    });
+  });
+
+  // ── DELETE /hub/projects/:id/notes/:noteId: a note the client hasn't sent yet.
+  router.delete('/hub/projects/:id/notes/:noteId', noteLimit, fromThePortal, signedIn, (req, res) => {
+    const clientId = req.portal.client.id;
+    const n = db.prepare('SELECT * FROM client_notes WHERE id = ? AND project_id = ? AND client_id = ?')
+      .get(req.params.noteId, req.params.id, clientId);
+    if (!n) return refuseNote(res, 404, 'not_found');
+    if (n.submission_id) return refuseNote(res, 409, 'sent');
+    db.prepare('DELETE FROM client_notes WHERE id = ? AND submission_id IS NULL').run(n.id);
+    return res.json({ ok: true });
+  });
+
+  // ── POST /hub/projects/:id/items/:itemId/submit: { versionId } → sends every unsent note on it as one set.
+  router.post('/hub/projects/:id/items/:itemId/submit', noteLimit, fromThePortal, signedIn, (req, res) => {
+    const at = writableItem(req, res, (req.body || {}).versionId);
+    if (!at) return undefined;
+    const id = newId('cs');
+    const submittedAt = nowIso();
+    let count = 0;
+    try {
+      db.transaction(() => {
+        const notes = unsentOn.all(at.d.id, at.clientId);
+        count = notes.length;
+        if (!count) return;
+        db.prepare(`
+          INSERT INTO client_submissions (id, project_id, deliverable_id, version_id, client_id, stage, note_count, submitted_at, ip, user_agent)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(id, at.p.id, at.d.id, at.v.id, at.clientId, at.v.stage, count, submittedAt,
+          clientIp(req), String(req.headers['user-agent'] || '').slice(0, 255));
+        db.prepare('UPDATE client_notes SET submission_id = ? WHERE deliverable_id = ? AND client_id = ? AND submission_id IS NULL')
+          .run(id, at.d.id, at.clientId);
+      })();
+    } catch (err) {
+      // Two sends at once: the version's one submission is already there.
+      if (/UNIQUE/.test(err.message)) return refuseNote(res, 409, 'sent');
+      throw err;
+    }
+    if (!count) return refuseNote(res, 409, 'no_notes');
+    return res.json({ ok: true, submittedAt, noteCount: count });
   });
 
   /* ── GET /hub/projects/:id/versions/:versionId/review[?photo=<key>]: the review

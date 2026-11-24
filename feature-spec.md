@@ -46,9 +46,13 @@ off that element's events and `currentTime`:
 1. Pausing before `COMMENT REVISIONS` is clicked shows no timestamp pill.
 2. Clicking `COMMENT REVISIONS` while parked on a frame stamps that frame;
    pausing again while the panel is open re-stamps it; playing clears it.
-3. `SUBMIT REVISION` saves `{text, timestamp}`, leaves the panel open with an
-   empty box, and the video does not reload or jump to 0
-   (`refreshAssetInteraction()` only repaints `#asset-interaction`).
+3. `ADD NOTE` (was `SUBMIT REVISION`) saves `{text, timestamp}` on the server
+   as it's added, leaves the panel open with an empty box, and the video does not
+   reload or jump to 0 (`refreshAssetInteraction()` only repaints
+   `#asset-interaction`). If the save fails, the text stays in the box and the
+   client is told why. A separate `SEND N NOTES TO THE STUDIO` sends every unsent
+   note on the version as one set, after a confirmation (merged-admin C4; C5
+   counts a Final's as a round).
 4. `APPROVE CONTENT` is absent while the revision panel is open.
 5. A video that can't load falls back to the "couldn't be loaded" card
    (`state.videoFailed`) with Try again, after checking the session: an ended
