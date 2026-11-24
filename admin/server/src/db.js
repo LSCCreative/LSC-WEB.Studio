@@ -1097,6 +1097,13 @@ const MIGRATIONS = [
       db.prepare('UPDATE projects SET opened_at = ? WHERE accepted_at IS NOT NULL AND opened_at IS NULL').run(nowIso());
     },
   },
+  {
+    version: 27,
+    name: 'client portal sessions: one Client code per client, sessions the server checks (C1)',
+    up(db) {
+      require('./migrations/v27-client-sessions').migrateV27(db);
+    },
+  },
 ];
 
 /**

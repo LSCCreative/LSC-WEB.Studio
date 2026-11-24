@@ -26,6 +26,7 @@ delete process.env.TRUST_PROXY;
 const { openDatabase } = require('../src/db');
 const { createApp } = require('../src/app');
 const { hashPassword } = require('../src/auth');
+const { createPortalAccess } = require('../src/portal-access');
 
 const PORTAL = 'https://lsccreative.studio';
 const ADMIN_ORIGIN = 'https://app.lsccreative.studio';
@@ -116,14 +117,18 @@ test('the portal’s hostname serves the portal and /health only (S4)', async ()
     'a forwarded host can’t talk it round');
   assert.equal((await s.call('/health', { host: HUB_HOST })).text, 'ok');
   const auth = await s.call('/hub/auth', { host: HUB_HOST, method: 'POST', body: { email: 'a@b.example', code: '1234' } });
-  assert.deepEqual([auth.status, auth.body], [200, { token: null, projectIds: [] }]);
+  assert.deepEqual([auth.status, auth.body], [401, { error: 'wrong_code' }]);
   assert.equal((await s.call('/api/session')).status, 401, 'other hostnames still reach /api');
 });
 
 test('a forged X-Forwarded-For can’t change the IP an agreement records (S7)', async () => {
   s.db.prepare("INSERT INTO records (project_id, data, updated_at) VALUES ('p_ip', '{}', 'x')").run();
+  s.db.prepare(`INSERT INTO clients (id, business_name, contact_name, email, phone, abn, address, notes, created_at, updated_at)
+                VALUES ('cl_ip', 'IP Co', '', 'ip@b.example', '', '', '', '', 'x', 'x')`).run();
+  s.db.prepare("UPDATE projects SET client_id = 'cl_ip' WHERE id = 'p_ip'").run();
+  const { token } = createPortalAccess(s.db, { secret: 'test-signing-secret' }).startSession('cl_ip', 'code');
   const signed = await s.call('/hub/agreement', { host: HUB_HOST, method: 'POST',
-    headers: { 'x-forwarded-for': '6.6.6.6, 203.0.113.9' },
+    headers: { 'x-forwarded-for': '6.6.6.6, 203.0.113.9', cookie: `lsc_portal=${token}` },
     body: { projectId: 'p_ip', signerName: 'P', signedAt: 'x', signatureDataUrl: 'data:,', consentText: 'ok', consentChecked: true } });
   assert.equal(signed.status, 200, signed.text);
   const got = s.db.prepare("SELECT ip_address FROM agreement_evidence WHERE project_id = 'p_ip'").get();

@@ -817,8 +817,8 @@ test('the v9 steps leave their inputs alone', () => {
   assert.equal(neg.notes.length, 1);
 });
 
-test('the schema knows it is at v26', () => {
-  assert.equal(LATEST_VERSION, 26);
+test('the schema knows it is at v27', () => {
+  assert.equal(LATEST_VERSION, 27);
 });
 
 /**

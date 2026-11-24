@@ -3,6 +3,7 @@
 const { newId, nowIso } = require('../db');
 const { normEmail, emailHolder, emailSharedWith, emailTakenReply, hasPortalLogin, moveLogin } = require('../clients');
 const { readProjectRows, todayOf } = require('./projects');
+const { createPortalAccess, accessStatus } = require('../portal-access');
 
 function loadJson(row) {
   return {
@@ -22,7 +23,13 @@ function loadJson(row) {
 /* How many project matches a client card names before "and N more". */
 const MATCHES_SHOWN = 2;
 
-function registerClientRoutes(app, db) {
+/**
+ * opts.portal: { secret, url } — the portal's signing secret and its page's
+ * address (config.hub). Without the secret, issuing a Client code answers 503.
+ */
+function registerClientRoutes(app, db, opts = {}) {
+  const portal = opts.portal || {};
+  const access = portal.secret ? createPortalAccess(db, { secret: portal.secret }) : null;
   // Typeahead: GET /api/clients?q=acme — partial, case-insensitive match on
   // business name. No query = the full list, for the editor's name check.
   app.get('/api/clients', (req, res) => {
@@ -179,6 +186,51 @@ function registerClientRoutes(app, db) {
     const id = newId('cl');
     insert(id, writeFields(body), now);
     res.status(201).json({ ok: true, client: loadJson(rowOf(id)), created: true });
+  });
+
+  /* ── Portal access (C1) ──────────────────────────────────────────────────
+     The client's one Client code and their invite. The screen that sends them
+     is C6's (an invite on first publish); these are what it calls. */
+
+  app.get('/api/clients/:id/portal', (req, res) => {
+    if (!rowOf(req.params.id)) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true, access: accessStatus(db, req.params.id) });
+  });
+
+  /* A new Client code and invite link, shown once: only their hashes are kept.
+     Replaces any before, signs the client out everywhere, and retires their old
+     per-project codes. Needs an address of their own (S13). `projectId`, one of
+     theirs, is where the invite lands. */
+  app.post('/api/clients/:id/portal', (req, res) => {
+    const client = rowOf(req.params.id);
+    if (!client) return res.status(404).json({ error: 'not_found' });
+    if (!access) return res.status(503).json({ error: 'portal_not_set_up', message: 'The Client Portal isn’t set up on this server.' });
+    if (!client.email) {
+      return res.status(409).json({
+        error: 'email_required',
+        message: 'A client signs in to the portal with their email. Add one in Client details first.',
+      });
+    }
+    const shared = emailSharedWith(db, client);
+    if (shared.length) {
+      return res.status(409).json({
+        error: 'email_shared',
+        message: `${client.email} is also on ${shared.map((c) => c.businessName).join(', ')}. ` +
+          'Give each client their own address before inviting them.',
+      });
+    }
+    const projectId = (req.body || {}).projectId ? String(req.body.projectId) : null;
+    if (projectId && !db.prepare('SELECT 1 FROM projects WHERE id = ? AND client_id = ?').get(projectId, client.id)) {
+      return res.status(400).json({ error: 'project_invalid', message: 'That project isn’t this client’s.' });
+    }
+    const { code, invite } = access.issue(client.id, { projectId, now: nowIso() });
+    return res.json({
+      ok: true,
+      code,
+      // In the fragment, so the token never reaches a server's log or a Referer (IA URL Strategy).
+      inviteUrl: `${portal.url || ''}#/invite/${invite}`,
+      access: accessStatus(db, client.id),
+    });
   });
 
   app.delete('/api/clients/:id', (req, res) => {

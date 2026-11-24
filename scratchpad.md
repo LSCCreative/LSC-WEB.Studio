@@ -167,7 +167,15 @@ first load) stamps `opened_at`, and only with a valid `today`; Settings' agreeme
 deletes checklist items with no version and no hub_status (activity `checklistCleared`), so the next acceptance builds from the
 quote. Left as reported: imported `accepted_at` unvalidated, Drive link editable on a published version. 1020/1020.
 
-**Next: C1 Add real client sessions | Model: Opus 5.5 | Effort: High.**
+**C1 done 2026-11-24 (not committed).** v27 `client_logins` + `client_sessions`; `src/portal-access.js`, `src/hub/views.js`; portal
+routes `/hub/auth` (cookie `lsc_portal`), `/hub/invite`, `/hub/session`, `/hub/sign-out`, `/hub/projects[/:id]`; studio
+`GET|POST /api/clients/:id/portal`. Details and calls to confirm under C1 in TASKS.md. 1032/1032; leak test proven by a planted leak.
+**For C2:** the portal signs in with `POST /hub/auth` and reads with `credentials: 'include'` (the cookie is HttpOnly; the page never
+holds a token); 401 `signed_out` → sign-in screen; 429 `too_many_attempts` → say "too many tries"; invites are `#/invite/<token>`,
+read with `POST /hub/invite`. `/hub/records` and the old auth reply are gone, so the current `client-hub-app/` can't sign in now.
+Nothing issues codes from the admin's screens yet (C6); to try the portal before then, call `POST /api/clients/:id/portal`.
+
+**Next: C2 Rebuild the portal in place | Model: Opus 5.5 | Effort: High.**
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
 `routes.js` (`createHubRouter(db, opts)`, not mounted yet), `url-signing.js` (was signing.js), `admin-auth.js`,

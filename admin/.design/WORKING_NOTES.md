@@ -185,7 +185,13 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
 - A client's email is their portal login (merged-admin R2, S13; `src/clients.js`): one spelling (trimmed, lower-case,
   on every write) and one holder (a new address another client has is refused, 409 `email_taken`; no unique index,
   because two clients left sharing one from before stay until changed, and the record says so). Changing it moves
-  their projects' `private_auth` rows in the same transaction. C1's invite must refuse no email and a shared one.
+  their projects' `private_auth` rows in the same transaction. C1's invite refuses no email and a shared one.
+- Portal sign-in (C1, `src/portal-access.js`): one Client code per client (6 digits, `client_logins`), signed in by email; the
+  session is an HttpOnly cookie `lsc_portal` (path `/hub`, Lax) checked against `client_sessions` on every client route. Codes and
+  session ids are HMACs under `HUB_SIGNING_SECRET`, so rotating it signs everyone out and voids every code. Old 4-digit per-project
+  codes (`private_auth`) sign the client in until they're issued a code. A client's projects are found through the session's client,
+  so anyone else's is the same 404. Portal replies are built in `src/hub/views.js` only; `test-portal-sessions.js` holds them to
+  their keys, so a new field goes in both.
 - A deliverable's version never changes once published, because the client may have commented on it and C5's approvals name it:
   the next file is a new version. The item's `stage` says what the next version is, and carries the newest along only while it's
   unpublished. Files are NAS paths checked on add and on publish (`routes/deliverables.js`); the studio's preview reads them behind the

@@ -114,7 +114,9 @@ function buildPortal(db, hub) {
     return null;
   }
   // Billing's limiter and client address, so both halves count and record visitors alike.
-  const portal = createHubRouter(db, { rateLimit, clientIp, ...hub, requireAdmin: requireAuth(db) });
+  const portal = createHubRouter(db, {
+    rateLimit, clientIp, cookieSecure: config.cookieSecure, ...hub, requireAdmin: requireAuth(db),
+  });
   portal.deliverablesHealth().then((h) => {
     if (!h.ok) console.warn(`[hub] the deliverables folder can't be read (${h.error}); file links and publishing will fail`);
   });
@@ -282,7 +284,10 @@ function createApp(db, opts = {}) {
     render: opts.renderPdf,
     appUrl: opts.appUrl !== undefined ? opts.appUrl : config.appUrl,
   });
-  registerClientRoutes(app, db);
+  // Client codes are kept under the portal's secret, so the studio issues them only where the portal runs.
+  registerClientRoutes(app, db, {
+    portal: { secret: hub ? hub.signingSecret : '', url: (hub && hub.portalUrl) || config.hub.portalUrl },
+  });
   registerPricingRoutes(app, db);
   registerSettingsRoutes(app, db);
   registerOverheadRoutes(app, db);

@@ -13,10 +13,13 @@
 
 const { basename, extname, posix } = require('path');
 const express = require('express');
+const cookie = require('cookie');
 const { createBackup } = require('../backup');
 const { sha256Hex, randomToken } = require('./tokens');
-const { createUrlSigner } = require('./url-signing');
 const { createHubCors } = require('./cors');
+const { createPortalAccess, CODE_FORMAT, SESSION_DAYS } = require('../portal-access');
+const { normEmail } = require('../clients');
+const { clientView, projectCard, projectView } = require('./views');
 const { createBunny, missingBunnySettings, statusFromVideo } = require('./bunny');
 const { createDeliverables, streamFile, VIDEO_EXTENSIONS } = require('./deliverables');
 const { createAttemptThrottle } = require('./throttle');
@@ -26,16 +29,23 @@ const { createAttemptThrottle } = require('./throttle');
 const UNLISTED_VIDEO_LIMIT_MS = 30 * 60 * 1000;
 const VIDEO_LOOKUP_ATTEMPTS = 3;
 
-/* Client sign-in is an email and a 4-digit code, so it is limited twice: per
+/* Client sign-in is an email and a short code, so it is limited twice: per
    address (billing's rate limit), and per email however many addresses try,
-   so a spread-out guess at one client's code stops after a few wrong ones. */
+   so a spread-out guess at one client's code stops after a few wrong ones.
+   Invites count with sign-ins; a signed-in client's reads have their own count. */
 const LIMITS = {
   auth: { max: 20, windowMs: 10 * 60 * 1000 },
   sign: { max: 10, windowMs: 10 * 60 * 1000 },
-  records: { max: 120, windowMs: 10 * 60 * 1000 },
+  read: { max: 300, windowMs: 10 * 60 * 1000 },
 };
 const CODE_FAILURE_LIMIT = 10;
 const CODE_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+
+/* The client's session cookie (C1). Host-only on hub-api, so no other host is
+   sent it; `/hub` only, so billing's routes never see it; Lax, which a fetch from
+   lsccreative.studio still carries (the same site), and a cross-site form post
+   doesn't. HttpOnly: the portal's script never holds the token. */
+const SESSION_COOKIE = 'lsc_portal';
 
 /* Same file, same key: "a/../b/c.mp4" and "b/c.mp4" must not publish twice. */
 function normalizeDeliverablePath(value) {
@@ -60,11 +70,13 @@ function publishTag(seed) {
  *                   agreement's evidence reads what billing's does
  *   requireAdmin    required: billing's login check (auth.js requireAuth). The studio's
  *                   routes here are the Bunny publish pair, until Slice 2 moves them to /api
+ *   cookieSecure    the session cookie's Secure flag (config.cookieSecure); on unless false
  *   limits          overrides LIMITS, for tests
  * Tests only: bunnyFetch swaps fetch for Bunny calls, videoLookupGapMs the wait
  * between looking for a fetched video.
  */
 function createHubRouter(db, opts = {}) {
+  if (!opts.signingSecret) throw new Error('The hub router needs signingSecret (HUB_SIGNING_SECRET); config.hub carries it.');
   for (const [key, name] of [['publicBaseUrl', 'HUB_PUBLIC_BASE_URL'], ['deliverablesDir', 'DELIVERABLES_DIR'], ['backupDir', 'the backups folder']]) {
     if (!opts[key]) throw new Error(`The hub router needs ${key} (${name}); config.hub carries it.`);
   }
@@ -76,15 +88,25 @@ function createHubRouter(db, opts = {}) {
   const limit = (name) => opts.rateLimit(limits[name]);
   const codeFailures = createAttemptThrottle({ limit: CODE_FAILURE_LIMIT, windowMs: CODE_FAILURE_WINDOW_MS });
   const lookupGapMs = opts.videoLookupGapMs ?? 1000;
-  const signer = createUrlSigner(opts.signingSecret);
   const { credentialedCors, openCors } = createHubCors(opts.corsOrigins || []);
+  const allowedOrigins = new Set(opts.corsOrigins || []);
   const deliverables = createDeliverables(opts.deliverablesDir);
   const bunnyMissing = missingBunnySettings(opts.bunny);
   const bunny = bunnyMissing.length ? null : createBunny(opts.bunny, { fetchImpl: opts.bunnyFetch });
+  const access = createPortalAccess(db, { secret: opts.signingSecret });
+  const cookieSecure = opts.cookieSecure !== false;
+  // Loaded here, not with the module: billing's project code reads its settings as it loads.
+  const { readProjectRows, localToday } = require('../routes/projects');
+  const { readChecklist } = require('../delivery');
 
   const getRecord = db.prepare('SELECT data FROM records WHERE project_id = ?');
-  const findByEmailHash = db.prepare('SELECT * FROM private_auth WHERE email_hash = ?');
-  const findByInviteToken = db.prepare('SELECT * FROM private_auth WHERE invite_token = ?');
+  const getClient = db.prepare('SELECT * FROM clients WHERE id = ?');
+  /* The billing project a portal record belongs to, for this client only: the
+     record's id is the project's, or (from the old hub) linked by hub_imports. */
+  const recordProjectOf = db.prepare(`
+    SELECT p.id FROM projects p
+     WHERE p.client_id = ? AND (p.id = ? OR p.id = (SELECT project_id FROM hub_imports WHERE hub_id = ?))
+  `);
 
   const insertDeliverableToken = db.prepare(`
     INSERT INTO deliverable_tokens (token, relative_path, downloadable, created_at)
@@ -286,48 +308,116 @@ function createHubRouter(db, opts = {}) {
   // the exact bytes for their signature check (merge safeguard S20).
   router.use('/hub', express.json({ limit: '2mb' }));
 
-  // ── POST /hub/auth: { email, code } or { invite }. Credentialed CORS because
-  // the portal sends credentials on every call, though this route reads no cookie.
-  router.use('/hub/auth', credentialedCors);
-  router.post('/hub/auth', limit('auth'), (req, res) => {
-    const body = req.body || {};
+  /* ── The client's side (C1) ──────────────────────────────────────────────
+     Every route that reads or writes a client's work goes through `signedIn`,
+     which checks the session cookie against client_sessions. A project is found
+     through the signed-in client, so another client's project, and one that
+     doesn't exist, are the same "not found". */
 
-    if (body.invite) {
-      const row = findByInviteToken.get(String(body.invite));
-      if (!row) return res.status(404).json({ error: 'invalid invite' });
-      // Codes are stored hashed, so onboarding can't reveal one: the client
-      // still signs in with email + the code from their invitation.
-      return res.json({ projectId: row.project_id, clientCode: '' });
+  const readToken = (req) => {
+    try {
+      return cookie.parse(req.headers.cookie || '')[SESSION_COOKIE] || null;
+    } catch {
+      return null;
     }
+  };
+  const sessionCookie = (value, maxAge) => cookie.serialize(SESSION_COOKIE, value, {
+    httpOnly: true, secure: cookieSecure, sameSite: 'lax', path: '/hub', maxAge,
+  });
 
-    const email = String(body.email || '').trim().toLowerCase();
-    const code = String(body.code || '');
-    if (!email || !/^\d{4}$/.test(code)) return res.status(400).json({ error: 'bad request' });
+  /* A write from a browser names its page. One that names another site is
+     refused before anything is read; tools that send no Origin are left to the
+     cookie and the code, as billing's own routes are. */
+  function fromThePortal(req, res, next) {
+    const origin = req.headers.origin;
+    if (origin && !allowedOrigins.has(origin)) return res.status(403).json({ error: 'forbidden' });
+    return next();
+  }
+
+  /* One count per kind across its routes: guessing invites uses up sign-ins, and
+     the portal's reads share theirs. */
+  const authLimit = limit('auth');
+  const readLimit = limit('read');
+
+  function signedIn(req, res, next) {
+    const session = access.readSession(readToken(req));
+    const client = session && getClient.get(session.clientId);
+    if (!client) return res.status(401).json({ error: 'signed_out' });
+    req.portal = { session, client };
+    return next();
+  }
+
+  /* The signed-in client's own projects, as the lists read them: accepted work
+     only (a quote still being decided isn't the portal's), current and past. */
+  function projectsOf(clientId) {
+    return readProjectRows(db, { today: localToday(), clientId })
+      .map((row) => row.project)
+      .filter((p) => p.delivery.group !== 'pipeline');
+  }
+
+  // ── POST /hub/auth: { email, code } → the session cookie and who signed in.
+  router.use('/hub/auth', credentialedCors);
+  router.post('/hub/auth', authLimit, fromThePortal, (req, res) => {
+    const body = req.body || {};
+    const email = normEmail(body.email);
+    const code = String(body.code == null ? '' : body.code).trim();
+    if (!email || email.length > 254 || !CODE_FORMAT.test(code)) return res.status(400).json({ error: 'bad_request' });
 
     const emailHash = sha256Hex(email);
-    if (codeFailures.isLimited(emailHash)) return res.status(429).json({ error: 'too many attempts' });
-    const codeHash = sha256Hex(code);
-    const projectIds = [];
-    const records = {};
-    for (const row of findByEmailHash.all(emailHash)) {
-      if (row.code_hash === codeHash) {
-        projectIds.push(row.project_id);
-        records[row.project_id] = signer.signedUrl(publicBaseUrl, `/hub/records/${row.project_id}`, 900);
-      }
-    }
-    if (!projectIds.length) {
+    if (codeFailures.isLimited(emailHash)) return res.status(429).json({ error: 'too_many_attempts' });
+    const who = access.signIn(email, code);
+    if (!who) {
       codeFailures.record(emailHash);
-      return res.json({ token: null, projectIds: [] });
+      return res.status(401).json({ error: 'wrong_code' });
     }
     codeFailures.clear(emailHash);
-    const token = sha256Hex(codeHash + emailHash + Date.now());
-    res.json({ token, projectIds, records });
+    const { token } = access.startSession(who.clientId, who.via, {
+      userAgent: req.headers['user-agent'] || '', ip: clientIp(req),
+    });
+    res.setHeader('Set-Cookie', sessionCookie(token, SESSION_DAYS * 24 * 60 * 60));
+    return res.json({ ok: true, client: clientView(getClient.get(who.clientId)) });
+  });
+
+  // ── POST /hub/invite: { token } from `#/invite/<token>` → whose sign-in it is
+  // and where it lands. It signs nobody in. The token travels in the body, never
+  // a URL, so it reaches no log.
+  router.use('/hub/invite', credentialedCors);
+  router.post('/hub/invite', authLimit, fromThePortal, (req, res) => {
+    const invite = access.inviteFor((req.body || {}).token);
+    if (!invite) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true, email: invite.email, projectId: invite.projectId });
+  });
+
+  // ── GET /hub/session: who is signed in, or 401.
+  router.use('/hub/session', credentialedCors);
+  router.get('/hub/session', readLimit, signedIn, (req, res) => {
+    res.json({ ok: true, client: clientView(req.portal.client) });
+  });
+
+  // ── POST /hub/sign-out: ends this session, signed in or not.
+  router.use('/hub/sign-out', credentialedCors);
+  router.post('/hub/sign-out', fromThePortal, (req, res) => {
+    access.endSession(readToken(req));
+    res.setHeader('Set-Cookie', sessionCookie('', 0));
+    res.json({ ok: true });
+  });
+
+  // ── GET /hub/projects and /hub/projects/:id: the signed-in client's work.
+  router.use('/hub/projects', credentialedCors);
+  router.get('/hub/projects', readLimit, signedIn, (req, res) => {
+    res.json({ ok: true, projects: projectsOf(req.portal.client.id).map(projectCard) });
+  });
+  router.get('/hub/projects/:id', readLimit, signedIn, (req, res) => {
+    const project = projectsOf(req.portal.client.id).find((p) => p.id === req.params.id);
+    if (!project) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true, project: projectView(project, readChecklist(db, project.id)) });
   });
 
   // ── POST /hub/agreement (client): the signed deliverables agreement and its
-  // evidence, kept private. The address is read here, never taken from the client.
+  // evidence, kept private. Only on the signed-in client's own record (C5
+  // retires this screen); the address is read here, never taken from the client.
   router.use('/hub/agreement', credentialedCors);
-  router.post('/hub/agreement', limit('sign'), async (req, res) => {
+  router.post('/hub/agreement', limit('sign'), fromThePortal, signedIn, async (req, res) => {
     const body = req.body || {};
     const projectId = String(body.projectId || '').trim();
     const signerName = String(body.signerName || '').trim();
@@ -339,7 +429,9 @@ function createHubRouter(db, opts = {}) {
       return res.status(400).json({ error: 'bad payload' });
     }
     if (body.consentChecked !== true) return res.status(400).json({ error: 'consent required' });
-    if (!getRecord.get(projectId)) return res.status(404).json({ error: 'not found' });
+    if (!getRecord.get(projectId) || !recordProjectOf.get(req.portal.client.id, projectId, projectId)) {
+      return res.status(404).json({ error: 'not_found' });
+    }
 
     await backupBeforeWrite();
     upsertAgreementEvidence.run({
@@ -355,19 +447,6 @@ function createHubRouter(db, opts = {}) {
       received_at: new Date().toISOString(),
     });
     res.json({ ok: true });
-  });
-
-  // ── GET /hub/records/:projectId?token=&expires=: a signed, short-lived read,
-  // reached only through the URLs /hub/auth hands out.
-  router.use('/hub/records', openCors);
-  router.get('/hub/records/:projectId', limit('records'), (req, res) => {
-    const { projectId } = req.params;
-    if (!signer.verifyPath(`/hub/records/${projectId}`, req.query.token, req.query.expires)) {
-      return res.status(403).json({ error: 'forbidden' });
-    }
-    const row = getRecord.get(projectId);
-    if (!row) return res.status(404).json({ error: 'not found' });
-    res.type('application/json').send(row.data);
   });
 
   // ── GET /hub/files/:token: the stable link itself. Public by design: the

@@ -55,9 +55,9 @@ const LOGIN_IDS = `
   UNION
   SELECT i.hub_id FROM hub_imports i JOIN projects p ON p.id = i.project_id WHERE p.client_id = ?`;
 
-/** Does a project of this client have a portal login? */
+/** Does this client have a portal login: a Client code (C1), or an old code on one of their projects? */
 function hasPortalLogin(db, clientId) {
-  return Boolean(db.prepare(`
+  return Boolean(db.prepare('SELECT 1 FROM client_logins WHERE client_id = ?').get(clientId)) || Boolean(db.prepare(`
     SELECT 1 FROM private_auth a WHERE a.project_id IN (${LOGIN_IDS}) LIMIT 1
   `).get(clientId, clientId));
 }
@@ -70,4 +70,4 @@ function moveLogin(db, clientId, email, now) {
   `).run(email, sha256Hex(email), now, clientId, clientId);
 }
 
-module.exports = { normEmail, emailHolder, emailSharedWith, emailTakenReply, hasPortalLogin, moveLogin };
+module.exports = { normEmail, emailHolder, emailSharedWith, emailTakenReply, hasPortalLogin, moveLogin, LOGIN_IDS };

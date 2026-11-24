@@ -116,6 +116,8 @@ const config = {
     corsOrigins: (process.env.HUB_CORS_ORIGINS || 'https://lsccreative.studio')
       .split(',').map((s) => s.trim()).filter(Boolean),
     publicBaseUrl: (process.env.HUB_PUBLIC_BASE_URL || 'https://hub-api.lsccreative.studio').trim(),
+    // The portal's page, which invite links open (C1). It stays on Pages at the hub's old address.
+    portalUrl: (process.env.HUB_PORTAL_URL || 'https://lsccreative.studio/client-hub-app/').trim(),
     deliverablesDir: (process.env.DELIVERABLES_DIR || '/srv/deliverables').trim(),
     // The hub's writes get the same copy before writing as /api's (backup.js).
     backupDir: path.join(DATA_DIR, 'backups'),
