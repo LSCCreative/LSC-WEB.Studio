@@ -354,14 +354,18 @@ const OPENED_EVERY_MS = 24 * 60 * 60 * 1000;
  * Logs an `opened` activity for the link's newest version, unless one was
  * logged for it in the last day. Returns whether it logged.
  *
+ * An accepted quote's opens aren't logged: by then its page is where the client
+ * keeps their signed agreement (the portal links there, C3), and an open is them
+ * re-reading it, not the sales signal "opened" is for.
+ *
  * @param {string} now  ISO time, the activity's `at`
  */
 function logOpened(db, token, now) {
-  const row = db.prepare('SELECT id, project_id FROM estimates WHERE public_token = ?').get(String(token));
+  const row = db.prepare('SELECT id, project_id, status FROM estimates WHERE public_token = ?').get(String(token));
   const version = row
     ? db.prepare('SELECT n FROM estimate_versions WHERE estimate_id = ? ORDER BY n DESC LIMIT 1').get(row.id)
     : null;
-  if (!version || !row.project_id) return false;
+  if (!version || !row.project_id || row.status === 'accepted') return false;
   const since = new Date(Date.parse(now) - OPENED_EVERY_MS).toISOString();
   const recent = db.prepare(`
     SELECT 1 FROM activity
@@ -787,7 +791,7 @@ function callSheetRowOfLink(db, token) {
 }
 
 module.exports = {
-  publicInvoice, publicInvoicePdfSource, invoiceOfLink,
+  publicInvoice, publicInvoicePdfSource, invoiceOfLink, invoiceView, sydneyDay,
   newToken, clientView, freezeVersion, liveVersion, changedSince, takenDays, versionsOf, publicEstimate, publicPdfSource, quoteDates, logOpened, OPENED_EVERY_MS,
   signatureRow, signatureOfLink, signaturePdf,
   callSheetView, callSheetDays, buildCallSheet, setCallSheetLink, callSheetRowOfLink, hasDestination,

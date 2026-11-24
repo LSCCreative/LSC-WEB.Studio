@@ -23,6 +23,7 @@ const { clientView, projectCard, projectView } = require('./views');
 const { createBunny, missingBunnySettings, statusFromVideo } = require('./bunny');
 const { createDeliverables, streamFile, VIDEO_EXTENSIONS } = require('./deliverables');
 const { createAttemptThrottle } = require('./throttle');
+const { invoiceView, sydneyDay } = require('../public');
 
 /* How long a publish may wait for Bunny to list the fetched video before it is
    reported as failed. Without it a lost fetch job stays "processing" forever. */
@@ -77,6 +78,8 @@ function publishTag(seed) {
  *   requireAdmin    required: billing's login check (auth.js requireAuth). The studio's
  *                   routes here are the Bunny publish pair, until Slice 2 moves them to /api
  *   cookieSecure    the session cookie's Secure flag (config.cookieSecure); on unless false
+ *   appUrl          where the client's quote and invoice pages are (config.appUrl, with
+ *                   its trailing slash): the portal links to `${appUrl}c/#e|i/<token>`
  *   limits          overrides LIMITS, for tests
  * Tests only: bunnyFetch swaps fetch for Bunny calls, videoLookupGapMs the wait
  * between looking for a fetched video.
@@ -107,6 +110,24 @@ function createHubRouter(db, opts = {}) {
 
   const getRecord = db.prepare('SELECT data FROM records WHERE project_id = ?');
   const getClient = db.prepare('SELECT * FROM clients WHERE id = ?');
+  /* The invoices a client has actually been sent (C3): sent or paid, of a kind with
+     a page. Scheduled ones haven't gone yet; a void one was taken back. */
+  const sentInvoices = db.prepare(`
+    SELECT * FROM invoices WHERE project_id = ? AND status IN ('sent', 'paid') AND kind IN ('deposit', 'final', 'single')
+     ORDER BY COALESCE(issued_at, created_at), created_at, id
+  `);
+  /* The project's signed quote: its page still offers the signed agreement once
+     accepted (IA Defaults 10, checked in web/c/c.js). Accepted in the app, it has none. */
+  const signedQuote = db.prepare(`
+    SELECT e.public_token, s.signed_at FROM signatures s
+      JOIN estimate_versions v ON v.id = s.version_id
+      JOIN estimates e ON e.id = v.estimate_id
+     WHERE e.project_id = ? AND e.status = 'accepted' AND e.public_token IS NOT NULL
+       -- The page offers the signed agreement only for its newest version (publicEstimate's \`signed\`).
+       AND v.n = (SELECT MAX(n) FROM estimate_versions WHERE estimate_id = e.id)
+     ORDER BY s.signed_at DESC LIMIT 1
+  `);
+  const appUrl = opts.appUrl || '';
   /* The billing project a portal record belongs to, for this client only: the
      record's id is the project's, or (from the old hub) linked by hub_imports. */
   /* A version the client has been given: published, on an item still needed. */
@@ -457,7 +478,43 @@ function createHubRouter(db, opts = {}) {
   router.get('/hub/projects/:id', readLimit, signedIn, (req, res) => {
     const project = projectsOf(req.portal.client.id).find((p) => p.id === req.params.id);
     if (!project) return res.status(404).json({ error: 'not_found' });
-    return res.json({ ok: true, project: projectView(project, readChecklist(db, project.id), (v) => reviewOf(project.id, v)) });
+    const today = localToday();
+    const invoices = sentInvoices.all(project.id).map((row) => {
+      // The client's own invoice page's figures. One invoice that can't be read is
+      // left out (and logged), rather than costing the client the whole page.
+      let view;
+      try {
+        view = invoiceView(db, row, today);
+      } catch (err) {
+        console.error('[hub] an invoice couldn’t be shown on the portal:', row.id, err.message);
+        return null;
+      }
+      // An invoice in Hnry is the one Hnry sent: billing's page for it would show
+      // billing's number and bank details, so the client gets no link to it, and
+      // its number is Hnry's. Billing's own is Hnry's PO field, which the client
+      // never sees, so until Hnry's arrives it has none.
+      const inHnry = Boolean(row.hnry_invoice_id || row.hnry_number || row.hnry_pushed_at);
+      return {
+        id: row.id,
+        kind: row.kind,
+        number: inHnry ? (row.hnry_number || '') : view.number,
+        state: view.state,
+        issuedOn: view.issuedOn,
+        dueOn: view.dueOn,
+        paidOn: view.paidOn,
+        amount: view.totals.due.total,
+        url: !inHnry && row.public_token && appUrl ? `${appUrl}c/#i/${row.public_token}` : null,
+      };
+    }).filter(Boolean);
+    const signed = appUrl ? signedQuote.get(project.id) : null;
+    return res.json({
+      ok: true,
+      project: projectView(project, readChecklist(db, project.id), {
+        reviewOf: (v) => reviewOf(project.id, v),
+        invoices,
+        agreement: signed ? { url: `${appUrl}c/#e/${signed.public_token}`, signedOn: sydneyDay(signed.signed_at) } : null,
+      }),
+    });
   });
 
   /* ── GET /hub/projects/:id/versions/:versionId/review[?photo=<key>]: the review

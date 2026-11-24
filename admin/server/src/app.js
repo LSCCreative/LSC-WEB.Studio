@@ -107,7 +107,7 @@ function portalHostOnly(portalHost) {
  * The Client Portal's routes, or a 503 for them when its secret isn't set:
  * billing still starts without it, saying why.
  */
-function buildPortal(db, hub) {
+function buildPortal(db, hub, appUrl) {
   if (!hub) return null;
   if (!hub.signingSecret) {
     console.warn('[hub] HUB_SIGNING_SECRET isn\'t set, so the Client Portal\'s /hub routes answer 503');
@@ -115,7 +115,7 @@ function buildPortal(db, hub) {
   }
   // Billing's limiter and client address, so both halves count and record visitors alike.
   const portal = createHubRouter(db, {
-    rateLimit, clientIp, cookieSecure: config.cookieSecure, ...hub, requireAdmin: requireAuth(db),
+    rateLimit, clientIp, cookieSecure: config.cookieSecure, ...hub, requireAdmin: requireAuth(db), appUrl,
   });
   portal.deliverablesHealth().then((h) => {
     if (!h.ok) console.warn(`[hub] the deliverables folder can't be read (${h.error}); file links and publishing will fail`);
@@ -145,7 +145,8 @@ function createApp(db, opts = {}) {
   // The Client Portal (merge task M3). Tests pass their own settings, or get
   // the 503 stub: a test never reads the developer's real hub settings.
   const hub = opts.hub !== undefined ? opts.hub : (config.isTest ? null : config.hub);
-  const portal = buildPortal(db, hub);
+  // The client's quote and invoice pages, which the portal links to (C3).
+  const portal = buildPortal(db, hub, appUrlOf(opts.appUrl !== undefined ? opts.appUrl : config.appUrl));
 
   app.use(portalHostOnly(hub ? hostnameOf(hub.publicBaseUrl) : ''));
   app.use(createCors(config.corsOrigins, (hub || config.hub).corsOrigins || []));

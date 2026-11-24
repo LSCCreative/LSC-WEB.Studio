@@ -181,7 +181,17 @@ localhost:8090 stays the admin). Scratch client `c2-tester@example.test` has a p
 `portalProject()` is the one place the server's view becomes the page's model. Hash routes must keep `#/invite/<token>` working
 (`boot` + the `hashchange` listener).
 
-**Next: C3 Build the dashboard and project page | Model: Sonnet 5.5 | Effort: Medium.**
+**C2 committed 2026-11-25 (`524ca18`), with the 10 review fixes.**
+
+**C3 done 2026-11-25 (not committed).** Hash routes, dashboard, project page with invoices and the signed agreement. Details and
+calls under C3 in TASKS.md. 1041/1041. Scratch tester (`c2-tester@example.test`) now also has an archived project `C3-PAST`, a
+paid deposit and a sent final, a signed quote and an unpublished item; the other scratch client is `c2-other@example.test`.
+**C3 review:** all 9 findings fixed (details under C3 in TASKS.md). 1042/1042.
+**For C4:** notes and approvals live on `state.cache[projectId]` assets (`comments`, `status`), lost on reload; `carryOver()` keeps
+them across a fresh read for the same version. C4 saves them: `portalProject()` is where server notes come in, and `bindAssetInteraction`/`bindPhotoLightbox` are where a note is added (keep the
+partial repaint: no `setState` there). Photo notes are keyed by `photoKey` (the photo's review URL); the server's key is its `?photo=`.
+
+**Next: C4 Save client feedback | Model: Opus 5.5 | Effort: High.**
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
 `routes.js` (`createHubRouter(db, opts)`, not mounted yet), `url-signing.js` (was signing.js), `admin-auth.js`,

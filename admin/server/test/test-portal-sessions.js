@@ -27,6 +27,7 @@ const { hashPassword } = require('../src/auth');
 const PASSWORD = 'a-long-test-password';
 const PORTAL = 'https://lsccreative.studio';
 const PORTAL_URL = 'https://lsccreative.studio/client-hub-app/';
+const APP = 'https://app.example/';
 const DELIVERABLES = path.join(TMP, 'deliverables');
 fs.mkdirSync(DELIVERABLES, { recursive: true });
 const hub = {
@@ -65,7 +66,7 @@ test.before(async () => {
   db = openDatabase(path.join(TMP, 'billing.db'));
   db.prepare('INSERT INTO account (id, username, password_hash, created_at, updated_at) VALUES (1, ?, ?, ?, ?)')
     .run('tester', await hashPassword(PASSWORD), nowIso(), nowIso());
-  const app = createApp(db, { hub });
+  const app = createApp(db, { hub, appUrl: APP });
   await new Promise((resolve) => { server = app.listen(0, '127.0.0.1', resolve); });
   base = `http://127.0.0.1:${server.address().port}`;
   const login = await fetch(`${base}/api/login`, {
@@ -98,6 +99,9 @@ function client(email, name = uniq('Client ')) {
 
 const TOTALS = { floor: 900, taxSetAside: 300, overheadShare: 120, estTakeHome: 480, costBreakdown: { crew: 1 }, totalIncGst: 1650,
   surcharges: 50, margin: 0.3 };
+/* An invoice's totals as billing keeps them: the client's amount (1650) beside the internal figures. */
+const INVOICE_TOTALS = { ...TOTALS, total: { clientPriceExGst: 1500, gst: 150, totalIncGst: 1650 },
+  balance: { clientPriceExGst: 1500, gst: 150, totalIncGst: 1650 } };
 
 function project(clientId, { accepted = true, archived = false, name = uniq('Harbour film '), upid = uniq('U-') } = {}) {
   const id = newId('prj');
@@ -113,9 +117,10 @@ function project(clientId, { accepted = true, archived = false, name = uniq('Har
       JSON.stringify({ deliverables: [{ name: 'Hero', qty: 1, rate: 1500, price: 1500 }] }), JSON.stringify(TOTALS), now, now);
   // A sent invoice would make even a draft quote's project invoiced work, so only accepted ones get one.
   if (accepted) {
-    db.prepare(`INSERT INTO invoices (id, project_id, kind, number, status, totals_json, estimate_snapshot_json, created_at, updated_at)
-                VALUES (?, ?, 'single', ?, 'sent', ?, '{"secret":"INVOICE-SNAPSHOT"}', ?, ?)`)
-      .run(newId('inv'), id, uniq('INV-'), JSON.stringify(TOTALS), now, now);
+    db.prepare(`INSERT INTO invoices (id, project_id, kind, number, status, totals_json, estimate_snapshot_json, issued_at, due_at,
+                                      public_token, created_at, updated_at)
+                VALUES (?, ?, 'single', ?, 'sent', ?, '{"secret":"INVOICE-SNAPSHOT"}', '2026-11-01', '2026-11-15', ?, ?, ?)`)
+      .run(newId('inv'), id, uniq('INV-'), JSON.stringify(INVOICE_TOTALS), uniq('invtoken'), now, now);
   }
   return id;
 }
@@ -368,11 +373,101 @@ test('a client plays their own published versions from the NAS, view only, and n
   assert.equal((await call(at(ids.cut))).status, 401, 'signed out');
 });
 
+/* ── The dashboard and project page (C3) ───────────────────────────────── */
+
+test('a project says what to do next, how each item stands, the invoices sent, and the signed agreement (C3)', async () => {
+  const id = client('c3@salt.example');
+  const prj = project(id);
+  const now = nowIso();
+  const invoice = (kind, status, extra = {}) => {
+    const row = { id: newId('inv'), number: uniq('INV-'), token: uniq('tok'), ...extra };
+    db.prepare(`INSERT INTO invoices (id, project_id, kind, number, status, totals_json, issued_at, due_at, paid_at, public_token,
+                                      hnry_number, hnry_invoice_id, hnry_pushed_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, '2026-11-01', '2026-11-15', ?, ?, ?, ?, ?, ?, ?)`)
+      .run(row.id, prj, kind, row.number, status, JSON.stringify(INVOICE_TOTALS), status === 'paid' ? '2026-11-10' : null, row.token,
+        row.hnry || null, row.hnry ? 'hnry-1' : null, row.pushed || null, now, now);
+    return row;
+  };
+  const paid = invoice('deposit', 'paid');
+  invoice('final', 'draft');
+  invoice('final', 'scheduled');
+  invoice('final', 'void');
+  const hnry = invoice('final', 'sent', { hnry: 'HNRY-0042' });
+  // Pushed to Hnry, its number not back yet: billing's own is Hnry's PO field, never the client's.
+  const pending = invoice('single', 'sent', { pushed: now });
+
+  // Items: one approved on the old hub, one with notes, one published, one not yet.
+  const item = (title, hubStatus, published) => {
+    const d = newId('dlv');
+    db.prepare(`INSERT INTO deliverables (id, project_id, position, title, stage, hub_status, created_at, updated_at)
+                VALUES (?, ?, 1, ?, 'draft', ?, ?, ?)`).run(d, prj, title, hubStatus, now, now);
+    if (published) {
+      db.prepare(`INSERT INTO deliverable_versions (id, deliverable_id, project_id, n, stage, file_name, kind, photo_count, created_at, published_at)
+                  VALUES (?, ?, ?, 1, 'draft', '', 'video', 0, ?, ?)`).run(newId('ver'), d, prj, now, now);
+    }
+  };
+  item('approved', 'approved', true); item('changes', 'changes', true); item('review', null, true); item('production', null, false);
+
+  // Signed on the quote page: the agreement is that page.
+  const est = db.prepare('SELECT id FROM estimates WHERE project_id = ?').get(prj).id;
+  db.prepare("UPDATE estimates SET public_token = 'quote-token-c3' WHERE id = ?").run(est);
+  const ver = newId('ev');
+  db.prepare(`INSERT INTO estimate_versions (id, estimate_id, n, snapshot_json, client_view_json, sent_at) VALUES (?, ?, 1, '{}', '{"days":[]}', ?)`)
+    .run(ver, est, now);
+  db.prepare(`INSERT INTO signatures (id, version_id, full_name, role, signed_at, agreement_text, agreement_sha256)
+              VALUES (?, ?, 'Priya Nair', 'Director', '2026-10-03T22:00:00.000Z', 'text', 'sha')`).run(newId('sig'), ver);
+
+  const { code } = (await issue(id)).body;
+  const { session } = await signIn('c3@salt.example', code);
+  const view = (await call(`/hub/projects/${prj}`, { cookie: session })).body.project;
+
+  // Notes with the studio come first in the state model: nothing waits on the client.
+  assert.equal(view.status, 'We’re making your changes');
+  assert.equal(view.needsYou, false);
+  assert.match(view.nextStep, /Nothing to do for now/);
+  assert.deepEqual(Object.fromEntries(view.deliverables.map((d) => [d.title, d.status])),
+    { approved: 'approved', changes: 'changes', review: 'review', production: 'production' });
+
+  // Sent and paid only, in order; Hnry's number and no page for the one in Hnry.
+  const byId = Object.fromEntries(view.invoices.map((i) => [i.id, i]));
+  assert.deepEqual([byId[pending.id].number, byId[pending.id].url], ['', null], 'in Hnry without Hnry’s number: none yet');
+  const byLabel = Object.fromEntries(view.invoices.filter((i) => i.id !== pending.id).map((i) => [i.label, i]));
+  assert.deepEqual(Object.keys(byLabel).sort(), ['Deposit', 'Final invoice', 'Invoice'], 'no draft, scheduled or void one');
+  assert.deepEqual([byLabel.Deposit.number, byLabel.Deposit.state, byLabel.Deposit.amount, byLabel.Deposit.paidOn, byLabel.Deposit.url],
+    [paid.number, 'paid', 1650, '2026-11-10', `${APP}c/#i/${paid.token}`]);
+  assert.deepEqual([byLabel['Final invoice'].number, byLabel['Final invoice'].state, byLabel['Final invoice'].amount, byLabel['Final invoice'].url],
+    ['HNRY-0042', 'overdue', 1650, null], 'Hnry’s number, and no billing page');
+  assert.equal(byLabel.Invoice.dueOn, '2026-11-15');
+  assert.ok(!view.invoices.some((i) => i.url && i.url.includes(hnry.token)), 'billing’s page isn’t offered for an invoice in Hnry');
+  // Signed at 8am on 4 October in Sydney (22:00 UTC the day before): Sydney's day, as the quote page says.
+  assert.deepEqual(view.agreement, { url: `${APP}c/#e/quote-token-c3`, signedOn: '2026-10-04' });
+
+  // Opening that page from the portal doesn't log the accepted quote as "opened" again.
+  const opened = () => db.prepare("SELECT COUNT(*) FROM activity WHERE project_id = ? AND kind = 'opened'").pluck().get(prj);
+  const before = opened();
+  assert.equal((await call('/public/estimates/quote-token-c3')).status, 200);
+  assert.equal(opened(), before, 'an accepted quote’s opens aren’t a sales signal');
+
+  // A later version on that estimate: its page no longer offers the signed agreement, so the portal doesn't either.
+  db.prepare(`INSERT INTO estimate_versions (id, estimate_id, n, snapshot_json, client_view_json, sent_at) VALUES (?, ?, 2, '{}', '{}', ?)`)
+    .run(newId('ev'), est, now);
+  assert.equal((await call(`/hub/projects/${prj}`, { cookie: session })).body.project.agreement, null);
+
+  // A project accepted in the app was never signed here: no agreement to show.
+  const other = project(id);
+  assert.equal((await call(`/hub/projects/${other}`, { cookie: session })).body.project.agreement, null);
+  const list = (await call('/hub/projects', { cookie: session })).body.projects;
+  assert.ok(list.every((p) => typeof p.nextStep === 'string' && typeof p.needsYou === 'boolean'));
+});
+
 /* ── The leak test (S9) ─────────────────────────────────────────────────── */
 
-const FORBIDDEN = /surcharge|floor|taxSetAside|overheadShare|estTakeHome|costBreakdown|clientPrice|totalIncGst|\bgst\b|\bprice\b|\brate\b|margin|markup|total|amount|invoice/i;
+/* Since C3 an invoice the client was sent is theirs to see: its number and the amount it asks for
+   (1650 here). Everything else about the money stays out: the ex-GST price (1500), the floor,
+   tax set-aside, take-home, overhead, surcharges and margin, by name and by value. */
+const FORBIDDEN = /surcharge|floor|taxSetAside|overheadShare|estTakeHome|costBreakdown|clientPrice|totalIncGst|exGst|\bgst\b|\bprice\b|\brate\b|margin|markup|total/i;
 const SECRETS = ['INTERNAL-NOTE-MARKER', 'INTERNAL-CLIENT-NOTE', '0400 111 222', '51824753556', 'SECRET-ADDRESS', 'quote-only@salt.example',
-  'SECRET-NAS-PATH', 'PRIVATE-FILENAME', 'SECRET-DRIVE', 'NOT-NEEDED-ITEM', 'FORMAT-INTERNAL', 'INVOICE-SNAPSHOT', 'INV-', '1650', '1500'];
+  'SECRET-NAS-PATH', 'PRIVATE-FILENAME', 'SECRET-DRIVE', 'NOT-NEEDED-ITEM', 'FORMAT-INTERNAL', 'INVOICE-SNAPSHOT', '1500', '900', '480'];
 function keysOf(v, out = []) {
   if (Array.isArray(v)) v.forEach((x) => keysOf(x, out));
   else if (v && typeof v === 'object') Object.entries(v).forEach(([k, x]) => { out.push(k); keysOf(x, out); });
@@ -411,8 +506,9 @@ test('the leak test: every portal reply is exactly its allow-list, with nothing 
 
   // Exactly these keys, and no others.
   const CLIENT = ['businessName', 'contactName'];
-  const CARD = ['id', 'name', 'past', 'status', 'upid'];
-  const ITEM = ['deliverables', 'id', 'stage', 'title', 'versions'];
+  const CARD = ['id', 'name', 'needsYou', 'nextStep', 'past', 'status', 'upid'];
+  const ITEM = ['deliverables', 'id', 'stage', 'status', 'title', 'versions'];
+  const INVOICE = ['amount', 'dueOn', 'id', 'issuedOn', 'label', 'number', 'paidOn', 'state', 'url'];
   const VERSION = ['id', 'kind', 'n', 'photoCount', 'publishedAt', 'review', 'stage'];
   const sorted = (o) => Object.keys(o).sort();
   assert.deepEqual(sorted(replies.auth.body), ['client', 'ok']);
@@ -421,7 +517,10 @@ test('the leak test: every portal reply is exactly its allow-list, with nothing 
   assert.deepEqual(sorted(replies.session.body.client), CLIENT);
   replies.projects.body.projects.forEach((p) => assert.deepEqual(sorted(p), CARD));
   const view = replies.project.body.project;
-  assert.deepEqual(sorted(view), [...CARD, 'deliverables'].sort());
+  assert.deepEqual(sorted(view), [...CARD, 'agreement', 'deliverables', 'invoices'].sort());
+  assert.equal(view.invoices.length, 1);
+  view.invoices.forEach((inv) => assert.deepEqual(sorted(inv), INVOICE));
+  assert.equal(view.invoices[0].amount, 1650, 'what the invoice asks for');
   assert.deepEqual(view.deliverables.map((d) => d.id), [hero], 'an item marked not needed isn’t shown');
   view.deliverables.forEach((d) => {
     assert.deepEqual(sorted({ ...d, deliverables: 1 }), ITEM);
@@ -430,6 +529,7 @@ test('the leak test: every portal reply is exactly its allow-list, with nothing 
   });
   assert.equal(view.name, 'Harbour launch');
   assert.equal(view.status, 'Ready for your review', 'the client’s wording, not the studio’s badge');
+  assert.deepEqual([view.needsYou, view.deliverables[0].status], [true, 'review']);
 
   for (const [name, r] of Object.entries(replies)) {
     assert.ok(r.status < 500, `${name} ${r.status}`);

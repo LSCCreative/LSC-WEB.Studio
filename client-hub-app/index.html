@@ -116,6 +116,7 @@
   .badge-reviewing{ color:var(--color-status-warning-text); }
   .badge-changes{ color:var(--color-accent-text); }
   .badge-approved{ color:var(--color-status-success-text); }
+  .badge-error{ color:var(--color-status-error-text); }
   .badge-stage{ color:var(--color-text-secondary); border-color:var(--color-border-subtle); }
   .badge-project{ color:var(--color-status-info-text); }
   .status-dot{ display:inline-block; width:.5em; height:.5em; border-radius:50%; background:currentColor; }
@@ -129,6 +130,15 @@
   .asset-grid{ display:grid; grid-template-columns:1fr; gap:var(--space-6); }
   .asset-card{ display:block; width:100%; padding:var(--space-7); text-align:left; transition:border-color var(--duration-fast) var(--easing-default); }
   .asset-card:hover{ border-color:var(--color-accent-confirm); }
+  a.asset-card, a.project-card{ color:inherit; text-decoration:none; }
+  .asset-card.is-waiting{ cursor:default; }
+  .asset-card.is-waiting:hover{ border-color:var(--panel-border); }
+  .project-card{ display:block; padding:var(--space-7); transition:border-color var(--duration-fast) var(--easing-default); }
+  .project-card:hover{ border-color:var(--color-accent-confirm); }
+  .project-card:focus-visible{ outline:none; box-shadow:var(--shadow-focus); }
+  .lead{ font-size:var(--font-size-lg); line-height:var(--line-height-snug); max-width:var(--max-width-content); }
+  .visually-hidden{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  a.tab{ text-decoration:none; }
   /* 16:9 preview at the top of each card. The placeholder sits under the media, so a
      still-loading or failed thumbnail degrades to the icon rather than a blank box. */
   .asset-thumb{
@@ -248,6 +258,8 @@
   }
   /* Phones: 16px fields (iOS zooms on anything smaller), 44px targets, tighter gutters. */
   @media (max-width:767px){
+    /* A three-line header pinned to a phone's top would take a third of the screen. */
+    .topbar{ position:static; }
     .wrap, .wrap-narrow{ padding:0 var(--space-6); }
     .section{ padding-top:var(--space-8); padding-bottom:var(--space-8); }
     .field{ font-size:var(--font-size-md); }
@@ -303,12 +315,18 @@ async function api(path, opts = {}){
   return data;
 }
 
-/* The project as this page uses it, from the server's allow-listed view. Each
-   deliverable shows its newest published version. Notes and approvals live in
-   this page only until C4 and C5 give them a home on the server. */
+/* The project as this page uses it, from the server's allow-listed view. `items`
+   is the whole checklist with where each stands; `assets` are the ones with a
+   published version to review, each on its newest. Notes and approvals made here
+   live in this page only until C4 and C5 give them a home on the server. */
+const ITEM_STATUS = { approved:'approved', changes:'changes', review:'reviewing' };
 function portalProject(view){
   return {
     id: view.id, upid: view.upid || '', name: view.name || '', status: view.status || '', past: !!view.past,
+    nextStep: view.nextStep || '', needsYou: !!view.needsYou,
+    invoices: Array.isArray(view.invoices) ? view.invoices : [],
+    agreement: view.agreement || null,
+    items: (view.deliverables || []).map(d => ({ id: d.id, title: d.title || '', status: d.status })),
     assets: (view.deliverables || []).filter(d => d.versions && d.versions.length).map(d => {
       const v = d.versions[d.versions.length - 1];
       const review = v.review || null;
@@ -321,11 +339,41 @@ function portalProject(view){
           ? review.urls.map((url, i) => ({ name: 'Photo ' + (i + 1), reviewLink: url }))
           : [],
         comments: [],
-        status: 'reviewing',
+        status: ITEM_STATUS[d.status] || 'reviewing',
       };
     }),
   };
 }
+
+/* ---------------- addresses ----------------
+   #/                         the dashboard
+   #/p/<id>                   a project
+   #/p/<id>/d/<item>          a deliverable's review
+   #/p/<id>/d/<item>/<n>      photo n (from 1) open in the lightbox
+   #/invite/<token>           an invite (boot reads it and takes it out of the bar)
+   Ids, never UPIDs (IA URL Strategy). The photo is replaced in place as the client
+   arrows through, so Back leaves the deliverable rather than walking the photos. */
+function parseRoute(hash){
+  const h = String(hash || '').replace(/^#/, '');
+  let m;
+  if(/^\/invite\//.test(h)) return { name:'invite' };
+  if((m = /^\/p\/([^/]+)\/d\/([^/]+)(?:\/(\d{1,4}))?\/?$/.exec(h))) {
+    return { name:'review', projectId: decodeURIComponent(m[1]), itemId: decodeURIComponent(m[2]), photo: m[3] ? Number(m[3]) : null };
+  }
+  if((m = /^\/p\/([^/]+)\/?$/.exec(h))) return { name:'project', projectId: decodeURIComponent(m[1]) };
+  return { name:'dashboard' };
+}
+const projectHash = (id) => '#/p/' + encodeURIComponent(id);
+const reviewHash = (id, itemId) => projectHash(id) + '/d/' + encodeURIComponent(itemId);
+function go(hash){
+  if(location.hash === hash) route(); else location.hash = hash;
+}
+
+const fmtDate = (iso) => {
+  const d = /^\d{4}-\d{2}-\d{2}/.test(iso || '') ? new Date(iso.slice(0, 10) + 'T00:00:00Z') : null;
+  return d && !isNaN(d) ? d.toLocaleDateString('en-AU', { day:'numeric', month:'short', year:'numeric', timeZone:'UTC' }) : '';
+};
+const fmtMoney = (n) => Number(n || 0).toLocaleString('en-AU', { style:'currency', currency:'AUD' });
 
 const statusMeta = {
   reviewing:{ label:'Ready for review', cls:'badge-reviewing' },
@@ -350,7 +398,7 @@ function icon(name, size = 20){
 }
 
 let state = {
-  phase: 'loading',        // loading | signin | offline | empty | project
+  phase: 'loading',        // loading | signin | offline | notfound | dashboard | project
   busy: false,             // offline because of too many requests, not no answer
   client: null,            // { businessName, contactName } of whoever is signed in
   email: '',
@@ -360,7 +408,10 @@ let state = {
   loginBusy: false,
   invite: null,            // { email, projectId } from an invite link
   inviteGone: false,       // the invite link no longer works
-  project: null,           // portalProject()
+  projects: [],            // the dashboard's cards (GET /hub/projects)
+  showPast: false,         // Past projects expanded on the dashboard
+  cache: {},               // project id → portalProject(), for this page's life (keeps notes made here)
+  project: null,           // the one on screen
   clientScreen: 'landing', // landing | asset
   activeAssetId: null,
   revisionOpen: false,
@@ -411,12 +462,12 @@ async function boot(){
     if(invite.projectId){
       try { mine = (await api('/hub/projects')).projects.some(p => p.id === invite.projectId); } catch(_){ mine = false; }
     }
-    if(mine){ state.client = session.client; return openProjects(invite.projectId); }
+    if(mine){ state.client = session.client; return go(projectHash(invite.projectId)); }
     // Someone else's sign-in: it ends here, and the invited client signs in as themselves.
     try { await api('/hub/sign-out', { method:'POST', body:{} }); } catch(_){ /* their own sign-in replaces the cookie */ }
     session = null;
   }
-  if(session){ state.client = session.client; return openProjects(); }
+  if(session){ state.client = session.client; return route(); }
   if(invite){ state.invite = invite; state.email = invite.email || ''; state.inviteGone = false; }
   // Clears anything an earlier sign-in left in this page (an invite opened in the same tab).
   signedOut(null);
@@ -427,18 +478,88 @@ function offline(e){
   setState({ phase:'offline', busy: !!(e && e.status === 429) });
 }
 
-async function openProjects(preferId){
-  setState({ phase:'loading' });
+/* Show whatever the address asks for. Signed out, the sign-in screen stays and the
+   address is kept, so signing in lands on the page that was asked for. */
+const REVIEW_RESET = { revisionOpen:false, revisionDraft:'', pausedAt:null, videoFailed:false, approveModalAssetId:null };
+let routing = 0;
+async function route(){
+  const r = parseRoute(location.hash);
+  if(r.name === 'invite'){ setState({ phase:'loading' }); return boot(); }
+  if(!state.client) return;
+  const ticket = ++routing; // a later navigation wins over a slower earlier one
+  if(r.name === 'dashboard') return showDashboard(ticket);
+
+  const project = await loadProject(r.projectId, ticket);
+  if(!project || ticket !== routing) return;
+  if(r.name === 'project'){
+    const fresh = state.phase !== 'project' || state.clientScreen !== 'landing' || state.project !== project;
+    setState({ phase:'project', project, clientScreen:'landing', activeAssetId:null, lightboxIdx:null, ...REVIEW_RESET });
+    if(fresh) window.scrollTo(0, 0);
+    return;
+  }
+  const a = project.assets.find(x => x.id === r.itemId);
+  if(!a) return setState({ phase:'notfound' });
+  const idx = r.photo != null && a.type === 'photo' && a.photos[r.photo - 1] ? r.photo - 1 : null;
+  // A photo number this deliverable doesn't have: open it without one, and say so in the address.
+  if(r.photo != null && idx == null) history.replaceState(null, '', reviewHash(project.id, a.id));
+  const same = state.phase === 'project' && state.clientScreen === 'asset' && state.project === project && state.activeAssetId === a.id;
+  if(same){
+    // Only the photo changed (Back, or a pasted link): the lightbox repaints on its own.
+    if(idx !== state.lightboxIdx) (idx == null ? closeLightbox() : openLightbox(idx));
+    return;
+  }
+  setState({ phase:'project', project, clientScreen:'asset', activeAssetId:a.id, lightboxIdx:idx, ...REVIEW_RESET });
+  window.scrollTo(0, 0);
+}
+
+async function showDashboard(ticket){
+  if(state.phase !== 'dashboard') setState({ phase:'loading' });
   try {
     const { projects } = await api('/hub/projects');
-    if(!projects.length) return setState({ phase:'empty' });
-    // One project at a time until C3's dashboard lists them all.
-    const pick = projects.find(p => p.id === preferId) || projects.find(p => !p.past) || projects[0];
-    const { project } = await api('/hub/projects/' + encodeURIComponent(pick.id));
-    setState({ phase:'project', project: portalProject(project), clientScreen:'landing', activeAssetId:null });
+    if(ticket !== routing) return;
+    setState({ phase:'dashboard', projects, project:null });
   } catch(e){
-    failedRead(e);
+    if(ticket === routing) failedRead(e);
   }
+}
+
+/* A project's page model. Coming to a project (from the dashboard, a link, or back to it
+   after a while) reads it fresh, so it never disagrees with the dashboard; moving within
+   the project on screen keeps the copy in hand. Notes and approvals made in this page are
+   carried onto the fresh copy for the same version (until C4 saves them). Not found
+   (gone, or another client's: the same answer) shows the not-found screen. */
+const PROJECT_FRESH_MS = 60 * 1000;
+async function loadProject(id, ticket){
+  const held = state.cache[id];
+  if(held && state.project === held && Date.now() - held.loadedAt < PROJECT_FRESH_MS) return held;
+  if(!held || state.project !== held) setState({ phase:'loading' });
+  try {
+    const { project } = await api('/hub/projects/' + encodeURIComponent(id));
+    const fresh = carryOver(held, portalProject(project));
+    state.cache[id] = fresh;
+    return fresh;
+  } catch(e){
+    if(ticket !== routing) return null;
+    if(e.status === 404){ delete state.cache[id]; setState({ phase:'notfound' }); return null; }
+    if(e.status !== 401 && held) return held; // no answer: what was last read beats a dead end
+    failedRead(e);
+    return null;
+  }
+}
+
+/* What the client did in this page, onto a fresh copy: for each deliverable still on the
+   same version, its notes and the status they gave it. A new version starts clean. */
+function carryOver(old, fresh){
+  fresh.loadedAt = Date.now();
+  if(!old) return fresh;
+  fresh.assets.forEach(a => {
+    const was = old.assets.find(x => x.id === a.id && x.n === a.n);
+    if(was && (was.comments.length || was.status !== a.status)){
+      a.comments = was.comments;
+      if(was.status !== 'reviewing') a.status = was.status;
+    }
+  });
+  return fresh;
 }
 
 function failedRead(e){
@@ -448,7 +569,7 @@ function failedRead(e){
 
 function signedOut(text){
   setState({
-    phase:'signin', client:null, project:null, clientScreen:'landing', activeAssetId:null,
+    phase:'signin', client:null, project:null, projects:[], cache:{}, showPast:false, clientScreen:'landing', activeAssetId:null,
     code:'', loginBusy:false, loginError:false, loginMsg: text ? { text, error:false } : null,
     revisionOpen:false, revisionDraft:'', pausedAt:null, lightboxIdx:null, photoDrafts:{}, approveModalAssetId:null,
   });
@@ -465,6 +586,7 @@ async function signOut(){
   }
   state.email = '';
   state.invite = null;
+  history.replaceState(null, '', location.pathname); // the next person starts at sign-in, not at this client's page
   signedOut(null);
 }
 
@@ -522,7 +644,10 @@ async function submitSignIn(){
     const r = await api('/hub/auth', { method:'POST', body:{ email, code } });
     state.client = r.client;
     state.loginBusy = false; state.code = ''; state.loginMsg = null; state.inviteGone = false;
-    return openProjects(state.invite && state.invite.projectId);
+    const landing = state.invite && state.invite.projectId;
+    state.invite = null;
+    if(landing && parseRoute(location.hash).name === 'dashboard') return go(projectHash(landing));
+    return route();
   } catch(e){
     if(e.status === 401) return failLogin('That email and code didn’t match. Check your invitation and try again.', true);
     // Two limits: wrong codes for this email (15 minutes), and requests from this connection (a few).
@@ -572,13 +697,80 @@ function renderOffline(){
     <button id="retry" class="btn">Try again</button>
   </main>`;
 }
-function renderEmpty(){
+function renderNotFound(){
   return `
   <main class="center-screen">
-    <h1 class="display title-xl mb-2">Nothing here yet</h1>
-    <p class="muted text-sm mb-6" style="max-width:360px">The studio will email you when there’s something to review.</p>
-    <button id="client-logout" class="btn btn-quiet">Sign out</button>
+    <h1 class="display title-xl mb-2">We couldn’t find that</h1>
+    <p class="muted text-sm mb-6" style="max-width:360px">It may have been moved, or the link may be wrong.</p>
+    <a href="#/" class="btn">All projects</a>
   </main>`;
+}
+
+/* ================= THE DASHBOARD ================= */
+function renderProjectCard(p){
+  return `
+    <a href="${projectHash(p.id)}" class="card project-card">
+      ${p.upid ? `<div class="meta mb-2">${escapeHtml(p.upid)}</div>` : ''}
+      <div class="display title-lg mb-3">${escapeHtml(p.name || 'Untitled project')}</div>
+      ${p.status ? `<span class="badge ${p.needsYou ? 'badge-reviewing' : 'badge-project'}">${p.needsYou ? '<span class="status-dot"></span>' : ''}${escapeHtml(p.status)}</span>` : ''}
+      ${p.nextStep ? `<p class="muted text-sm mt-3">${escapeHtml(p.nextStep)}</p>` : ''}
+    </a>`;
+}
+
+function renderDashboard(){
+  const list = state.projects || [];
+  const current = list.filter(p => !p.past);
+  const needs = current.filter(p => p.needsYou);
+  const others = current.filter(p => !p.needsYou);
+  const past = list.filter(p => p.past);
+  const name = state.client && (state.client.contactName || state.client.businessName);
+  const group = (title, items) => items.length ? `
+      <section class="mb-8" aria-labelledby="g-${title.replace(/\W+/g, '')}">
+        <h2 id="g-${title.replace(/\W+/g, '')}" class="eyebrow mb-4">${title}</h2>
+        <div class="asset-grid">${items.map(renderProjectCard).join('')}</div>
+      </section>` : '';
+
+  const body = !list.length ? `
+      <div class="card pad" style="text-align:center">
+        <h2 class="display title-lg mb-2">Nothing here yet</h2>
+        <p class="muted text-sm">The studio will email you when there’s something to review.</p>
+      </div>` : `
+      ${group('Needs you', needs)}
+      ${group(needs.length ? 'Other projects' : 'Your projects', others)}
+      ${!current.length ? `<p class="muted mb-8">No current projects. Your finished work is under Past projects.</p>` : ''}
+      ${past.length ? `
+      <section>
+        <button id="toggle-past" class="btn btn-quiet" aria-expanded="${state.showPast}" aria-controls="past-list">
+          Past projects (${past.length}) <span aria-hidden="true">${state.showPast ? '▴' : '▾'}</span>
+        </button>
+        <div id="past-list" class="asset-grid mt-4" ${state.showPast ? '' : 'hidden'}>${past.map(renderProjectCard).join('')}</div>
+      </section>` : ''}`;
+
+  return `
+  <div>
+    <header class="topbar">
+      <div class="wrap spread">
+        <div class="min-0">
+          <div class="meta mb-2">CLIENT PORTAL</div>
+          <div class="display title-lg">${escapeHtml((state.client && state.client.businessName) || 'Your projects')}</div>
+        </div>
+        <button id="client-logout" class="btn btn-quiet" style="flex:0 0 auto">Sign out</button>
+      </div>
+    </header>
+    <main class="wrap section">
+      ${name ? `<p class="muted mb-8">Hi ${escapeHtml(name.split(' ')[0])}, here’s your work with LSC Creative.</p>` : ''}
+      ${body}
+    </main>
+  </div>`;
+}
+
+function bindDashboard(){
+  bindClientChrome();
+  const toggle = document.getElementById('toggle-past');
+  if(toggle) toggle.onclick = () => {
+    setState({ showPast: !state.showPast });
+    const again = document.getElementById('toggle-past'); if(again) again.focus();
+  };
 }
 
 /* ================= THE PROJECT ================= */
@@ -597,8 +789,9 @@ function renderClientChrome(inner){
       <div class="wrap spread">
         <div class="min-0">
           ${onAsset
-            ? `<button id="back-to-project" class="link back-link mb-2">← All deliverables</button>`
-            : (p.upid ? `<div class="meta mb-2">${escapeHtml(p.upid)}</div>` : '')}
+            ? `<a href="${projectHash(p.id)}" class="link back-link mb-2">← ${escapeHtml(p.name || 'Project')}</a>`
+            : `<a href="#/" class="link back-link mb-2">← All projects</a>`}
+          ${!onAsset && p.upid ? `<div class="meta mb-2">${escapeHtml(p.upid)}</div>` : ''}
           <div class="display title-lg">${escapeHtml(p.name)}</div>
           ${p.status ? `<span class="badge badge-project mt-3">${escapeHtml(p.status)}</span>` : ''}
         </div>
@@ -612,36 +805,96 @@ function renderClientChrome(inner){
 function bindClientChrome(){
   const out = document.getElementById('client-logout');
   if(out) out.onclick = signOut;
-  const back = document.getElementById('back-to-project');
-  if(back) back.onclick = () => setState({ clientScreen:'landing', activeAssetId:null, revisionOpen:false, lightboxIdx:null, pausedAt:null, videoFailed:false, approveModalAssetId:null });
 }
 
+/* The project page (IA "Portal project"): status and next step, deliverables with
+   where each stands, the invoices actually sent, and the signed agreement. The
+   payment block joins the top with payment (F tasks). */
 function renderClientLanding(){
   const p = getViewProject();
   const allApproved = p.assets.length > 0 && p.assets.every(a => a.status === 'approved');
-  const cards = p.assets.map(a => `
-    <button data-open-asset="${escapeAttr(a.id)}" class="card asset-card">
+  const byId = Object.fromEntries(p.assets.map(a => [a.id, a]));
+  const cards = p.items.map(item => {
+    const a = byId[item.id];
+    if(!a){
+      // Nothing published yet: shown so the client sees the whole list, but nothing to open.
+      return `
+    <div class="card asset-card is-waiting">
+      <div class="asset-thumb"><span class="thumb-fallback">${icon('clock', 30)}</span></div>
+      <div class="display title-lg mb-3">${escapeHtml(item.title || 'Deliverable')}</div>
+      <span class="badge badge-stage">${item.status === 'approved' ? 'Approved' : 'We’re working on it'}</span>
+    </div>`;
+    }
+    return `
+    <a href="${reviewHash(p.id, a.id)}" class="card asset-card">
       ${renderAssetThumb(a)}
       <div class="display title-lg mb-3">${escapeHtml(a.title || (a.type === 'video' ? 'Video' : 'Photos'))}</div>
       <div class="row" style="gap:var(--space-4)">
         <span class="badge ${statusMeta[a.status].cls}"><span class="status-dot"></span>${statusMeta[a.status].label}</span>
         <span class="badge badge-stage">${stageLabel(a.stage)} · v${a.n}</span>
       </div>
-    </button>`).join('');
+    </a>`;
+  }).join('');
+
+  const invoices = p.invoices.length ? `
+      <section class="mt-8" aria-labelledby="h-invoices">
+        <h2 id="h-invoices" class="eyebrow mb-4">Invoices</h2>
+        <div class="notes">${p.invoices.map(renderInvoiceRow).join('')}</div>
+      </section>` : '';
+  const agreement = p.agreement ? `
+      <section class="mt-8" aria-labelledby="h-agreement">
+        <h2 id="h-agreement" class="eyebrow mb-4">Agreement</h2>
+        <div class="card pad-sm spread" style="flex-wrap:wrap">
+          <div class="min-0">
+            <div class="text-sm">Your signed service agreement</div>
+            ${p.agreement.signedOn ? `<div class="meta mt-2">SIGNED ${escapeHtml(fmtDate(p.agreement.signedOn).toUpperCase())}</div>` : ''}
+          </div>
+          <a href="${escapeAttr(p.agreement.url)}" target="_blank" rel="noopener" class="btn">View the quote and agreement<span class="visually-hidden"> (opens in a new tab)</span></a>
+        </div>
+      </section>` : '';
 
   return renderClientChrome(`
     <main class="wrap section">
-      ${state.client && state.client.contactName ? `<p class="muted mb-8">Hi ${escapeHtml(state.client.contactName.split(' ')[0])}, here’s your work so far.</p>` : ''}
+      ${p.nextStep ? `<p class="lead mb-8">${escapeHtml(p.nextStep)}</p>` : ''}
       ${allApproved ? `
         <div class="card pad-sm notice mb-8" role="status">
           <span style="color:var(--color-status-success-text);flex:0 0 auto">${icon('check', 18)}</span>
           <span class="text-sm">You’ve approved everything here. The studio will be in touch about your files.</span>
         </div>` : ''}
-      ${cards
-        ? `<div class="asset-grid">${cards}</div>`
-        : `<div class="card pad" style="text-align:center"><p class="muted text-sm">Nothing to review yet. The studio will email you when there is.</p></div>`}
+      <section aria-labelledby="h-deliverables">
+        <h2 id="h-deliverables" class="eyebrow mb-4">Deliverables</h2>
+        ${cards
+          ? `<div class="asset-grid">${cards}</div>`
+          : `<div class="card pad" style="text-align:center"><p class="muted text-sm">${p.past || p.status === 'Complete'
+              ? 'There were no deliverables to review on this project.'
+              : 'Nothing to review yet. The studio will email you when there is.'}</p></div>`}
+      </section>
+      ${invoices}
+      ${agreement}
     </main>
   `);
+}
+
+/* One sent invoice: what it is, what it asks for, where it stands, and its page when
+   it has one of billing's (one in Hnry arrived from Hnry instead). */
+function renderInvoiceRow(inv){
+  const state_ = inv.state === 'paid'
+    ? `<span class="badge badge-approved">Paid${inv.paidOn ? ' ' + escapeHtml(fmtDate(inv.paidOn)) : ''}</span>`
+    : inv.state === 'overdue'
+      ? `<span class="badge badge-error">Overdue</span>`
+      : `<span class="badge badge-reviewing">Due${inv.dueOn ? ' ' + escapeHtml(fmtDate(inv.dueOn)) : ''}</span>`;
+  return `
+    <div class="card pad-sm spread" style="flex-wrap:wrap">
+      <div class="min-0">
+        <div class="text-sm">${escapeHtml(inv.label)}${inv.number ? ` <span class="meta">${escapeHtml(inv.number)}</span>` : ''}</div>
+        ${inv.issuedOn ? `<div class="meta mt-2">ISSUED ${escapeHtml(fmtDate(inv.issuedOn).toUpperCase())}</div>` : ''}
+      </div>
+      <div class="row" style="gap:var(--space-5)">
+        <span class="mono">${escapeHtml(fmtMoney(inv.amount))}</span>
+        ${state_}
+        ${inv.url ? `<a href="${escapeAttr(inv.url)}" target="_blank" rel="noopener" class="link">View<span class="visually-hidden"> invoice ${escapeHtml(inv.number)} (opens in a new tab)</span></a>` : ''}
+      </div>
+    </div>`;
 }
 
 // Media preview for a deliverable card.
@@ -678,7 +931,7 @@ function renderClientAsset(){
   const a = activeAsset();
   const p = getViewProject();
   const tabs = p.assets.map(x => `
-    <button data-switch-asset="${escapeAttr(x.id)}" class="tab ${x.id === a.id ? 'is-active' : ''}" ${x.id === a.id ? 'aria-current="true"' : ''}>${escapeHtml(x.title || x.type)}</button>
+    <a href="${reviewHash(p.id, x.id)}" class="tab ${x.id === a.id ? 'is-active' : ''}" ${x.id === a.id ? 'aria-current="page"' : ''}>${escapeHtml(x.title || x.type)}</a>
   `).join('');
 
   const canvas = a.type === 'video'
@@ -1013,7 +1266,9 @@ function render(){
     return;
   }
   if(state.phase === 'signin'){ root.innerHTML = renderSignIn(); bindSignIn(); return; }
-  if(state.phase === 'empty'){ root.innerHTML = renderEmpty(); bindClientChrome(); return; }
+  if(state.phase === 'notfound'){ root.innerHTML = renderNotFound(); return; }
+  if(state.phase === 'dashboard'){ root.innerHTML = renderDashboard(); bindDashboard(); return; }
+  if(!state.project){ root.innerHTML = renderLoading(); return; }
   if(state.clientScreen === 'asset' && activeAsset()){ root.innerHTML = renderClientAsset(); bindClientAsset(); return; }
   root.innerHTML = renderClientLanding(); bindClientLanding();
 }
@@ -1021,19 +1276,10 @@ function render(){
 /* ================= BINDINGS ================= */
 function bindClientLanding(){
   bindClientChrome();
-  document.querySelectorAll('[data-open-asset]').forEach(btn => {
-    btn.onclick = () => {
-      setState({ clientScreen:'asset', activeAssetId: btn.dataset.openAsset, revisionOpen:false, lightboxIdx:null, pausedAt:null, videoFailed:false, approveModalAssetId:null });
-      window.scrollTo(0, 0);
-    };
-  });
 }
 
 function bindClientAsset(){
   bindClientChrome();
-  document.querySelectorAll('[data-switch-asset]').forEach(btn => {
-    btn.onclick = () => setState({ activeAssetId: btn.dataset.switchAsset, revisionOpen:false, lightboxIdx:null, pausedAt:null, videoFailed:false, approveModalAssetId:null });
-  });
 
   const p = getViewProject();
   const a = activeAsset();
@@ -1058,12 +1304,17 @@ function bindClientAsset(){
 
   bindPhotoThumbs(a);
   bindPhotoLightbox(a);
+  // A lightbox opened by its address (a link, a reload) is a dialog: focus goes into it.
+  if(state.lightboxIdx != null){
+    const into = document.getElementById('lb-text') || document.getElementById('lb-close');
+    if(into) into.focus();
+  }
 
   const confirmApprove = document.getElementById('confirm-approve');
   if(confirmApprove) confirmApprove.onclick = () => {
     a.status = 'approved';
-    const allApproved = p.assets.every(x => x.status === 'approved');
-    setState({ clientScreen: allApproved ? 'landing' : 'asset', revisionOpen:false, approveModalAssetId:null });
+    if(p.assets.every(x => x.status === 'approved')) return go(projectHash(p.id));
+    setState({ revisionOpen:false, approveModalAssetId:null });
   };
   const cancelApprove = document.getElementById('cancel-approve');
   if(cancelApprove) cancelApprove.onclick = () => setState({ approveModalAssetId:null });
@@ -1084,8 +1335,17 @@ function refreshLightbox(){
   bindPhotoLightbox(a);
 }
 
+// The photo is in the address (#/p/<id>/d/<item>/<n>), replaced in place.
+function photoAddress(i){
+  const a = activeAsset(), p = getViewProject();
+  if(!a || !p) return;
+  const want = reviewHash(p.id, a.id) + (i == null ? '' : '/' + (i + 1));
+  if(location.hash !== want) history.replaceState(null, '', want);
+}
+
 function openLightbox(i){
   state.lightboxIdx = i;
+  photoAddress(i);
   refreshLightbox();
   const box = document.getElementById('lb-text') || document.getElementById('lb-close');
   if(box) box.focus();
@@ -1094,6 +1354,7 @@ function openLightbox(i){
 function closeLightbox(){
   const was = state.lightboxIdx;
   state.lightboxIdx = null;
+  photoAddress(null);
   refreshLightbox();
   // The contact sheet's note counts change as notes are added, so repaint it.
   refreshAssetInteraction();
@@ -1240,9 +1501,7 @@ function bindAssetInteraction(a){
 
 // An invite opened in a tab already on the portal changes only the fragment, which
 // doesn't reload the page, so it's read here too.
-window.addEventListener('hashchange', () => {
-  if(/^#\/invite\//.test(location.hash)){ setState({ phase:'loading' }); boot(); }
-});
+window.addEventListener('hashchange', route);
 
 render();
 boot();

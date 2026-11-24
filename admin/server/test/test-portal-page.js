@@ -128,3 +128,36 @@ check('the player survives a revision: the <video> sits outside the partial repa
   assert.match(fnBody('refreshLightbox'), /getElementById\('lightbox-host'\)/);
   assert.doesNotMatch(fnBody('refreshLightbox'), /render\(\)|setState/);
 });
+
+check('the portal’s addresses: dashboard, project, review and photo, by id (C3)', () => {
+  // parseRoute runs as the page runs it.
+  const parseRoute = new Function(`${fnBody('parseRoute')}; return parseRoute;`)();
+  assert.deepEqual(parseRoute(''), { name: 'dashboard' });
+  assert.deepEqual(parseRoute('#/'), { name: 'dashboard' });
+  assert.deepEqual(parseRoute('#/nonsense/here'), { name: 'dashboard' }, 'an unknown address is the dashboard');
+  assert.deepEqual(parseRoute('#/p/prj_1'), { name: 'project', projectId: 'prj_1' });
+  assert.deepEqual(parseRoute('#/p/prj%201/'), { name: 'project', projectId: 'prj 1' });
+  assert.deepEqual(parseRoute('#/p/prj_1/d/dlv_2'), { name: 'review', projectId: 'prj_1', itemId: 'dlv_2', photo: null });
+  assert.deepEqual(parseRoute('#/p/prj_1/d/dlv_2/3'), { name: 'review', projectId: 'prj_1', itemId: 'dlv_2', photo: 3 });
+  assert.deepEqual(parseRoute('#/invite/abc'), { name: 'invite' });
+  // Signed out, the address is kept for after sign-in: route() waits for a client.
+  assert.match(fnBody('route'), /if\(!state\.client\) return;/);
+  // Photos move in place, so Back leaves the deliverable rather than walking the photos.
+  assert.match(fnBody('photoAddress'), /history\.replaceState/);
+});
+
+check('a project is read fresh on arrival, keeping what the client did here on the same version', () => {
+  const carryOver = new Function(`${fnBody('carryOver')}; return carryOver;`)();
+  const asset = (id, n, extra = {}) => ({ id, n, comments: [], status: 'reviewing', ...extra });
+  const old = { assets: [
+    asset('a', 1, { comments: [{ text: 'tighter' }], status: 'changes' }),
+    asset('b', 1, { status: 'approved' }),
+    asset('c', 1, { comments: [{ text: 'old cut' }], status: 'changes' }),
+  ] };
+  const fresh = carryOver(old, { assets: [asset('a', 1), asset('b', 1), asset('c', 2), asset('d', 1)] });
+  assert.deepEqual(fresh.assets.map((a) => [a.id, a.comments.length, a.status]),
+    [['a', 1, 'changes'], ['b', 0, 'approved'], ['c', 0, 'reviewing'], ['d', 0, 'reviewing']], 'a new version starts clean');
+  assert.equal(typeof fresh.loadedAt, 'number');
+  // Only the project already on screen, read within the minute, is used as it is.
+  assert.match(fnBody('loadProject'), /state\.project === held && Date\.now\(\) - held\.loadedAt < PROJECT_FRESH_MS/);
+});

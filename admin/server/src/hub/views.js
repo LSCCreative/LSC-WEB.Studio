@@ -19,15 +19,63 @@ function clientView(row) {
   };
 }
 
+/* What the client does next, by the state model's badge (IA "Project State
+   Model"): the line under the status on the dashboard and the project page. */
+const NEXT_STEP = {
+  revisions: 'Nothing to do for now. We’ll let you know when the new version is ready.',
+  in_review: 'Review what’s ready below, then add your notes or approve.',
+  in_production: 'Nothing to do for now. We’ll email you when there’s something to review.',
+  send_invoice: 'Nothing to do for now. Your invoice will arrive by email.',
+  payment_claimed: 'Nothing to do. We’ll confirm your payment shortly.',
+  payment_due: 'Pay your invoice to receive your files.',
+  downloads_locked: 'Get in touch with the studio to carry on.',
+  complete: 'All done. Thanks for working with us.',
+  archived: 'All done. Thanks for working with us.',
+};
+/* The badges that wait on the client: the dashboard lists these first. */
+const NEEDS_CLIENT = new Set(['in_review', 'payment_due']);
+
 /* A project as the portal's dashboard lists it. `status` is the client's wording
    from the state model (delivery.js BADGES), never the studio's badge. */
 function projectCard(project) {
+  const { badge } = project.delivery;
   return {
     id: project.id,
     upid: str(project.upid),
     name: str(project.name),
     status: str(project.delivery.client),
-    past: project.delivery.badge === 'archived',
+    nextStep: NEXT_STEP[badge] || '',
+    needsYou: NEEDS_CLIENT.has(badge),
+    past: badge === 'archived',
+  };
+}
+
+/* Where one checklist item stands for the client, in the state model's order
+   (delivery.js stateOf): approved, notes with the studio, ready for them, or not
+   yet published. */
+function itemStatus(d) {
+  if (d.hubStatus === 'approved' || d.hubStatus === 'delivered') return 'approved';
+  if (d.hubStatus === 'changes') return 'changes';
+  if (d.versions.some((v) => v.publishedAt)) return 'review';
+  return 'production';
+}
+
+const INVOICE_LABEL = { deposit: 'Deposit', final: 'Final invoice', single: 'Invoice' };
+
+/* An invoice the client has been sent, as the routes found it: the number they
+   were given (Hnry's once it lives there), what it asks for, and its page when it
+   has one of billing's. Nothing else about the money. */
+function invoiceCard(inv) {
+  return {
+    id: inv.id,
+    label: INVOICE_LABEL[inv.kind] || 'Invoice',
+    number: str(inv.number),
+    state: inv.state,
+    issuedOn: str(inv.issuedOn),
+    dueOn: str(inv.dueOn),
+    paidOn: str(inv.paidOn),
+    amount: Number(inv.amount) || 0,
+    url: inv.url || null,
   };
 }
 
@@ -36,14 +84,19 @@ function projectCard(project) {
    `reviewOf(version)` gives each version's review copy, built at reply time and
    never stored (C2): { type: 'file', url } for a video, { type: 'photos', urls }
    for a photo library, or null when there's no file to show (an old hub link).
-   Bunny's { type: 'hls', url } joins it in Slice 4. Nothing here offers a download. */
-function projectView(project, checklist, reviewOf = () => null) {
+   Bunny's { type: 'hls', url } joins it in Slice 4. Nothing here offers a download.
+   `invoices` (C3): the ones actually sent, through invoiceCard. `agreement`: the
+   signed quote's page and when it was signed, or null when it wasn't signed here. */
+function projectView(project, checklist, { reviewOf = () => null, invoices = [], agreement = null } = {}) {
   return {
     ...projectCard(project),
+    invoices: invoices.map(invoiceCard),
+    agreement: agreement ? { url: agreement.url, signedOn: str(agreement.signedOn) } : null,
     deliverables: checklist.filter((d) => !d.notNeededAt).map((d) => ({
       id: d.id,
       title: str(d.title),
       stage: d.stage,
+      status: itemStatus(d),
       versions: d.versions.filter((v) => v.publishedAt).map((v) => ({
         id: v.id,
         n: v.n,

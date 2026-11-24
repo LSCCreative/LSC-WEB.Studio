@@ -198,6 +198,8 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   Media reaches the client by ids through `/hub/projects/:id/versions/:versionId/review`, built at reply time; never a path or file name.
   A photo is `?photo=<key>`, the first 16 hex of SHA-256 of `photo\n<name>`, so links survive the folder changing. The route trusts its
   memory of a client's projects and a folder for 10s (`MEDIA_MEMORY_MS`), and looks up anything it hasn't seen.
+- Portal invoices (C3): sent or paid only, with the amount `invoiceView` says is due (the client's own page's figure). An invoice in
+  Hnry gets Hnry's number and no link to billing's page. The leak test admits an invoice's number and amount, nothing else of money.
 - A deliverable's version never changes once published, because the client may have commented on it and C5's approvals name it:
   the next file is a new version. The item's `stage` says what the next version is, and carries the newest along only while it's
   unpublished. Files are NAS paths checked on add and on publish (`routes/deliverables.js`); the studio's preview reads them behind the
