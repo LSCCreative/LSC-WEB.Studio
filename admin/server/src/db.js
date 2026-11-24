@@ -1085,6 +1085,18 @@ const MIGRATIONS = [
       require('./migrations/v25-hub-adoption').migrateV25(db, nowIso());
     },
   },
+  {
+    version: 26,
+    name: 'projects remember when they were first opened (the Needs you queue, R5)',
+    up(db) {
+      // Needs you's "New project" leaves when the project is first opened. Every
+      // project accepted before this counts as already seen, or the queue's first
+      // morning would be the whole back catalogue.
+      const cols = new Set(db.prepare('PRAGMA table_info(projects)').all().map((c) => c.name));
+      if (!cols.has('opened_at')) db.exec('ALTER TABLE projects ADD COLUMN opened_at TEXT');
+      db.prepare('UPDATE projects SET opened_at = ? WHERE accepted_at IS NOT NULL AND opened_at IS NULL').run(nowIso());
+    },
+  },
 ];
 
 /**

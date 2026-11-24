@@ -732,7 +732,7 @@ const HomeView = (() => {
       '<div class="page-sub">' + esc(C.longDate(today, today)) + '</div></div></div>' +
       '<div class="dash">' +
       '<section class="dash-cal" id="dash-cal" aria-labelledby="home-cal-h"></section>' +
-      '<div class="dash-main"><div class="dash-lists">' +
+      '<div class="dash-main">' + LSCNeeds.cardMarkup() + '<div class="dash-lists">' +
       cardMarkup('proj') + cardMarkup('out') + cardMarkup('paid') +
       '</div>' +
       '<section class="dash-card" id="dash-act" aria-labelledby="home-act-h">' +
@@ -755,6 +755,7 @@ const HomeView = (() => {
       upWanted = null;
       loadComingUp();
     }
+    LSCNeeds.bind(root, handlers.onAuthLost);
     Object.keys(LISTS).forEach(loadList);
     loadActivity();
   }

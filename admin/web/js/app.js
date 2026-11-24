@@ -222,6 +222,8 @@
   function renderRoute(route, state) {
     LSCMenu.close(false);
     const [area, ...rest] = route.segments;
+    // The header's Needs you count follows every screen; the Dashboard asks for itself.
+    if (area !== undefined && area !== 'home') LSCNeeds.refresh(onAuthLost);
     if (area === undefined) {
       LSCRouter.go(LANDING, { replace: true, skipGuard: true });
       return;

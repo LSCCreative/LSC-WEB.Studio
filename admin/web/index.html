@@ -70,7 +70,8 @@
       <button type="button" class="shell-tab" role="tab" id="tab-clients" data-area="clients" aria-selected="false" aria-controls="app-subnav" tabindex="-1">Clients</button>
     </div>
     <div class="shell-utility">
-      <!-- The Needs you count joins here when the queue is built. -->
+      <!-- The Needs you count (R5): hidden until the first reply, then on every screen. js/needs.js. -->
+      <a class="shell-needs" id="needs-link" href="#/home" hidden><span class="shell-needs-label" aria-hidden="true">Needs you</span><span class="shell-needs-count" id="needs-count" aria-hidden="true"></span></a>
       <span class="menu">
         <button type="button" class="shell-account menu-btn" id="acct-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="acct-menu" aria-label="Account">
           <span class="shell-avatar" id="acct-initial" aria-hidden="true"></span>
@@ -185,6 +186,7 @@
 <script src="js/views/finance-dashboard.js"></script>
 <script src="js/views/finance.js"></script>
 <script src="js/views/settings.js"></script>
+<script src="js/needs.js"></script>
 <script src="js/views/home-week.js"></script>
 <script src="js/views/home.js"></script>
 <script src="js/views/setup-upids.js"></script>

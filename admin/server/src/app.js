@@ -19,6 +19,7 @@ const { registerSetupRoutes } = require('./routes/setup');
 const { registerProjectRoutes } = require('./routes/projects');
 const { registerDeliverableRoutes } = require('./routes/deliverables');
 const { registerHubImportRoutes } = require('./routes/hub-import');
+const { registerNeedsRoutes } = require('./routes/needs');
 const { registerInvoiceRoutes } = require('./routes/invoices');
 const { registerPublicRoutes, rateLimit, clientIp } = require('./routes/public');
 const { registerEmailRoutes, registerSendRoutes } = require('./routes/email');
@@ -297,6 +298,7 @@ function createApp(db, opts = {}) {
   registerProjectRoutes(app, db, { ...stageD, hnryPush });
   registerDeliverableRoutes(app, db, { deliverablesDir: opts.deliverablesDir || (hub || config.hub).deliverablesDir });
   registerHubImportRoutes(app, db);
+  registerNeedsRoutes(app, db);
   registerInvoiceRoutes(app, db, { ...stageD, hnryPush });
   registerSendRoutes(app, db, { outbox });
   registerGoogleRoutes(app, db, { oauth, sync: googleSync });

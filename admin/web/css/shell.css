@@ -103,13 +103,51 @@
   box-shadow: inset var(--shadow-focus);
 }
 
-/* ── Utility: the account menu (and, later, the Needs you count) ── */
+/* ── Utility: the Needs you count, then the account menu ── */
 .shell-utility {
   display: flex;
   align-items: center;
   gap: var(--space-4);
   margin-left: auto;
   padding-left: var(--space-4);
+}
+.shell-needs {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--touch-min);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  font: var(--font-weight-normal) var(--font-size-xs) / 1 var(--font-family-mono);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--color-text-secondary);
+}
+.shell-needs[hidden] {
+  display: none;
+}
+.shell-needs:hover {
+  color: var(--color-text-primary);
+  background: var(--color-bg-hover);
+}
+.shell-needs:focus-visible {
+  box-shadow: var(--shadow-focus);
+}
+.shell-needs-label {
+  display: none;
+}
+.shell-needs-count {
+  min-width: 22px;
+  padding: 3px 6px;
+  border-radius: var(--chip-radius);
+  text-align: center;
+  color: var(--color-status-error-text);
+  background: color-mix(in srgb, var(--color-status-error) 16%, transparent);
+}
+.shell-needs.is-clear .shell-needs-count {
+  color: var(--color-status-neutral-text);
+  background: color-mix(in srgb, var(--color-status-neutral) 16%, transparent);
 }
 .shell-account {
   display: inline-flex;
@@ -257,6 +295,9 @@
   }
   .shell-account {
     padding: 0 var(--space-4) 0 var(--space-3);
+  }
+  .shell-needs-label {
+    display: inline;
   }
   .shell-account-name,
   .shell-account .menu-caret {

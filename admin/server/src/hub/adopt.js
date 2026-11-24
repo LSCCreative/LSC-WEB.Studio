@@ -389,10 +389,10 @@ function adopt(db, pasted, decisions, stageOf, log, now) {
       if (hub.upid && there) result.clashes.push({ id, title: hub.title, upid: hub.upid });
       const accepted = text(hub.p.publishedAt) || (hub.server && hub.server.publishedAt) || now;
       db.prepare(`
-        INSERT INTO projects (id, upid, client_id, name, accepted_at, no_deliverables_at, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO projects (id, upid, client_id, name, accepted_at, no_deliverables_at, opened_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(projectId, upid, clientId, hub.title.slice(0, MAX_TITLE), accepted,
-        hub.delivered && !hub.assets.length ? now : null, now, now);
+        hub.delivered && !hub.assets.length ? now : null, now, now, now);
       result.imported += 1;
     }
 

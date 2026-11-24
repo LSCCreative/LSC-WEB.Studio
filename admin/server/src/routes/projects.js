@@ -927,7 +927,13 @@ function registerProjectRoutes(app, db, opts = {}) {
     return p || null;
   }
 
-  app.get('/api/projects/:id', (req, res) => folderReply(req, res));
+  /* Opening an accepted project is what clears Needs you's "New project" (IA):
+     the first read stamps it, and the folder is read as before. */
+  app.get('/api/projects/:id', (req, res) => {
+    db.prepare('UPDATE projects SET opened_at = ? WHERE id = ? AND accepted_at IS NOT NULL AND opened_at IS NULL')
+      .run(nowIso(), req.params.id);
+    return folderReply(req, res);
+  });
 
   if (opts.markSent) app.post('/api/projects/:id/sent', (req, res) => {
     const p = projectFor(req, res);

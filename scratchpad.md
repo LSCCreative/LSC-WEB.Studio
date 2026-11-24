@@ -156,7 +156,10 @@ Scratch admin at `/tmp/lsc-admin-scratch` was re-seeded (it had been wiped): dev
 Trap: the import screen's unsaved guard (a list held only in the page) silently reverts a scripted hash change; test other
 pages in a new tab.
 
-**Next: R5 Build the Needs you queue | Model: Sonnet 5.5 | Effort: Medium.**
+**R5 done 2026-11-20 (committed 2026-11-24; R3 and R4 are in `ba3c15a`).** v26 `projects.opened_at`, `src/needs.js`, `GET /api/needs`, `web/js/needs.js`
+(header count + Dashboard card). Later tasks add kinds in `readNeeds` (KINDS lists the IA order). Details and calls under R5 in TASKS.md. 1019 tests.
+
+**Next: C1 Add real client sessions | Model: Opus 5.5 | Effort: High.**
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
 `routes.js` (`createHubRouter(db, opts)`, not mounted yet), `url-signing.js` (was signing.js), `admin-auth.js`,

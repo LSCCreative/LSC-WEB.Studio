@@ -1,0 +1,102 @@
+'use strict';
+
+/**
+ * Needs you (merged-admin R5; IA "Needs you"): the queue of what is waiting on
+ * the studio, worked out fresh from the records on every ask. Nothing is stored
+ * as an item, so an item leaves the moment the thing behind it is resolved, not
+ * when someone clicks it. The one exception is "New project", which is a notice
+ * with nothing to resolve: it leaves when the project is first opened.
+ *
+ * KINDS, in the IA's order (contract clocks and client money first). Later tasks
+ * add theirs at the places marked below; the client reads only `kind`, so a new
+ * kind needs a label there and nothing else.
+ *
+ *   deemed_approval   (C5)  14 business days after a Final
+ *   paid_claim        (C6+) "I've paid" pressed by the client
+ *   revision_notes    (C4)  the client submitted notes
+ *   final_invoice     (C5)  everything approved, final invoice not sent
+ *   publish_failed    (B2)  Bunny reported a failure
+ *   invoice_overdue         a sent invoice past its due date
+ *   quote_awaiting          a quote sent QUOTE_DAYS or more ago, no answer
+ *   no_upid                 an accepted project with no UPID
+ *   new_project             an accepted project nobody has opened
+ *
+ * Within a kind, the oldest waiting comes first. Not paginated: a long queue is
+ * real information.
+ */
+
+const { amountDue, parseJson } = require('./invoices');
+
+const QUOTE_DAYS = 7;
+
+const KINDS = [
+  'deemed_approval', 'paid_claim', 'revision_notes', 'final_invoice', 'publish_failed',
+  'invoice_overdue', 'quote_awaiting', 'no_upid', 'new_project',
+];
+
+const day = (iso) => String(iso || '').slice(0, 10);
+const dayNumber = (ymd) => Math.round(Date.parse(ymd + 'T00:00:00Z') / 86400000);
+const daysBetween = (from, to) => dayNumber(to) - dayNumber(from);
+
+/**
+ * @param {object} db
+ * @param {{today: string, briefs: function, rows: Array}} ctx
+ *   today (YYYY-MM-DD), projectBriefs(db) and readProjectRows' result.
+ * @returns {Array<object>} items: { id, kind, projectId, invoiceId?, name,
+ *   client, upid, since, days?, number?, amount? }
+ */
+function readNeeds(db, { today, briefs, rows }) {
+  /* An item for `row` (project_id, client_id, upid, name): named as a card is,
+     with the project's own name when no estimate gives one (an old hub's). */
+  const base = (kind, row, extra) => {
+    const b = briefs(row);
+    return {
+      id: kind + ':' + (extra.invoiceId || row.project_id), kind, projectId: row.project_id,
+      name: b.name || row.name || '', client: b.client, upid: row.upid || '', ...extra,
+    };
+  };
+  const items = [];
+
+  // Invoice overdue: sent, unpaid, past its due date. A void invoice never gets here.
+  db.prepare(`
+    SELECT i.id, i.project_id, i.number, i.kind, i.due_at, i.totals_json, p.client_id, p.upid, p.name
+      FROM invoices i JOIN projects p ON p.id = i.project_id
+     WHERE i.status = 'sent' AND i.due_at IS NOT NULL AND p.declined_at IS NULL
+     ORDER BY i.due_at, i.id
+  `).all().forEach((i) => {
+    const due = day(i.due_at);
+    if (!due || due >= today) return;
+    const amount = amountDue(i.kind, parseJson(i.totals_json, {}));
+    items.push(base('invoice_overdue', i, {
+      invoiceId: i.id, number: i.number || '', since: due, days: daysBetween(due, today), amount,
+    }));
+  });
+
+  // Quote awaiting reply: still sent after QUOTE_DAYS. Sent today is day 0.
+  rows.map((r) => r.project).filter((p) => p.stage === 'sent' && p.stageDetail.at).forEach((p) => {
+    const sent = day(p.stageDetail.at);
+    const waited = daysBetween(sent, today);
+    if (waited >= QUOTE_DAYS) {
+      items.push({ id: 'quote_awaiting:' + p.id, kind: 'quote_awaiting', projectId: p.id, name: p.name,
+        client: p.client.businessName || p.client.contactName, upid: p.upid, since: sent, days: waited });
+    }
+  });
+
+  // No UPID and new project: accepted, live (not declined, not archived).
+  db.prepare(`
+    SELECT id AS project_id, client_id, upid, name, accepted_at, opened_at FROM projects
+     WHERE accepted_at IS NOT NULL AND declined_at IS NULL AND archived_at IS NULL
+     ORDER BY accepted_at, project_id
+  `).all().forEach((p) => {
+    if (!p.upid) items.push(base('no_upid', p, { since: day(p.accepted_at) }));
+    if (!p.opened_at) items.push(base('new_project', p, { since: day(p.accepted_at) }));
+  });
+
+  // Stable sort by the IA's order; each kind keeps its oldest-first order.
+  return items
+    .map((item, n) => ({ item, n }))
+    .sort((a, b) => KINDS.indexOf(a.item.kind) - KINDS.indexOf(b.item.kind) || a.n - b.n)
+    .map((x) => x.item);
+}
+
+module.exports = { readNeeds, KINDS, QUOTE_DAYS };

@@ -164,6 +164,13 @@ const LSCShell = (() => {
       LSCRouter.go('/home');
     });
 
+    // The Needs you count opens the Dashboard, where the queue is.
+    $('needs-link').addEventListener('click', (e) => {
+      if (!plainClick(e)) return;
+      e.preventDefault();
+      LSCRouter.go('/home');
+    });
+
     const list = document.querySelector('#app-header .shell-tabs');
     list.addEventListener('click', (e) => {
       const tab = e.target.closest('.shell-tab');

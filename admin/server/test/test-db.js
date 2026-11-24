@@ -817,8 +817,8 @@ test('the v9 steps leave their inputs alone', () => {
   assert.equal(neg.notes.length, 1);
 });
 
-test('the schema knows it is at v25', () => {
-  assert.equal(LATEST_VERSION, 25);
+test('the schema knows it is at v26', () => {
+  assert.equal(LATEST_VERSION, 26);
 });
 
 /**
@@ -1718,4 +1718,22 @@ test('a fresh database has the Hnry columns, and invoiceJson reads them (null fo
   assert.deepEqual([pushed.hnryInvoiceId, pushed.hnryNumber, pushed.hnryPushedAt, pushed.hnryLinesDone, pushed.hnryError], ['gid64', 'INV-10670074', now, 3, 'timeout']);
   assert.equal(pushed.number, 'INV-UP-1-F', 'the app\'s own number is kept beside Hnry\'s');
   db.close();
+});
+
+test('v26 stamps every project accepted before it as already opened, and leaves drafts alone', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lsc-v26-'));
+  const file = path.join(dir, 'old.db');
+  const old = openDatabase(file, { backupDir: false });
+  const at = '2026-11-01T00:00:00.000Z';
+  old.prepare('INSERT INTO projects (id, accepted_at, created_at, updated_at) VALUES (?, ?, ?, ?)').run('prj_acc', at, at, at);
+  old.prepare('INSERT INTO projects (id, created_at, updated_at) VALUES (?, ?, ?)').run('prj_draft', at, at);
+  old.prepare('UPDATE projects SET opened_at = NULL').run();
+  old.prepare('DELETE FROM schema_version WHERE version >= 26').run();
+  old.close();
+  const again = openDatabase(file, { backupDir: false });
+  const opened = (id) => again.prepare('SELECT opened_at FROM projects WHERE id = ?').get(id).opened_at;
+  assert.ok(opened('prj_acc'));
+  assert.equal(opened('prj_draft'), null);
+  again.close();
+  fs.rmSync(dir, { recursive: true, force: true });
 });
