@@ -32,12 +32,18 @@ const VIDEO_LOOKUP_ATTEMPTS = 3;
 /* Client sign-in is an email and a short code, so it is limited twice: per
    address (billing's rate limit), and per email however many addresses try,
    so a spread-out guess at one client's code stops after a few wrong ones.
-   Invites count with sign-ins; a signed-in client's reads have their own count. */
+   Invites count with sign-ins; a signed-in client's reads have their own count,
+   and so does their media: a video asks again for each seek, and a photo library
+   for each image, so it has room the reads don't need. */
 const LIMITS = {
   auth: { max: 20, windowMs: 10 * 60 * 1000 },
   sign: { max: 10, windowMs: 10 * 60 * 1000 },
   read: { max: 300, windowMs: 10 * 60 * 1000 },
+  media: { max: 3000, windowMs: 10 * 60 * 1000 },
 };
+/* How long the media route trusts what it last read of a client's projects and a
+   photo folder (see ownsProject). */
+const MEDIA_MEMORY_MS = 10 * 1000;
 const CODE_FAILURE_LIMIT = 10;
 const CODE_FAILURE_WINDOW_MS = 15 * 60 * 1000;
 
@@ -103,6 +109,11 @@ function createHubRouter(db, opts = {}) {
   const getClient = db.prepare('SELECT * FROM clients WHERE id = ?');
   /* The billing project a portal record belongs to, for this client only: the
      record's id is the project's, or (from the old hub) linked by hub_imports. */
+  /* A version the client has been given: published, on an item still needed. */
+  const getPublishedVersion = db.prepare(`
+    SELECT v.* FROM deliverable_versions v JOIN deliverables d ON d.id = v.deliverable_id
+     WHERE v.id = ? AND v.project_id = ? AND v.published_at IS NOT NULL AND d.not_needed_at IS NULL
+  `);
   const recordProjectOf = db.prepare(`
     SELECT p.id FROM projects p
      WHERE p.client_id = ? AND (p.id = ? OR p.id = (SELECT project_id FROM hub_imports WHERE hub_id = ?))
@@ -338,6 +349,7 @@ function createHubRouter(db, opts = {}) {
      the portal's reads share theirs. */
   const authLimit = limit('auth');
   const readLimit = limit('read');
+  const mediaLimit = limit('media');
 
   function signedIn(req, res, next) {
     const session = access.readSession(readToken(req));
@@ -353,6 +365,41 @@ function createHubRouter(db, opts = {}) {
     return readProjectRows(db, { today: localToday(), clientId })
       .map((row) => row.project)
       .filter((p) => p.delivery.group !== 'pipeline');
+  }
+
+  /* The media route is asked once per seek and once per photo, so it doesn't
+     rebuild the client's projects or re-read the NAS folder each time. A short
+     memory of each answers what it has seen; anything it hasn't is looked up
+     fresh, so new work and new photos appear at once, and what is withdrawn
+     goes within MEDIA_MEMORY_MS. */
+  const ownedMemory = new Map();   // clientId → { at, ids: Set }
+  const folderMemory = new Map();  // source path → { at, byKey: Map(key → name) }
+  const remembered = (memory, key, fresh, has) => {
+    const hit = memory.get(key);
+    if (hit && Date.now() - hit.at < MEDIA_MEMORY_MS && has(hit)) return hit;
+    if (memory.size > 500) memory.clear();
+    const value = { at: Date.now(), ...fresh() };
+    memory.set(key, value);
+    return value;
+  };
+  const ownsProject = (clientId, projectId) => remembered(ownedMemory, clientId,
+    () => ({ ids: new Set(projectsOf(clientId).map((p) => p.id)) }), (m) => m.ids.has(projectId)).ids.has(projectId);
+  /* A photo's key: a short hash of its file name, so a link keeps pointing at the
+     same image when the folder changes, and the name itself is never sent. */
+  const photoKey = (name) => sha256Hex(`photo\n${name}`).slice(0, 16);
+  const photosIn = (sourcePath, key) => remembered(folderMemory, sourcePath, () => ({
+    byKey: new Map((deliverables.listDeliverableFolderImages(sourcePath) || []).map((name) => [photoKey(name), name])),
+  }), (m) => key === undefined || m.byKey.has(key)).byKey;
+
+  /* A version's review copy, played from the NAS through the route below, until
+     Bunny's takes over (Slice 4). Addressed by ids, never by path or file name;
+     a photo library's images by their key, in the folder's sorted order. */
+  function reviewOf(projectId, v) {
+    if (!v.sourcePath) return null;
+    const url = `${publicBaseUrl}/hub/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(v.id)}/review`;
+    if (v.kind !== 'photos') return { type: 'file', url };
+    folderMemory.delete(v.sourcePath); // the project page reads the folder as it is now
+    return { type: 'photos', urls: [...photosIn(v.sourcePath).keys()].map((key) => `${url}?photo=${key}`) };
   }
 
   // ── POST /hub/auth: { email, code } → the session cookie and who signed in.
@@ -410,7 +457,32 @@ function createHubRouter(db, opts = {}) {
   router.get('/hub/projects/:id', readLimit, signedIn, (req, res) => {
     const project = projectsOf(req.portal.client.id).find((p) => p.id === req.params.id);
     if (!project) return res.status(404).json({ error: 'not_found' });
-    return res.json({ ok: true, project: projectView(project, readChecklist(db, project.id)) });
+    return res.json({ ok: true, project: projectView(project, readChecklist(db, project.id), (v) => reviewOf(project.id, v)) });
+  });
+
+  /* ── GET /hub/projects/:id/versions/:versionId/review[?photo=<key>]: the review
+     copy itself, from the NAS, with Range so a video seeks. Only a version the
+     signed-in client has been given; anything else, theirs or not, is the same not
+     found. Always inline: nothing here is a download (C2), and nothing is left in
+     the browser's cache once they sign out. The <video> and <img> on the portal
+     send the cookie because hub-api and the portal are the same site. */
+  router.get('/hub/projects/:id/versions/:versionId/review', mediaLimit, signedIn, (req, res) => {
+    const notFound = () => res.status(404).json({ error: 'not_found' });
+    const owned = ownsProject(req.portal.client.id, req.params.id);
+    const v = owned && getPublishedVersion.get(req.params.versionId, req.params.id);
+    if (!v || !v.source_path) return notFound();
+    let relative = v.source_path;
+    if (v.kind === 'photos') {
+      const key = String(req.query.photo || '');
+      const name = /^[0-9a-f]{16}$/.test(key) && photosIn(v.source_path, key).get(key);
+      if (!name) return notFound();
+      relative = `${v.source_path}/${name}`;
+    } else if (req.query.photo !== undefined) {
+      return notFound();
+    }
+    const file = deliverables.resolveDeliverablePath(relative);
+    if (!file) return notFound();
+    return streamFile(req, res, file.absolute, file.stat, false, { cacheControl: 'no-store' });
   });
 
   // ── POST /hub/agreement (client): the signed deliverables agreement and its

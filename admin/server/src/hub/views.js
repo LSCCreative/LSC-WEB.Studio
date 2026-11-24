@@ -32,8 +32,12 @@ function projectCard(project) {
 }
 
 /* One project, with what the client has been given on its checklist: items the
-   studio marked not needed, and versions not yet published, aren't theirs to see. */
-function projectView(project, checklist) {
+   studio marked not needed, and versions not yet published, aren't theirs to see.
+   `reviewOf(version)` gives each version's review copy, built at reply time and
+   never stored (C2): { type: 'file', url } for a video, { type: 'photos', urls }
+   for a photo library, or null when there's no file to show (an old hub link).
+   Bunny's { type: 'hls', url } joins it in Slice 4. Nothing here offers a download. */
+function projectView(project, checklist, reviewOf = () => null) {
   return {
     ...projectCard(project),
     deliverables: checklist.filter((d) => !d.notNeededAt).map((d) => ({
@@ -47,6 +51,7 @@ function projectView(project, checklist) {
         kind: v.kind,
         photoCount: Number(v.photoCount) || 0,
         publishedAt: v.publishedAt,
+        review: reviewOf(v),
       })),
     })),
   };

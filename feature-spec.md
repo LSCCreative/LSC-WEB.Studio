@@ -50,8 +50,11 @@ off that element's events and `currentTime`:
    empty box, and the video does not reload or jump to 0
    (`refreshAssetInteraction()` only repaints `#asset-interaction`).
 4. `APPROVE CONTENT` is absent while the revision panel is open.
-5. A video that can't load falls back to the Google Drive card
-   (`state.videoFailed`).
+5. A video that can't load falls back to the "couldn't be loaded" card
+   (`state.videoFailed`) with Try again, after checking the session: an ended
+   session goes back to sign-in instead. Since merged-admin C2 the card has no
+   Google Drive button: portal replies carry no Drive links, so nothing on the
+   review screen is a download.
 6. Timestamps are accurate to the frame the client is looking at (HLS
    `currentTime` == the same timeline as the source file).
 

@@ -192,6 +192,12 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   codes (`private_auth`) sign the client in until they're issued a code. A client's projects are found through the session's client,
   so anyone else's is the same 404. Portal replies are built in `src/hub/views.js` only; `test-portal-sessions.js` holds them to
   their keys, so a new field goes in both.
+- The portal page (`client-hub-app/index.html`, C2) reads only tokens: `css/tokens.css` is a copy of `web/css/tokens.css` made by
+  `scripts/copy-portal-tokens.sh` (locally and in the Pages workflow), never committed there. `test-portal-page.js` fails on a
+  `var(--x)` the tokens don't define, a size under 11px, any script tag with a `src`, or the `<video>` moving inside `#asset-interaction`.
+  Media reaches the client by ids through `/hub/projects/:id/versions/:versionId/review`, built at reply time; never a path or file name.
+  A photo is `?photo=<key>`, the first 16 hex of SHA-256 of `photo\n<name>`, so links survive the folder changing. The route trusts its
+  memory of a client's projects and a folder for 10s (`MEDIA_MEMORY_MS`), and looks up anything it hasn't seen.
 - A deliverable's version never changes once published, because the client may have commented on it and C5's approvals name it:
   the next file is a new version. The item's `stage` says what the next version is, and carries the newest along only while it's
   unpublished. Files are NAS paths checked on add and on publish (`routes/deliverables.js`); the studio's preview reads them behind the

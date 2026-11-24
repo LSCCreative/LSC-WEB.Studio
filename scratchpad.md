@@ -170,12 +170,18 @@ quote. Left as reported: imported `accepted_at` unvalidated, Drive link editable
 **C1 done 2026-11-24 (not committed).** v27 `client_logins` + `client_sessions`; `src/portal-access.js`, `src/hub/views.js`; portal
 routes `/hub/auth` (cookie `lsc_portal`), `/hub/invite`, `/hub/session`, `/hub/sign-out`, `/hub/projects[/:id]`; studio
 `GET|POST /api/clients/:id/portal`. Details and calls to confirm under C1 in TASKS.md. 1032/1032; leak test proven by a planted leak.
-**For C2:** the portal signs in with `POST /hub/auth` and reads with `credentials: 'include'` (the cookie is HttpOnly; the page never
-holds a token); 401 `signed_out` → sign-in screen; 429 `too_many_attempts` → say "too many tries"; invites are `#/invite/<token>`,
-read with `POST /hub/invite`. `/hub/records` and the old auth reply are gone, so the current `client-hub-app/` can't sign in now.
-Nothing issues codes from the admin's screens yet (C6); to try the portal before then, call `POST /api/clients/:id/portal`.
+**C2 done 2026-11-24 (not committed).** Portal page rewritten on the tokens and C1's session; admin code gone; new
+`GET /hub/projects/:id/versions/:versionId/review` plays published versions from the NAS (user's call). Details, calls and what
+wasn't checked (Safari, iPhone, HLS) under C2 in TASKS.md. 1039/1039.
+**To run the portal locally:** `sh scripts/copy-portal-tokens.sh`, then launch configs `portal-api` (8090, scratch db, throwaway
+`HUB_SIGNING_SECRET`) and `lsc-static` (8734); open `http://127.0.0.1:8734/client-hub-app/` (127.0.0.1:8090 is the portal-only host,
+localhost:8090 stays the admin). Scratch client `c2-tester@example.test` has a published video and three stills under
+`/tmp/lsc-admin-scratch/deliverables/C2Test`; issue it a new code with `createPortalAccess(db,{secret}).issue(id)` (C6 builds the button).
+**For C3:** the page opens one project (`openProjects` picks invite's, else the first current). The dashboard replaces that pick;
+`portalProject()` is the one place the server's view becomes the page's model. Hash routes must keep `#/invite/<token>` working
+(`boot` + the `hashchange` listener).
 
-**Next: C2 Rebuild the portal in place | Model: Opus 5.5 | Effort: High.**
+**Next: C3 Build the dashboard and project page | Model: Sonnet 5.5 | Effort: Medium.**
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
 `routes.js` (`createHubRouter(db, opts)`, not mounted yet), `url-signing.js` (was signing.js), `admin-auth.js`,

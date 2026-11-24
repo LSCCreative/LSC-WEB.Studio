@@ -129,11 +129,12 @@ function sendFile(res, absolutePath, range) {
 
 /* HTTP Range support (RFC 7233), so a video can seek instead of restarting.
    `downloadable` only changes whether the browser saves or plays the file;
-   the token is the access control either way. */
-function streamFile(req, res, absolutePath, stat, downloadable) {
+   the token is the access control either way. `cacheControl`: a file behind a
+   session passes 'no-store', so signing out leaves no copy to play. */
+function streamFile(req, res, absolutePath, stat, downloadable, { cacheControl = 'private, max-age=3600' } = {}) {
   res.setHeader('Accept-Ranges', 'bytes');
   res.setHeader('Content-Type', contentTypeFor(absolutePath));
-  res.setHeader('Cache-Control', 'private, max-age=3600');
+  res.setHeader('Cache-Control', cacheControl);
   res.setHeader('Last-Modified', stat.mtime.toUTCString());
   res.setHeader('Content-Disposition', downloadable
     ? `attachment; filename="${basename(absolutePath).replace(/"/g, '')}"`

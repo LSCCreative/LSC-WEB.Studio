@@ -1,9 +1,11 @@
 ## Tech Stack
 
 Static site: plain HTML/CSS/JS, no build step, no package manager. `index.html` +
-`css/` + `js/` is the main marketing site. `client-hub-app/index.html` is a
-single-file JS app (inline `<script>`, Tailwind via CDN, local state) for the
-client project tracker. Hosted on GitHub Pages behind Cloudflare; every push to
+`css/` + `js/` is the main marketing site. `client-hub-app/index.html` is the
+Client Portal: a single-file JS app (inline `<script>` and `<style>`) on the admin's
+design tokens (`css/tokens.css`, copied in by `scripts/copy-portal-tokens.sh`, never
+committed there), talking to the admin server's `/hub/*` routes; it keeps no state of
+its own. Hosted on GitHub Pages behind Cloudflare; every push to
 `main` deploys through `.github/workflows/deploy-pages.yml`, which publishes an
 allow-list of paths only. A new public file or folder must be added to that list.
 
@@ -11,8 +13,11 @@ allow-list of paths only. A new public file or folder must be added to that list
 
 - No build step. Open `index.html` or `client-hub-app/index.html` directly in
   a browser, or serve the repo root with any static file server.
-- No automated test suite. Verify changes by loading the page and checking
-  the relevant viewport(s) manually (desktop + mobile — see below).
+- The marketing site has no automated test suite. Verify changes by loading the
+  page and checking the relevant viewport(s) manually (desktop + mobile — see below).
+- The portal: run `sh scripts/copy-portal-tokens.sh` first, and it needs the admin
+  server running (launch config `portal-api`). Its page rules are checked by
+  `admin/server/test/test-portal-page.js` (`cd admin/server && npm test`).
 
 ## Coding Standards
 

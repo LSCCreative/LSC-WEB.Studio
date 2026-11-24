@@ -288,6 +288,86 @@ test('a client sees their own accepted work, current and past; anyone else’s i
   assert.equal((await call(`/hub/projects/${live}`, { cookie: session })).status, 200);
 });
 
+/* ── The review copy (C2) ───────────────────────────────────────────────── */
+
+/* A published video and a published photo library on this throwaway NAS, plus an
+   unpublished version and an item marked not needed, both with real files. */
+function media(projectId) {
+  const now = nowIso();
+  const folder = `Media${serial += 1}`;
+  fs.mkdirSync(path.join(DELIVERABLES, folder, 'Stills'), { recursive: true });
+  fs.writeFileSync(path.join(DELIVERABLES, folder, 'Cut.mp4'), Buffer.from('0123456789abcdefghij'));
+  for (const name of ['b.jpg', 'a.jpg', 'notes.txt']) fs.writeFileSync(path.join(DELIVERABLES, folder, 'Stills', name), `image ${name}`);
+  const ids = {};
+  const item = (key, notNeeded) => {
+    ids[key] = newId('dlv');
+    db.prepare(`INSERT INTO deliverables (id, project_id, position, title, stage, not_needed_at, created_at, updated_at)
+                VALUES (?, ?, 1, ?, 'draft', ?, ?, ?)`).run(ids[key], projectId, key, notNeeded ? now : null, now, now);
+  };
+  const version = (key, itemKey, n, source, kind, published) => {
+    ids[key] = newId('ver');
+    db.prepare(`INSERT INTO deliverable_versions (id, deliverable_id, project_id, n, stage, source_path, file_name, kind, photo_count, created_at, published_at)
+                VALUES (?, ?, ?, ?, 'draft', ?, '', ?, 2, ?, ?)`).run(ids[key], ids[itemKey], projectId, n, source, kind, now, published ? now : null);
+  };
+  item('film'); item('stills'); item('dropped', true);
+  version('cut', 'film', 1, `${folder}/Cut.mp4`, 'video', true);
+  version('unpublished', 'film', 2, `${folder}/Cut.mp4`, 'video', false);
+  version('photos', 'stills', 1, `${folder}/Stills`, 'photos', true);
+  version('droppedCut', 'dropped', 1, `${folder}/Cut.mp4`, 'video', true);
+  ids.folder = folder;
+  return ids;
+}
+const photoKey = (name) => sha(`photo\n${name}`).slice(0, 16);
+
+test('a client plays their own published versions from the NAS, view only, and nothing else (C2)', async () => {
+  const id = client('media@salt.example');
+  const prj = project(id);
+  const ids = media(prj);
+  const { code } = (await issue(id)).body;
+  const { session } = await signIn('media@salt.example', code);
+  const at = (versionId, q = '') => `/hub/projects/${prj}/versions/${versionId}/review${q}`;
+
+  const view = (await call(`/hub/projects/${prj}`, { cookie: session })).body.project;
+  const byTitle = Object.fromEntries(view.deliverables.map((d) => [d.title, d]));
+  assert.deepEqual(Object.keys(byTitle).sort(), ['film', 'stills']);
+  assert.deepEqual(byTitle.film.versions.map((v) => v.review), [{ type: 'file', url: `https://hub.example${at(ids.cut)}` }]);
+  assert.deepEqual(byTitle.stills.versions[0].review,
+    { type: 'photos', urls: ['a.jpg', 'b.jpg'].map((n) => `https://hub.example${at(ids.photos, `?photo=${photoKey(n)}`)}`) },
+    'images only, in order, by a key that names no file');
+  assert.ok(!JSON.stringify(view).includes('a.jpg'));
+
+  const whole = await call(at(ids.cut), { cookie: session });
+  assert.deepEqual([whole.status, whole.text], [200, '0123456789abcdefghij']);
+  const ranged = await fetch(base + at(ids.cut), { headers: { cookie: session, range: 'bytes=5-9' } });
+  assert.deepEqual([ranged.status, ranged.headers.get('content-range'), await ranged.text()], [206, 'bytes 5-9/20', '56789']);
+  assert.equal(ranged.headers.get('content-disposition'), 'inline', 'plays, never saves');
+  assert.equal(ranged.headers.get('cache-control'), 'no-store', 'nothing left to play after signing out');
+  const photo = (name) => call(at(ids.photos, `?photo=${photoKey(name)}`), { cookie: session });
+  assert.equal((await photo('a.jpg')).text, 'image a.jpg');
+  assert.equal((await photo('b.jpg')).text, 'image b.jpg');
+
+  // A photo added to the folder later: every link still opens its own image, and the new one opens too.
+  fs.writeFileSync(path.join(DELIVERABLES, ids.folder, 'Stills', 'a0.jpg'), 'image a0.jpg');
+  assert.equal((await photo('b.jpg')).text, 'image b.jpg', 'the same link, the same photo');
+  assert.equal((await photo('a0.jpg')).text, 'image a0.jpg', 'a new photo is found at once');
+  const again = (await call(`/hub/projects/${prj}`, { cookie: session })).body.project;
+  assert.equal(again.deliverables.find((d) => d.title === 'stills').versions[0].review.urls.length, 3);
+
+  // Everything else is one not found: past the end, not a number, a path, a video asked for a photo,
+  // unpublished, an item not needed, a version from another project, another client's.
+  const other = project(client('other@salt.example'));
+  const otherIds = media(other);
+  const refused = [at(ids.photos, `?photo=${photoKey('missing.jpg')}`), at(ids.photos), at(ids.photos, '?photo=0'),
+    at(ids.photos, `?photo=${photoKey('notes.txt')}`), at(ids.photos, '?photo=a.jpg'), at(ids.photos, '?photo=../Cut.mp4'),
+    at(ids.cut, `?photo=${photoKey('a.jpg')}`), at(ids.unpublished), at(ids.droppedCut), at('ver_nobody'),
+    at(otherIds.cut), `/hub/projects/${other}/versions/${otherIds.cut}/review`];
+  for (const url of refused) {
+    const r = await call(url, { cookie: session });
+    assert.deepEqual([r.status, r.body], [404, { error: 'not_found' }], url);
+  }
+  assert.equal((await call(at(ids.cut))).status, 401, 'signed out');
+});
+
 /* ── The leak test (S9) ─────────────────────────────────────────────────── */
 
 const FORBIDDEN = /surcharge|floor|taxSetAside|overheadShare|estTakeHome|costBreakdown|clientPrice|totalIncGst|\bgst\b|\bprice\b|\brate\b|margin|markup|total|amount|invoice/i;
@@ -321,14 +401,19 @@ test('the leak test: every portal reply is exactly its allow-list, with nothing 
     wrong: await signIn('leak@salt.example', '000000'),
     missing: await call('/hub/projects/prj_nobody', { cookie: session }),
     signedOut: await call('/hub/projects'),
-    signOut: await call('/hub/sign-out', { method: 'POST', cookie: session }),
   };
+  // The review copy's link names ids only; its file isn't on this NAS, so it answers not found.
+  const reviewUrl = replies.project.body.project.deliverables[0].versions[0].review.url;
+  assert.match(reviewUrl, /^https:\/\/hub\.example\/hub\/projects\/[\w-]+\/versions\/[\w-]+\/review$/);
+  replies.review = await call(reviewUrl.replace('https://hub.example', ''), { cookie: session });
+  assert.equal(replies.review.status, 404);
+  replies.signOut = await call('/hub/sign-out', { method: 'POST', cookie: session });
 
   // Exactly these keys, and no others.
   const CLIENT = ['businessName', 'contactName'];
   const CARD = ['id', 'name', 'past', 'status', 'upid'];
   const ITEM = ['deliverables', 'id', 'stage', 'title', 'versions'];
-  const VERSION = ['id', 'kind', 'n', 'photoCount', 'publishedAt', 'stage'];
+  const VERSION = ['id', 'kind', 'n', 'photoCount', 'publishedAt', 'review', 'stage'];
   const sorted = (o) => Object.keys(o).sort();
   assert.deepEqual(sorted(replies.auth.body), ['client', 'ok']);
   assert.deepEqual(sorted(replies.auth.body.client), CLIENT);
