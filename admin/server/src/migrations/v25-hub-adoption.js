@@ -113,9 +113,11 @@ function migrateV25(db, now) {
             OR EXISTS (SELECT 1 FROM estimates e WHERE e.project_id = p.id AND e.status = 'accepted')
             OR EXISTS (SELECT 1 FROM invoices i WHERE i.project_id = p.id AND i.status <> 'void'))
   `).all();
+  // The quote the client accepted names them; a newer draft or revision beside
+  // it may name someone else. Without an accepted one, the newest not declined.
   const quoteOf = db.prepare(`
     SELECT id, client_id, client_json FROM estimates WHERE project_id = ?
-     ORDER BY status = 'declined', updated_at DESC, id LIMIT 1
+     ORDER BY status = 'accepted' DESC, status = 'declined', updated_at DESC, id LIMIT 1
   `);
   const log = db.prepare('INSERT INTO activity (id, project_id, at, kind, detail_json) VALUES (?, ?, ?, ?, ?)');
   let linked = 0;

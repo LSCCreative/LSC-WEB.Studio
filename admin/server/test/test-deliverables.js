@@ -220,6 +220,27 @@ test('publishing: the newest only, once, and the project goes In review', async 
   assert.equal(newestOf(removed, p.items[0]).n, 2);
 });
 
+test('reopening a declined project clears the items nobody worked on, so the next acceptance starts fresh', async () => {
+  const p = project({ quoted: 3 });
+  await addVersion(p, p.items[0], { path: 'Acme/Hero.mp4' });
+  db.prepare("UPDATE deliverables SET hub_status = 'changes' WHERE id = ?").run(p.items[1]);
+  db.prepare('UPDATE projects SET declined_at = ? WHERE id = ?').run(nowIso(), p.id);
+  const reopened = await call('POST', `/api/projects/${p.id}/reopen?today=2026-11-20`);
+  assert.equal(reopened.status, 200, JSON.stringify(reopened.body));
+  const left = db.prepare('SELECT id FROM deliverables WHERE project_id = ? ORDER BY position').pluck().all(p.id);
+  assert.deepEqual(left, [p.items[0], p.items[1]], 'a file or the old hub’s word keeps an item on record');
+  assert.deepEqual(reopened.body.activity[0].detail, { checklistCleared: 1 });
+
+  // With nothing left, acceptance opens the list from the quote as it then stands.
+  const { createChecklist } = require('../src/delivery');
+  const empty = project({ quoted: 1 });
+  db.prepare('UPDATE projects SET declined_at = ? WHERE id = ?').run(nowIso(), empty.id);
+  await call('POST', `/api/projects/${empty.id}/reopen?today=2026-11-20`);
+  assert.equal(db.prepare('SELECT COUNT(*) FROM deliverables WHERE project_id = ?').pluck().get(empty.id), 0);
+  const made = createChecklist(db, empty.id, { id: null, activeRows: { deliverables: [{ name: 'Hero film', qty: 1 }] } }, nowIso());
+  assert.equal(made, 1);
+});
+
 test('a newer version still unpublished doesn’t take back what the client has', async () => {
   const p = project({ quoted: 1 });
   const v1 = newestOf(await addVersion(p, p.items[0], { path: 'Acme/Hero.mp4' }), p.items[0]);

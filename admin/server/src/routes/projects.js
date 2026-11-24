@@ -927,11 +927,15 @@ function registerProjectRoutes(app, db, opts = {}) {
     return p || null;
   }
 
-  /* Opening an accepted project is what clears Needs you's "New project" (IA):
-     the first read stamps it, and the folder is read as before. */
+  /* Opening an accepted project is what clears Needs you's "New project" (IA).
+     Only the project page says it is opening one (`?open=1`): other screens read
+     the folder too (Settings' agreement preview, the page's own refresh), and a
+     read that fails opens nothing. */
   app.get('/api/projects/:id', (req, res) => {
-    db.prepare('UPDATE projects SET opened_at = ? WHERE id = ? AND accepted_at IS NOT NULL AND opened_at IS NULL')
-      .run(nowIso(), req.params.id);
+    if (req.query.open === '1' && todayOf(req)) {
+      db.prepare('UPDATE projects SET opened_at = ? WHERE id = ? AND accepted_at IS NOT NULL AND opened_at IS NULL')
+        .run(nowIso(), req.params.id);
+    }
     return folderReply(req, res);
   });
 
@@ -1064,7 +1068,16 @@ function registerProjectRoutes(app, db, opts = {}) {
       db.prepare("UPDATE estimates SET status = 'draft' WHERE project_id = ?").run(p.id);
       db.prepare('UPDATE projects SET declined_at = NULL, accepted_at = NULL, updated_at = ? WHERE id = ?')
         .run(now, p.id);
-      logActivity(db, p.id, 'reopened', {}, now);
+      // Back to a quote, so the checklist the last acceptance opened owes nothing:
+      // the items nobody worked on go, and the next acceptance opens them from the
+      // quote as it then stands (createChecklist only fills an empty list). An item
+      // with a file, or where the old hub left one, stays on record.
+      const cleared = db.prepare(`
+        DELETE FROM deliverables
+         WHERE project_id = ? AND hub_status IS NULL
+           AND NOT EXISTS (SELECT 1 FROM deliverable_versions v WHERE v.deliverable_id = deliverables.id)
+      `).run(p.id).changes;
+      logActivity(db, p.id, 'reopened', cleared ? { checklistCleared: cleared } : {}, now);
     })();
     touchGoogle(req, p.id);
     return folderReply(req, res, { pencilled: clash.pencilled });

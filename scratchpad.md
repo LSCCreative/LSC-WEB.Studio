@@ -159,6 +159,14 @@ pages in a new tab.
 **R5 done 2026-11-20 (committed 2026-11-24; R3 and R4 are in `ba3c15a`).** v26 `projects.opened_at`, `src/needs.js`, `GET /api/needs`, `web/js/needs.js`
 (header count + Dashboard card). Later tasks add kinds in `readNeeds` (KINDS lists the IA order). Details and calls under R5 in TASKS.md. 1019 tests.
 
+**Branch review fixes 2026-11-24 (committed).** `/code-review` of merged-admin vs main: 4 important fixed. (1) v25 reads the
+accepted quote first, not the newest one (v25 hasn't run on live yet). (2) Only `GET /api/projects/:id?open=1` (the project page's
+first load) stamps `opened_at`, and only with a valid `today`; Settings' agreement preview and the page's refresh no longer clear
+"New project". (3) Add-version and publish re-read the item, version and archive state inside their write, after the NAS wait
+(not reachable by a test today: the success path has no real await; it matters once Bunny's fetch sits in publish). (4) Reopen
+deletes checklist items with no version and no hub_status (activity `checklistCleared`), so the next acceptance builds from the
+quote. Left as reported: imported `accepted_at` unvalidated, Drive link editable on a published version. 1020/1020.
+
 **Next: C1 Add real client sessions | Model: Opus 5.5 | Effort: High.**
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:

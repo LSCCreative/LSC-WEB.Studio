@@ -75,6 +75,23 @@ function registerDeliverableRoutes(app, db, opts = {}) {
   const newestOf = (itemId) =>
     db.prepare('SELECT * FROM deliverable_versions WHERE deliverable_id = ? ORDER BY n DESC LIMIT 1').get(itemId) || null;
 
+  /* The routes that ask the NAS wait on it, and another request can land in that
+     wait: an archive, Not needed, a newer version, the same publish twice. So
+     inside the write, the item is read again. Its row, or why it can't be worked. */
+  const AFTER_WAIT = {
+    gone: [404, 'not_found', 'That deliverable no longer exists.'],
+    archived: [409, 'archived', 'This project is archived. Unarchive it first.'],
+    not_needed: [409, 'not_needed', 'This one is marked not needed. Mark it needed first.'],
+    not_newest: [409, 'not_newest', 'Only the newest version can be published.'],
+  };
+  function itemNow(p, d) {
+    if (db.prepare('SELECT archived_at FROM projects WHERE id = ?').pluck().get(p.id)) return 'archived';
+    const item = db.prepare('SELECT * FROM deliverables WHERE id = ? AND project_id = ?').get(d.id, p.id);
+    if (!item) return 'gone';
+    return item.not_needed_at ? 'not_needed' : item;
+  }
+  const refuseAfterWait = (res, why) => refuse(res, ...AFTER_WAIT[why]);
+
   /* The words a checklist item is made of; a string naming the problem when one is wrong. */
   function itemWords(body, current) {
     const title = body.title === undefined ? current.title : String(body.title).trim();
@@ -236,18 +253,23 @@ function registerDeliverableRoutes(app, db, opts = {}) {
       if (source.error) return refuse(res, source.status, source.error, source.message);
 
       const now = nowIso();
-      db.transaction(() => {
-        const newest = newestOf(d.id);
+      const refused = db.transaction(() => {
+        // As it stands after the NAS answered: its stage may have flipped meanwhile.
+        const item = itemNow(p, d);
+        if (typeof item === 'string') return item;
+        const newest = newestOf(item.id);
         const n = (newest ? newest.n : 0) + 1;
         db.prepare(`
           INSERT INTO deliverable_versions
             (id, deliverable_id, project_id, n, stage, source_path, file_name, kind, photo_count, drive_link, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(newId('ver'), d.id, p.id, n, d.stage, source.sourcePath, source.fileName, source.kind, source.photoCount, driveLink, now);
+        `).run(newId('ver'), item.id, p.id, n, item.stage, source.sourcePath, source.fileName, source.kind, source.photoCount, driveLink, now);
         // A new file is what the client looks at next: where the old hub left it no longer stands.
-        db.prepare('UPDATE deliverables SET hub_status = NULL, updated_at = ? WHERE id = ?').run(now, d.id);
-        logActivity(db, p.id, 'version_added', { title: d.title, n, file: source.fileName }, now);
+        db.prepare('UPDATE deliverables SET hub_status = NULL, updated_at = ? WHERE id = ?').run(now, item.id);
+        logActivity(db, p.id, 'version_added', { title: item.title, n, file: source.fileName }, now);
+        return null;
       })();
+      if (refused) return refuseAfterWait(res, refused);
       return answer(req, res);
     } catch (err) {
       return next(err);
@@ -303,10 +325,19 @@ function registerDeliverableRoutes(app, db, opts = {}) {
         return refuse(res, 409, 'file_missing', `${v.file_name || 'That file'} can’t be published. ${source.message}`);
       }
       const now = nowIso();
-      db.transaction(() => {
-        db.prepare('UPDATE deliverable_versions SET published_at = ?, photo_count = ? WHERE id = ?').run(now, source.photoCount, v.id);
-        logActivity(db, p.id, 'version_published', { title: d.title, n: v.n, stage: v.stage }, now);
+      const refused = db.transaction(() => {
+        const item = itemNow(p, d);
+        if (typeof item === 'string') return item;
+        const fresh = db.prepare('SELECT * FROM deliverable_versions WHERE id = ? AND deliverable_id = ?').get(v.id, item.id);
+        if (!fresh) return 'gone';
+        // The same publish twice (a double click) is one publish.
+        if (fresh.published_at) return null;
+        if (newestOf(item.id).id !== fresh.id) return 'not_newest';
+        db.prepare('UPDATE deliverable_versions SET published_at = ?, photo_count = ? WHERE id = ?').run(now, source.photoCount, fresh.id);
+        logActivity(db, p.id, 'version_published', { title: item.title, n: fresh.n, stage: fresh.stage }, now);
+        return null;
       })();
+      if (refused) return refuseAfterWait(res, refused);
       return answer(req, res);
     } catch (err) {
       return next(err);

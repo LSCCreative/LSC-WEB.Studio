@@ -1726,7 +1726,8 @@ const ProjectFolder = (() => {
     try {
       // Whether Hnry is set up is asked alongside the folder, not after it (it never rejects).
       const [reply] = await Promise.all([
-        LSCApi.get('/api/projects/' + encodeURIComponent(id) + '?today=' + LSCUtil.today()),
+        // `open=1`: this is the studio opening it, which clears Needs you's "New project".
+        LSCApi.get('/api/projects/' + encodeURIComponent(id) + '?today=' + LSCUtil.today() + '&open=1'),
         LSCHnry.ready(),
       ]);
       if (!LSCRouter.isCurrent(ticket)) return;

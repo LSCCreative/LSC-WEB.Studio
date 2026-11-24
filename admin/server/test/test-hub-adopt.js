@@ -615,6 +615,16 @@ test('v25: an accepted project with no client gets one from its quote; twice cha
   assert.equal(clientOf(declined), null);
   assert.equal(db.prepare("SELECT kind FROM activity WHERE project_id = ?").pluck().get(fresh), 'client_linked');
 
+  // The accepted quote names the client, even beside a newer draft naming someone else.
+  const accEmail = `${uniq('v25acc')}@example.com`;
+  const accClient = client('V25 Accepted', accEmail);
+  const twoQuotes = addProject({ client: { email: accEmail } });
+  const later = new Date(Date.now() + 60000).toISOString();
+  db.prepare("INSERT INTO estimates (id, project_id, upid, name, date, status, client_json, created_at, updated_at) VALUES (?, ?, ?, 'Revision', '2026-10-02', 'draft', ?, ?, ?)")
+    .run(newId('est'), twoQuotes, uniq('E-'), JSON.stringify({ businessName: uniq('V25 Someone Else ') }), later, later);
+  migrateV25(db, now);
+  assert.equal(clientOf(twoQuotes), accClient);
+
   const clients = db.prepare('SELECT COUNT(*) AS n FROM clients').get().n;
   const activity = db.prepare('SELECT COUNT(*) AS n FROM activity').get().n;
   migrateV25(db, now);

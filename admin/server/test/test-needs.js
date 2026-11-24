@@ -115,11 +115,15 @@ test('no UPID and new project: accepted, live, and each leaves on its own', asyn
   assert.equal(r.items[0].name, 'Fresh');
   db.prepare("UPDATE projects SET upid = 'U3' WHERE id = ?").run(p);
   assert.deepEqual(kinds(await needs()), ['new_project']);
-  // Opening the project clears the notice, and only an accepted project is stamped.
+  // A plain read (Settings' preview, the page's refresh) or a failed one opens nothing.
   assert.equal((await get('/api/projects/' + p + '?today=' + TODAY)).status, 200);
+  assert.equal((await get('/api/projects/' + p + '?today=nope&open=1')).status, 400);
+  assert.deepEqual(kinds(await needs()), ['new_project']);
+  // The project page opening it clears the notice, and only an accepted project is stamped.
+  assert.equal((await get('/api/projects/' + p + '?today=' + TODAY + '&open=1')).status, 200);
   assert.equal((await needs()).count, 0);
   const draft = project({ accepted: null, opened: null });
-  assert.equal((await get('/api/projects/' + draft + '?today=' + TODAY)).status, 200);
+  assert.equal((await get('/api/projects/' + draft + '?today=' + TODAY + '&open=1')).status, 200);
   assert.equal(db.prepare('SELECT opened_at FROM projects WHERE id = ?').get(draft).opened_at, null);
   db.prepare('DELETE FROM projects WHERE id = ?').run(draft);
 });
