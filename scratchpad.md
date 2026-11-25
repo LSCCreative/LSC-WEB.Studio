@@ -240,8 +240,9 @@ Step 5: the user ran test project PTC9 end to end on a phone; all six steps work
 `CORS_ORIGINS` from the NAS `.env` (then `docker compose up -d`, no --build); remove the old `lsc-billing` and `client-hub-api`
 containers on OK; reserve the NAS's address and update ~/.ssh/config. The local live-db copies were deleted.
 
-**Next: B2 Publish video through Bunny | Model: Opus 5.5 | Effort: High.** Slices 2-5 of `buildplan.md`; includes the
-physical iPhone check and the `playsinline` decision. Merge `merged-admin` to `main`, redeploy (NAS before Pages),
+**Next: C10 Email the files once the job is paid | Model: Opus 5.5 | Effort: High.** New task (the user's call,
+2026-11-26, spec in TASKS.md): whole job paid + every item approved → client emailed each approved Final's Drive link, owner
+copied, no confirmation; Bunny links join at B3. Then B2 Publish video through Bunny (Opus 5.5 | High). Merge `merged-admin` to `main`, redeploy (NAS before Pages),
 one real job start to finish with a test client on a real phone. Payment stays off. Ask the user before any push or deploy.
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
