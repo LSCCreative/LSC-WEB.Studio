@@ -225,7 +225,18 @@ marked `?preview=1`, `portal_previews` cascades. Scratch db at v31; its `portal_
 (live has never run v31). In the browser pane the button's new tab is blocked as a popup, so the admin shows a link to click;
 the pane blocks that too, so open the link's URL in a fresh tab to test (a hash-only change on an open portal page doesn't reload it).
 
-**Next: C9 Release the merge | Model: Opus 5.5 | Effort: High.** Merge `merged-admin` to `main`, redeploy (NAS before Pages),
+**C9 in progress (2026-11-26).** Step 1: `merged-admin` pushed (`5853094`). Step 2: live db (v21) dry-run migrated to v31 on a
+copy, no existing value changed, server boots on it. Step 3: **NAS deployed** at `5853094`: live backup
+`data/backups/pre-c9-20261126-094514.db`, rollback image `lsc-admin:pre-c9` (`7e42400afaf3`), previous app folder
+`/volume4/lsc-admin/app.prev-c9`; new image `178549010c2b`, migrated v21→v31 on boot, `m6-checks.sh` ALL PASS. The build takes
+~10 minutes on the NAS (npm). **The NAS moved to 192.168.1.46** (same host keys as .45): use
+`ssh -o HostName=192.168.1.46 -o HostKeyAlias=192.168.1.45 lsc-nas` until the router reserves it and ~/.ssh/config is updated.
+Until step 4 the old portal page on Pages can't sign in (its routes are gone); no client is live.
+**Rollback:** `cd /volume4/lsc-admin && mv app app.c9 && mv app.prev-c9 app && docker tag lsc-admin:pre-c9 lsc-admin:latest`, put the
+pre-c9 db back as `data/billing.db` (container stopped), then `cd app && docker compose up -d` (no --build).
+Left: step 4 (PR merged-admin → main, which deploys Pages), step 5 (the user's real job on a phone), step 6 (docs, CORS_ORIGINS, old containers).
+
+**Next within C9: step 4 | Model: Opus 5.5 | Effort: High.** Merge `merged-admin` to `main`, redeploy (NAS before Pages),
 one real job start to finish with a test client on a real phone. Payment stays off. Ask the user before any push or deploy.
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
