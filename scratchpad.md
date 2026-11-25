@@ -235,10 +235,13 @@ Step 4: PR LSCCreative/LSC-WEB.Studio#2 merged as `f86adae`; the Pages run succe
 reaches hub-api and shows sign-in (fonts and tokens load; only the signed-out 401 in the console).
 **Rollback:** `cd /volume4/lsc-admin && mv app app.c9 && mv app.prev-c9 app && docker tag lsc-admin:pre-c9 lsc-admin:latest`, put the
 pre-c9 db back as `data/billing.db` (container stopped), then `cd app && docker compose up -d` (no --build).
-Left: step 5 (the user's real job on a phone), step 6 (tick C9, docs, CORS_ORIGINS, old containers, delete the live-db copy in
-the session scratchpad).
+Step 5: the user ran test project PTC9 end to end on a phone; all six steps worked, the server log stayed empty.
+**C9 done.** Left with the user: void the test deposit INV-11021927 in Hnry (PTC9's deposit was pushed there); remove
+`CORS_ORIGINS` from the NAS `.env` (then `docker compose up -d`, no --build); remove the old `lsc-billing` and `client-hub-api`
+containers on OK; reserve the NAS's address and update ~/.ssh/config. The local live-db copies were deleted.
 
-**Next within C9: step 5, the user's real job on a phone.** Merge `merged-admin` to `main`, redeploy (NAS before Pages),
+**Next: B2 Publish video through Bunny | Model: Opus 5.5 | Effort: High.** Slices 2-5 of `buildplan.md`; includes the
+physical iPhone check and the `playsinline` decision. Merge `merged-admin` to `main`, redeploy (NAS before Pages),
 one real job start to finish with a test client on a real phone. Payment stays off. Ask the user before any push or deploy.
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
