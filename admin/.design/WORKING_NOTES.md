@@ -204,6 +204,8 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   note left on an earlier version goes with the next set. `client_key` makes a retried save return the note already saved. The studio's reply carries sent notes only
   (`readFolder` filters); the portal's carries the client's own, never a photo's file name. Client writes take no pre-write backup
   (S16): the nightly one (02:00) covers them.
+- Approvals (C5, S12): one `client_approvals` row per version, first write wins; an item is approved only while its newest version
+  (published or not) is an approved Final (`itemApproved`). Rounds = sets sent on Finals (`ROUNDS_INCLUDED`); the rate comes from the signed text.
 - Portal invoices (C3): sent or paid only, with the amount `invoiceView` says is due (the client's own page's figure). An invoice in
   Hnry gets Hnry's number and no link to billing's page. The leak test admits an invoice's number and amount, nothing else of money.
 - A deliverable's version never changes once published, because the client may have commented on it and C5's approvals name it:

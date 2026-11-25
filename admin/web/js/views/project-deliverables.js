@@ -19,8 +19,6 @@ const ProjectDeliverables = (() => {
   const { esc } = LSCUtil;
 
   const STAGE = { draft: 'Draft Cut', final: 'Final' };
-  /* Rounds per Final (brief, Revision rounds). C5 counts the ones used. */
-  const ROUNDS = 2;
   const PHOTOS_SHOWN = 12;
 
   let ctx = null;
@@ -126,16 +124,29 @@ const ProjectDeliverables = (() => {
     return checklist.approved + ' of ' + counted + ' approved' + (checklist.notNeeded ? ' · ' + checklist.notNeeded + ' not needed' : '');
   }
 
+  /* A draft's approval lets the studio go on; only a Final's signs the item off (C5). */
+  const approvedWord = (a) => (a.stage !== 'final' ? 'draft approved' : a.kind === 'deemed' ? 'deemed approved' : 'approved');
+
   function fileLine(item) {
     const newest = newestOf(item);
     if (!newest) return 'No file yet';
     const published = item.versions.filter((v) => v.publishedAt).pop();
+    if (newest.approval) return 'v' + newest.n + ' ' + approvedWord(newest.approval) + ' ' + when(newest.approval.approvedAt);
     if (newest.publishedAt) return 'v' + newest.n + ' published ' + when(newest.publishedAt);
     return 'v' + newest.n + ' not published' + (published ? ' · v' + published.n + ' is with the client' : '');
   }
 
+  /* Sets sent on Finals (C5). Past the included ones the client was told it's charged
+     work, quoted first; nothing is charged on its own. */
+  /* Rounds per Final come with the item (delivery.js ROUNDS_INCLUDED). */
+  function roundsText(item) {
+    const used = Number(item.roundsUsed) || 0;
+    const included = Number(item.roundsIncluded) || 0;
+    return used + ' of ' + included + ' rounds used' + (used > included ? ' · ' + (used - included) + ' extra' : '');
+  }
   function roundsLine(item) {
-    return item.stage === 'final' ? '<span class="dlv-rounds">0 of ' + ROUNDS + ' rounds used</span>' : '';
+    return item.stage === 'final' || item.roundsUsed
+      ? '<span class="dlv-rounds' + (item.roundsUsed > item.roundsIncluded ? ' is-over' : '') + '">' + esc(roundsText(item)) + '</span>' : '';
   }
 
   function rowMarkup(item) {
@@ -212,6 +223,7 @@ const ProjectDeliverables = (() => {
       (deliverables.length
         ? '<div class="panel-body is-flush"><ol class="dlv-list">' + deliverables.map(rowMarkup).join('') + '</ol></div>'
         : emptyMarkup(project)) +
+      inviteMarkup() +
       '<div class="dlv-error" id="dlv-error" role="alert"></div>' +
       '</section>' +
       (filed() ? '' : '<section class="panel dlv-add-panel" aria-labelledby="dlv-add-h"><div class="panel-head"><h2 class="panel-title" id="dlv-add-h">Add an extra deliverable</h2></div>' +
@@ -219,20 +231,126 @@ const ProjectDeliverables = (() => {
     );
   }
 
+  /* A failed invite's code and link (C6), kept for this project until the studio
+     dismisses them: this is the only time they exist, so no redraw or later error
+     may wipe them, and coming back to the project shows them again. Only a reload
+     lets them go; the invite line still offers to send it again. */
+  let handover = null;
+
+  /* What the portal invite did, in words, from a reply's `inviteResult` (C6). A
+     failed email hands over the code and link (handoverMarkup). */
+  function inviteOutcome(result) {
+    if (!result) return '';
+    if (result.sent) return ' Portal invite emailed to ' + result.to + '.';
+    if (result.failed) return ' The invite email didn’t go.';
+    return ' No invite was sent' + (result.message ? ': ' + result.message.replace(/^./, (c) => c.toLowerCase()) : '.');
+  }
+
+  /* Holds a failed invite's code for this project and redraws so it shows. */
+  function keepHandover(result) {
+    if (!result || !result.failed) return;
+    handover = { projectId: ctx.folder.project.id, ...result };
+    draw(box, ctx);
+  }
+
+  function handoverMarkup() {
+    if (!handover || handover.projectId !== ctx.folder.project.id) return '';
+    return '<div class="dlv-handover" role="alert" aria-labelledby="dlv-handover-h">' +
+      '<p class="dlv-handover-h" id="dlv-handover-h">The invite email to ' + esc(handover.to) + ' didn’t go</p>' +
+      '<p class="dlv-note">' + esc(handover.error) + '</p>' +
+      '<p class="dlv-note">Pass these on yourself, or send the invite again (which replaces this code). They won’t be shown again once you close this.</p>' +
+      '<dl class="dlv-approval-rec"><dt>Sign-in</dt><dd class="dlv-approval-ua">' + esc(handover.inviteUrl) + '</dd>' +
+      '<dt>Client code</dt><dd class="fig">' + esc(handover.code) + '</dd></dl>' +
+      '<button type="button" class="btn btn-sm" id="dlv-handover-done">I’ve noted them</button></div>';
+  }
+
   function publish(item, opener) {
     const v = newestOf(item);
     if (!v) return;
+    const offer = ctx.folder.invite || {};
+    const inviting = offer.state === 'ready' && offer.firstPublish;
+    const noEmail = offer.firstPublish && offer.state === 'no_email';
     ctx.confirm(opener, {
       title: 'Publish v' + v.n + '?',
       body: 'v' + v.n + ' (' + (v.fileName || v.sourcePath) + ') becomes the ' + STAGE[v.stage] + ' the client reviews, and the project goes In review. ' +
-        'A published version can’t be changed, only followed by a new one. No email goes out.',
+        'A published version can’t be changed, only followed by a new one.' +
+        (inviting ? ' This is the first thing the client will see, so you can invite them to the Client Portal now.'
+          : noEmail ? ' No email goes out: the client has no email on file, so add one in Client details to invite them.'
+            : ' No email goes out.'),
       confirm: 'Publish',
-      run: () => write('post', versionUrl(item, v, '/publish'), undefined, {
-        working: 'Publishing…',
-        ok: 'v' + v.n + ' published.',
-        rethrow: true,
-      }),
+      choice: inviting ? {
+        legend: 'Portal invite',
+        options: [
+          { value: 'invite', label: 'Publish and email their sign-in to ' + offer.to },
+          { value: 'none', label: 'Publish only, send no email' },
+        ],
+      } : undefined,
+      run: async (ok, pick) => {
+        const reply = await write('post', versionUrl(item, v, '/publish'), inviting ? { invite: pick === 'invite' } : undefined, {
+          working: 'Publishing…',
+          rethrow: true,
+        });
+        if (!reply) return;
+        const result = reply.inviteResult;
+        const words = 'v' + v.n + ' published.' + inviteOutcome(result);
+        if (result && result.failed) Toast.error(words);
+        else Toast.ok(words);
+        keepHandover(result);
+      },
     });
+  }
+
+  function sendInvite(opener) {
+    const offer = ctx.folder.invite || {};
+    const again = offer.state === 'retry';
+    const published = (ctx.folder.deliverables || []).some((d) => d.versions.some((v) => v.publishedAt));
+    ctx.confirm(opener, {
+      title: (again ? 'Send the invite to ' : 'Invite ') + (offer.name || 'the client') + (again ? ' again?' : ' to the portal?'),
+      body: 'Emails ' + offer.to + ' a link and a new Client code to sign in with. ' +
+        (again ? 'The code from the invite that didn’t go stops working, including if you passed it on yourself. '
+          : 'Anything they could sign in with before stops working. ') +
+        (published ? '' : 'They’ll see nothing until you publish a version.'),
+      confirm: again ? 'Send again' : 'Send invite',
+      run: async () => {
+        const reply = await write('post', '/api/projects/' + encodeURIComponent(ctx.folder.project.id) + '/portal-invite', undefined, {
+          working: 'Sending…',
+          rethrow: true,
+        });
+        if (!reply) return;
+        const result = reply.inviteResult || {};
+        if (result.sent) {
+          handover = null;
+          Toast.ok('Invite emailed to ' + result.to + '.');
+          draw(box, ctx);
+        } else {
+          Toast.error('The invite email to ' + (result.to || offer.to) + ' didn’t go.');
+          keepHandover(result);
+        }
+      },
+    });
+  }
+
+  /* One line under the checklist: not invited yet (with the button), an invite whose
+     email didn't go (send it again), invited, or why not. A failed invite's code
+     and link sit above it until dismissed. */
+  function inviteMarkup() {
+    const offer = ctx.folder.invite || {};
+    if (filed()) return '';
+    return handoverMarkup() + inviteLine(offer);
+  }
+
+  function inviteLine(offer) {
+    if (offer.state === 'retry') {
+      return '<p class="dlv-invite">The portal invite email didn’t go on ' + esc(when(offer.failedAt)) + '. ' +
+        '<button type="button" class="btn btn-sm" data-write id="dlv-invite">Send it to ' + esc(offer.to) + ' again…</button></p>';
+    }
+    if (offer.state === 'ready') {
+      return '<p class="dlv-invite">Not invited to the portal yet. ' +
+        '<button type="button" class="btn btn-sm" data-write id="dlv-invite">Invite ' + esc(offer.to) + '…</button></p>';
+    }
+    if (offer.state === 'sent') return '<p class="dlv-invite">Invited to the portal ' + esc(when(offer.at)) + '.</p>';
+    if (offer.state === 'no_email') return '<p class="dlv-invite">Add the client’s email in Client details to invite them to the portal.</p>';
+    return '';
   }
 
   function setNotNeeded(item, on, button) {
@@ -286,6 +404,13 @@ const ProjectDeliverables = (() => {
       }
       return undefined;
     }));
+    const inviteBtn = $('dlv-invite');
+    if (inviteBtn) inviteBtn.addEventListener('click', () => sendInvite(inviteBtn));
+    const handoverDone = $('dlv-handover-done');
+    if (handoverDone) handoverDone.addEventListener('click', () => {
+      handover = null;
+      draw(box, ctx);
+    });
     const form = $('dlv-add');
     if (form) form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -312,7 +437,7 @@ const ProjectDeliverables = (() => {
     const note = newest && newest.publishedAt && newest.stage !== item.stage
       ? 'v' + newest.n + ' went out as a ' + STAGE[newest.stage] + '. Add the ' + STAGE[item.stage] + '’s file as a new version.'
       : item.stage === 'final'
-        ? 'The client approves, or sends notes that use a revision round. ' + ROUNDS + ' rounds per Final.'
+        ? 'The client approves, or sends notes that use a revision round. ' + item.roundsIncluded + ' rounds per Final.'
         : 'The client approves or sends notes. It’s never downloadable and no round is used.';
     return (
       '<fieldset class="dlv-stage"><legend>Stage</legend><div class="dlv-stage-opts">' + radio('draft') + radio('final') + '</div>' +
@@ -321,6 +446,7 @@ const ProjectDeliverables = (() => {
   }
 
   function versionStatus(v) {
+    if (v.approval) return approvedWord(v.approval).replace(/^./, (c) => c.toUpperCase()) + ' ' + when(v.approval.approvedAt);
     return v.publishedAt ? 'Published ' + when(v.publishedAt) : 'Not published';
   }
 
@@ -407,34 +533,60 @@ const ProjectDeliverables = (() => {
     return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');
   };
 
-  /* The sets the client sent (C4), newest first, each under the version it was on.
-     Every client-written field goes through esc() (S8): a note is text, whatever it holds. */
+  /* An approval's record (C5, S12): which file, when, and who from where. All of it
+     goes through esc() (S8): the name, email and user agent came with the client. */
+  function approvalMarkup(item, v) {
+    const a = v.approval;
+    const newest = newestOf(item);
+    // The stage is named just before, so the word needn't repeat it.
+    const head = 'v' + a.versionN + ' · ' + STAGE[a.stage] + ' · ' + (a.kind === 'deemed' ? 'deemed approved ' : 'approved ') + when(a.approvedAt);
+    const standing = a.stage !== 'final' ? 'A Draft Cut’s approval: the Final still needs its own.'
+      : newest && newest.id !== v.id ? 'A newer version replaced this file, so the item isn’t approved any more.' : '';
+    const stamp = new Date(a.approvedAt);
+    const exact = isNaN(stamp) ? a.approvedAt : stamp.toLocaleString('en-AU', { timeZone: 'Australia/Sydney', dateStyle: 'medium', timeStyle: 'long' });
+    return '<div class="dlv-client-set dlv-approval"><p class="dlv-client-head">' + esc(head) + '</p>' +
+      '<dl class="dlv-approval-rec">' +
+      '<dt>File</dt><dd>' + esc(a.fileName || 'v' + a.versionN) + '</dd>' +
+      (a.kind === 'deemed' ? '' :
+        '<dt>By</dt><dd>' + esc([a.name, a.email].filter(Boolean).join(' · ') || 'The client') + '</dd>') +
+      '<dt>When</dt><dd>' + esc(exact) + '</dd>' +
+      (a.ip ? '<dt>From</dt><dd>' + esc(a.ip) + '</dd>' : '') +
+      (a.userAgent ? '<dt>Device</dt><dd class="dlv-approval-ua">' + esc(a.userAgent) + '</dd>' : '') +
+      '</dl>' + (standing ? '<p class="dlv-note">' + esc(standing) + '</p>' : '') + '</div>';
+  }
+
+  /* What the client sent: approvals (C5) and the sets of notes (C4), newest first, each
+     under the version it was on. Every client-written field goes through esc() (S8): a
+     note is text, whatever it holds. */
   function clientSetsMarkup(item) {
     const sent = (item.notes || []).filter((n) => n.submittedAt);
-    if (!sent.length) return '<p class="pf-empty">No notes or approval yet.</p>';
+    const approved = item.versions.filter((v) => v.approval);
+    if (!sent.length && !approved.length) return '<p class="pf-empty">No notes or approval yet.</p>';
     const byVersion = new Map();
     sent.forEach((n) => {
       if (!byVersion.has(n.versionId)) byVersion.set(n.versionId, []);
       byVersion.get(n.versionId).push(n);
     });
-    return [...byVersion.entries()].reverse().map(([versionId, notes]) => {
+    const sets = [...byVersion.entries()].map(([versionId, notes]) => {
       const v = item.versions.find((x) => x.id === versionId);
       const head = (v ? 'v' + v.n + ' · ' + STAGE[v.stage] : 'An earlier version') + ' · ' +
         notes.length + (notes.length === 1 ? ' note' : ' notes') + ' sent ' + when(notes[0].submittedAt);
-      return '<div class="dlv-client-set"><p class="dlv-client-head">' + esc(head) + '</p><ol class="dlv-client-notes">' +
+      return { at: notes[0].submittedAt, html: '<div class="dlv-client-set"><p class="dlv-client-head">' + esc(head) + '</p><ol class="dlv-client-notes">' +
         notes.map((n) => '<li>' +
           (n.seconds !== null && n.seconds !== undefined ? '<span class="dlv-note-at">' + esc(clock(n.seconds)) + '</span> ' : '') +
           (n.photoName ? '<span class="dlv-note-at">' + esc(n.photoName) + '</span> ' : '') +
           '<span class="dlv-note-text">' + esc(n.text) + '</span></li>').join('') +
-        '</ol></div>';
-    }).join('');
+        '</ol></div>' };
+    });
+    const approvals = approved.map((v) => ({ at: v.approval.approvedAt, html: approvalMarkup(item, v) }));
+    return sets.concat(approvals).sort((x, y) => String(y.at).localeCompare(String(x.at))).map((e) => e.html).join('');
   }
 
   function clientSideMarkup(item) {
     return (
       '<section class="panel" aria-labelledby="dlv-client-h">' +
       '<div class="panel-head"><h3 class="panel-title" id="dlv-client-h">From the client</h3>' +
-      (item.stage === 'final' ? '<span class="dlv-rounds">0 of ' + ROUNDS + ' rounds used</span>' : '') + '</div>' +
+      roundsLine(item) + '</div>' +
       '<div class="panel-body">' + clientSetsMarkup(item) + '</div></section>'
     );
   }

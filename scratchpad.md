@@ -201,7 +201,21 @@ Launch stills have sent sets (both items in Revisions); publish a v2 of either t
 (`carryOver` keeps it). Rounds: count `client_submissions` with stage 'final' per item. The rounds-used notice goes before the
 revision box opens (`want-revisions`), and Send's dialog says the rounds left.
 
-**Next: C5 Add Finals, rounds and approval | Model: Opus 5.5 | Effort: High.**
+**C5 done 2026-11-25 (not committed).** v29 `client_approvals`; approve route; rounds and the rounds-used notice; the old hub's
+`/hub/agreement` gone. Details and calls under C5 in TASKS.md. 1062/1062. Scratch (`/tmp/lsc-admin-scratch`, migrated to v29): the
+tester's Hero film is a Final at v5, approved, with 3 final rounds (one extra); Cut-down 15s has its draft approved; the project's
+signed agreement text now names $63.00. `delete from client_approvals` on the scratch db to approve again.
+**C5 review:** all 8 findings fixed (details under C5 in TASKS.md), incl. Needs you's Send final invoice row. 1063/1063.
+Restart `portal-api` after server edits: node doesn't reload, and a stale process showed "3 of 0 rounds".
+**For C6:** Needs you's `revision_notes` rows carry `round`/`extraRound` for the "notes submitted" email; an approval logs
+`client_approved` in activity. **For C7:** a deemed approval is a `client_approvals` row with `kind = 'deemed'` (client_id may be
+NULL); `itemApproved` already counts it, and the portal shows `deemed`.
+
+**C6 done 2026-11-25 (not committed).** Invite (first publish, one confirmation, or by hand) and the notes-submitted notice; details,
+calls and what wasn't checked under C6 in TASKS.md. 1071/1071. Checked in the browser on the scratch admin (dialog, checklist line, invite emailed to the stub mailbox); the invite state now rides on every folder reply (`readFolder`), via `portal-invite.js setEnv`. Scratch project `C6-1` is invited; its client is `c6-tester@example.test`.
+Code review fixes the same day (8 findings, all fixed, 1075/1075): invite wording by what's published, a failed invite's code kept on screen until dismissed and resendable (`retry`), refusal reasons in the publish toast, Needs you's final-invoice date, notes notice without APP_URL, round tie-break, and the approve reply's `itemStatus`. Launch config `portal-api-failmail` makes every email fail; scratch project `C6-2` (client `c6-fail@example.test`) went through a failed invite and a resend.
+
+**Next: C7 Add deemed approval and Complete | Model: Opus 5.5 | Effort: Medium.** (Reminder email for the client is C7's.)
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
 `routes.js` (`createHubRouter(db, opts)`, not mounted yet), `url-signing.js` (was signing.js), `admin-auth.js`,

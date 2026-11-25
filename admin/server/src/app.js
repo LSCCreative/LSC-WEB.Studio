@@ -27,6 +27,7 @@ const { registerRecoveryRoutes, registerAccountRoutes } = require('./routes/acco
 const { registerGoogleOAuthRoutes, registerGoogleRoutes } = require('./routes/google');
 const { createGoogleSync } = require('./google-sync');
 const { createMailer } = require('./mail');
+const { notesSubmitted } = require('./owner-notices');
 const { createOutbox } = require('./sends');
 const { createHnry } = require('./hnry');
 const { createHnryPusher } = require('./hnry-push');
@@ -107,7 +108,7 @@ function portalHostOnly(portalHost) {
  * The Client Portal's routes, or a 503 for them when its secret isn't set:
  * billing still starts without it, saying why.
  */
-function buildPortal(db, hub, appUrl) {
+function buildPortal(db, hub, appUrl, hooks = {}) {
   if (!hub) return null;
   if (!hub.signingSecret) {
     console.warn('[hub] HUB_SIGNING_SECRET isn\'t set, so the Client Portal\'s /hub routes answer 503');
@@ -115,7 +116,7 @@ function buildPortal(db, hub, appUrl) {
   }
   // Billing's limiter and client address, so both halves count and record visitors alike.
   const portal = createHubRouter(db, {
-    rateLimit, clientIp, cookieSecure: config.cookieSecure, ...hub, requireAdmin: requireAuth(db), appUrl,
+    rateLimit, clientIp, cookieSecure: config.cookieSecure, ...hub, requireAdmin: requireAuth(db), appUrl, ...hooks,
   });
   portal.deliverablesHealth().then((h) => {
     if (!h.ok) console.warn(`[hub] the deliverables folder can't be read (${h.error}); file links and publishing will fail`);
@@ -146,7 +147,12 @@ function createApp(db, opts = {}) {
   // the 503 stub: a test never reads the developer's real hub settings.
   const hub = opts.hub !== undefined ? opts.hub : (config.isTest ? null : config.hub);
   // The client's quote and invoice pages, which the portal links to (C3).
-  const portal = buildPortal(db, hub, appUrlOf(opts.appUrl !== undefined ? opts.appUrl : config.appUrl));
+  // The studio's emails about what a client did go through the mailer built further down, so they look it up when they fire.
+  const portal = buildPortal(db, hub, appUrlOf(opts.appUrl !== undefined ? opts.appUrl : config.appUrl), {
+    onNotesSubmitted: (ev) => notesSubmitted(db, {
+      mailer: app.locals.mailer, appUrl: appUrlOf(opts.appUrl !== undefined ? opts.appUrl : config.appUrl),
+    }, ev),
+  });
 
   app.use(portalHostOnly(hub ? hostnameOf(hub.publicBaseUrl) : ''));
   app.use(createCors(config.corsOrigins, (hub || config.hub).corsOrigins || []));
@@ -302,7 +308,16 @@ function createApp(db, opts = {}) {
   // the app sends through …/send, whose checks they don't share.
   const stageD = { markSent: opts.markSentRoutes !== undefined ? opts.markSentRoutes : config.isTest };
   registerProjectRoutes(app, db, { ...stageD, hnryPush });
-  registerDeliverableRoutes(app, db, { deliverablesDir: opts.deliverablesDir || (hub || config.hub).deliverablesDir });
+  registerDeliverableRoutes(app, db, {
+    deliverablesDir: opts.deliverablesDir || (hub || config.hub).deliverablesDir,
+    // The portal invite carries a Client code, so it's sent from the request that issues it (portal-invite.js).
+    portal: {
+      portalSecret: hub ? hub.signingSecret : '',
+      portalUrl: (hub && hub.portalUrl) || config.hub.portalUrl,
+      appUrl: appUrlOf(opts.appUrl !== undefined ? opts.appUrl : config.appUrl),
+      mailer,
+    },
+  });
   registerHubImportRoutes(app, db);
   registerNeedsRoutes(app, db);
   registerInvoiceRoutes(app, db, { ...stageD, hnryPush });

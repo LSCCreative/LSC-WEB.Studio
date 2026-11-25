@@ -5,11 +5,14 @@
    snapshot or totals_json. A field the portal needs is added here by name, and
    test-portal-sessions.js holds every reply to exactly these keys.
 
-   Nothing here carries money, the studio's notes, the client's own contact
+   Nothing here carries money (beyond what the client was sent: an invoice's amount, C3,
+   and the hourly rate their own signed agreement states, C5), the studio's notes, the client's own contact
    details beyond their names, NAS paths or internal ids other than the ones the
    portal addresses things by. */
 
 const str = (v) => (v === null || v === undefined ? '' : String(v));
+// Loaded here, not with the module: delivery.js reads billing's code as it loads.
+const delivery = () => require('../delivery');
 
 /* Who is signed in: the names the portal greets them by. */
 function clientView(row) {
@@ -51,13 +54,14 @@ function projectCard(project) {
 }
 
 /* Where one checklist item stands for the client, in the state model's order
-   (delivery.js stateOf): approved, notes with the studio, ready for them, or not
-   yet published. */
+   (delivery.js stateOf): signed off, notes with the studio, ready for them, or
+   with the studio (nothing published yet, or a draft they approved, which the
+   Final follows). */
 function itemStatus(d) {
-  if (d.hubStatus === 'approved' || d.hubStatus === 'delivered') return 'approved';
-  const newest = d.versions.filter((v) => v.publishedAt).pop();
+  if (delivery().itemApproved(d)) return 'approved';
+  const newest = delivery().newestPublished(d);
   if (d.hubStatus === 'changes' || (newest && newest.submittedAt)) return 'changes';
-  if (d.versions.some((v) => v.publishedAt)) return 'review';
+  if (newest && !newest.approval) return 'review';
   return 'production';
 }
 
@@ -102,17 +106,26 @@ function invoiceCard(inv) {
    for a photo library, or null when there's no file to show (an old hub link).
    Bunny's { type: 'hls', url } joins it in Slice 4. Nothing here offers a download.
    `invoices` (C3): the ones actually sent, through invoiceCard. `agreement`: the
-   signed quote's page and when it was signed, or null when it wasn't signed here. */
-function projectView(project, checklist, { reviewOf = () => null, invoices = [], agreement = null, clientId = null } = {}) {
+   signed quote's page and when it was signed, or null when it wasn't signed here.
+   `hourlyRate` (C5): the rate as the signed agreement wrote it ("$63.00"), for the
+   rounds-used notice, or null when there's no signed agreement saying one. Each item
+   has its revision `rounds` (used counts Finals only), each version when it was
+   approved (`approvedAt`, and `deemed` when the studio marked it after the contract's
+   14 business days, C7). Who, the IP and the device stay with the studio. */
+function projectView(project, checklist, {
+  reviewOf = () => null, invoices = [], agreement = null, clientId = null, hourlyRate = null,
+} = {}) {
   return {
     ...projectCard(project),
     invoices: invoices.map(invoiceCard),
     agreement: agreement ? { url: agreement.url, signedOn: str(agreement.signedOn) } : null,
+    hourlyRate: hourlyRate ? str(hourlyRate) : null,
     deliverables: checklist.filter((d) => !d.notNeededAt).map((d) => ({
       id: d.id,
       title: str(d.title),
       stage: d.stage,
       status: itemStatus(d),
+      rounds: { included: delivery().ROUNDS_INCLUDED, used: Number(d.roundsUsed) || 0 },
       // This client's own notes on the item, every version's, oldest first.
       notes: (d.notes || []).filter((n) => n.clientId === clientId).map(noteView),
       versions: d.versions.filter((v) => v.publishedAt).map((v) => ({
@@ -123,10 +136,12 @@ function projectView(project, checklist, { reviewOf = () => null, invoices = [],
         photoCount: Number(v.photoCount) || 0,
         publishedAt: v.publishedAt,
         submittedAt: v.submittedAt || null,
+        approvedAt: v.approval ? str(v.approval.approvedAt) : null,
+        deemed: Boolean(v.approval && v.approval.kind === 'deemed'),
         review: reviewOf(v),
       })),
     })),
   };
 }
 
-module.exports = { clientView, projectCard, projectView, noteView };
+module.exports = { clientView, projectCard, projectView, noteView, itemStatus };

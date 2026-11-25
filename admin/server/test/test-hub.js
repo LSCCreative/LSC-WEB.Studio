@@ -322,11 +322,11 @@ test.after(async () => {
   hub.db.close();
 });
 
-test('the studio’s routes need billing’s login, and the hub editor’s are gone (R3)', async () => {
+test('the studio’s routes need billing’s login, and the hub editor’s and sign-off are gone (R3, C5)', async () => {
   for (const [p, method] of [['/hub/publish-asset', 'POST'], ['/hub/publish-status?path=x', 'GET']]) {
     assert.equal((await hub.call(p, { method, body: method === 'POST' ? {} : undefined })).status, 401, p);
   }
-  for (const [p, method] of [['/hub/admin-auth', 'POST'], ['/hub/publish', 'POST'], ['/hub/agreement/p1', 'GET'], ['/hub/deliverable-url', 'POST'],
+  for (const [p, method] of [['/hub/admin-auth', 'POST'], ['/hub/publish', 'POST'], ['/hub/agreement/p1', 'GET'], ['/hub/agreement', 'POST'], ['/hub/deliverable-url', 'POST'],
     ['/hub/deliverable-folder', 'POST'], ['/hub/notify', 'POST'], ['/hub/deliverables-health', 'GET']]) {
     assert.equal((await hub.call(p, { method, cookie, body: method === 'POST' ? {} : undefined })).status, 404, p);
   }
@@ -381,28 +381,6 @@ test('an invite says whose sign-in it is and where it lands, and signs nobody in
   // A reset replaces it.
   hub.access.issue(sam.id);
   assert.equal((await hub.call('/hub/invite', { method: 'POST', body: { token: invite } })).status, 404);
-});
-
-test('the signed agreement is stored privately, with the address the server saw', async () => {
-  hub.seedRecord({ id: 'p_sign' });
-  const signer = hub.seedClient('signer@salt.example', ['p_sign']);
-  const { session } = await hub.signIn('signer@salt.example', signer.code);
-  const sign = { projectId: 'p_sign', signerName: 'Priya Nair', signedAt: '2026-11-06T01:00:00Z',
-    signatureDataUrl: 'data:image/png;base64,AAAA', consentText: 'I agree', consentChecked: true,
-    userAgent: 'Test', verificationToken: 'vt', ipAddress: '6.6.6.6' };
-  const post = (body, cookie = session) => hub.call('/hub/agreement', { method: 'POST', body, cookie });
-  assert.equal((await post(sign, null)).status, 401, 'signed out');
-  assert.equal((await post({ ...sign, consentChecked: 'true' })).status, 400);
-  assert.equal((await post({ ...sign, signerName: ' ' })).status, 400);
-  assert.equal((await post({ ...sign, projectId: 'p_none' })).status, 404);
-  hub.seedRecord({ id: 'p_pub_other' });
-  assert.equal((await post({ ...sign, projectId: 'p_pub_other' })).status, 404, 'another client’s record is the same not found');
-  assert.equal((await post(sign)).status, 200);
-
-  const got = hub.db.prepare('SELECT signer_name, ip_address FROM agreement_evidence WHERE project_id = ?').get('p_sign');
-  assert.equal(got.signer_name, 'Priya Nair');
-  assert.notEqual(got.ip_address, '6.6.6.6', 'the client can’t supply its own address');
-  assert.match(got.ip_address, /127\.0\.0\.1/);
 });
 
 test('a file link stays inside the folder, and is Range-aware', async () => {
@@ -541,20 +519,10 @@ test('a right code clears the count of wrong ones', async () => {
   } finally { await fresh.close(); fresh.db.close(); }
 });
 
-test('an agreement records Cloudflare’s client address, as billing’s signatures do', async () => {
-  const fresh = await startHub();
-  try {
-    fresh.seedRecord({ id: 'p_cf' });
-    const c = fresh.seedClient('cf@salt.example', ['p_cf']);
-    const { session } = await fresh.signIn('cf@salt.example', c.code);
-    await fresh.call('/hub/agreement', { method: 'POST', cookie: session, headers: { 'cf-connecting-ip': '198.51.100.77', 'x-forwarded-for': '6.6.6.6' }, body: {
-      projectId: 'p_cf', signerName: 'P', signedAt: 'x', signatureDataUrl: 'data:,', consentText: 'ok', consentChecked: true,
-    } });
-    assert.equal(fresh.db.prepare('SELECT ip_address FROM agreement_evidence WHERE project_id = ?').get('p_cf').ip_address, '198.51.100.77');
-  } finally { await fresh.close(); fresh.db.close(); }
-});
-
-test('a forged forwarding address can’t change the address recorded or dodge the throttle', async () => {
+/* The address an approval records, Cloudflare's or the tunnel's hop and never one the
+   client wrote, is tested on the approve route (test-portal-approvals.js): the old
+   hub's agreement route that recorded one is gone (C5). */
+test('a forged forwarding address can’t dodge the sign-in throttle', async () => {
   const fresh = await startHub();
   try {
     // The tunnel appends the address it saw; a client can only add entries before it.
@@ -563,15 +531,6 @@ test('a forged forwarding address can’t change the address recorded or dodge t
     const signInAs = (forged) => fresh.call('/hub/auth', { method: 'POST', headers: hop(forged), body: { email: 'a@b.example', code: '1234' } });
     for (let i = 0; i < 20; i += 1) await signInAs(`10.0.0.${i}`);
     assert.equal((await signInAs('10.0.0.99')).status, 429);
-
-    fresh.seedRecord({ id: 'p_ip' });
-    const c = fresh.seedClient('ip@salt.example', ['p_ip']);
-    // Signed in round the spent throttle: the session is what this needs, not the sign-in.
-    const { token } = fresh.access.startSession(c.id, 'code');
-    await fresh.call('/hub/agreement', { method: 'POST', cookie: `lsc_portal=${token}`, headers: hop('6.6.6.6'), body: {
-      projectId: 'p_ip', signerName: 'P', signedAt: 'x', signatureDataUrl: 'data:,', consentText: 'ok', consentChecked: true,
-    } });
-    assert.equal(fresh.db.prepare('SELECT ip_address FROM agreement_evidence WHERE project_id = ?').get('p_ip').ip_address, '203.0.113.9');
   } finally { await fresh.close(); fresh.db.close(); }
 });
 
@@ -586,24 +545,14 @@ test('the hub’s writes take a copy first; refused requests and reads don’t',
   const fresh = await startHub();
   try {
     const c = cookie;
-    fresh.seedRecord({ id: 'p_w' });
-    const w = fresh.seedClient('w@salt.example', ['p_w']);
-    const { token } = fresh.access.startSession(w.id, 'code');
-    const session = `lsc_portal=${token}`;
     assert.equal((await fresh.call('/hub/publish-asset', { method: 'POST', body: { path: 'Acme/Hero.mp4' } })).status, 401);
-    assert.equal((await fresh.call('/hub/agreement', { method: 'POST', body: { projectId: 'p_w' } })).status, 401);
-    assert.equal((await fresh.call('/hub/agreement', { method: 'POST', cookie: session, body: { projectId: 'nope' } })).status, 400);
     assert.equal(fresh.prewrites(), 0, 'nothing refused took a copy');
 
-    await fresh.call('/hub/agreement', { method: 'POST', cookie: session, body: {
-      projectId: 'p_w', signerName: 'P', signedAt: 'x', signatureDataUrl: 'data:,', consentText: 'ok', consentChecked: true,
-    } });
-    assert.equal(fresh.prewrites(), 1, 'the agreement');
     await fresh.call('/hub/publish-asset', { method: 'POST', cookie: c, body: { path: 'Acme/Hero.mp4' } });
-    assert.equal(fresh.prewrites(), 2, 'a video publish');
+    assert.equal(fresh.prewrites(), 1, 'a video publish');
     await fresh.call('/hub/auth', { method: 'POST', body: { email: 'a@b.example', code: '1234' } });
     await fresh.call('/hub/publish-status?path=Acme/Hero.mp4', { cookie: c });
-    assert.equal(fresh.prewrites(), 2, 'a client signing in and a status read take none');
+    assert.equal(fresh.prewrites(), 1, 'a client signing in and a status read take none');
   } finally { await fresh.close(); fresh.db.close(); }
 });
 

@@ -1111,6 +1111,13 @@ const MIGRATIONS = [
       require('./migrations/v28-client-feedback').migrateV28(db);
     },
   },
+  {
+    version: 29,
+    name: 'approvals: the record CONFIRM APPROVAL leaves, one per version (C5)',
+    up(db) {
+      require('./migrations/v29-approvals').migrateV29(db);
+    },
+  },
 ];
 
 /**

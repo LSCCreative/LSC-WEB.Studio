@@ -239,13 +239,32 @@ function deliveryState(input) {
 
 /* ── Reading it ─────────────────────────────────────────────────────────── */
 
+/* Revision rounds per Final deliverable (brief, Revision rounds; contract clause 4). */
+const ROUNDS_INCLUDED = 2;
+
+/* An approval as the readers see it (C5): the record, whoever reads it decides how
+   much of it they show (the client sees when, the studio sees all of it). */
+const approvalOf = (a) => (a ? {
+  kind: a.kind,
+  approvedAt: a.approved_at,
+  email: a.email || '',
+  name: a.name || '',
+  stage: a.stage,
+  versionN: a.version_n,
+  fileName: a.file_name || '',
+  ip: a.ip || '',
+  userAgent: a.user_agent || '',
+} : null);
+
 /* Item and version rows as the admin reads them, each item with its versions.
    `submissions` (C4) mark the versions the client sent notes on; `notes` are the
    client's, sent or not (each reader decides what it shows: the studio sees a
-   note once it's sent). */
-function checklistOf(items, versions, { submissions = [], notes = [] } = {}) {
+   note once it's sent). `approvals` (C5) are each version's, if it has one.
+   `roundsUsed` counts the sets sent on Final versions: a Draft Cut's never count. */
+function checklistOf(items, versions, { submissions = [], notes = [], approvals = [] } = {}) {
   const sentAt = new Map(submissions.map((s) => [s.version_id, s.submitted_at]));
   const sentById = new Map(submissions.map((s) => [s.id, s.submitted_at]));
+  const approvalAt = new Map(approvals.map((a) => [a.version_id, a]));
   return items.map((d) => ({
     id: d.id,
     position: d.position,
@@ -269,7 +288,10 @@ function checklistOf(items, versions, { submissions = [], notes = [] } = {}) {
       createdAt: v.created_at,
       publishedAt: v.published_at || null,
       submittedAt: sentAt.get(v.id) || null,
+      approval: approvalOf(approvalAt.get(v.id)),
     })),
+    roundsUsed: submissions.filter((s) => s.deliverable_id === d.id && s.stage === 'final').length,
+    roundsIncluded: ROUNDS_INCLUDED,
     notes: notes.filter((n) => n.deliverable_id === d.id).map((n) => ({
       id: n.id,
       versionId: n.version_id,
@@ -289,6 +311,18 @@ function newestPublished(d) {
   return d.versions.filter((v) => v.publishedAt).pop() || null;
 }
 
+/* Signed off (S12): the item's newest version, published or not, is a Final the
+   client approved (or the studio marked approved, C7). A new file the studio adds
+   takes the item out of approved at once, before it's even published: the approval
+   stays on its own version's record, but it was of a file that's being replaced. A
+   draft's approval never signs an item off (brief, Deliverables). The old hub's word
+   (R4) stands until the item's next file, which clears it. */
+function itemApproved(d) {
+  if (d.hubStatus === 'approved' || d.hubStatus === 'delivered') return true;
+  const newest = d.versions[d.versions.length - 1];
+  return Boolean(newest && newest.stage === 'final' && newest.approval);
+}
+
 /** The checklist as the admin reads it, in order, each item with its versions and the client's notes. */
 function readChecklist(db, projectId) {
   return checklistOf(
@@ -297,6 +331,7 @@ function readChecklist(db, projectId) {
     {
       submissions: db.prepare('SELECT * FROM client_submissions WHERE project_id = ?').all(projectId),
       notes: db.prepare('SELECT * FROM client_notes WHERE project_id = ? ORDER BY created_at, id').all(projectId),
+      approvals: db.prepare('SELECT * FROM client_approvals WHERE project_id = ?').all(projectId),
     },
   );
 }
@@ -319,14 +354,14 @@ function projectSigned(db, projectId) {
  * The state of a project row from its checklist, whose money stage the caller
  * already has (projectStage). An item is waiting on the client from its first
  * published version: a newer one still unpublished doesn't take back what they
- * have. Approvals (C5) and submitted notes (C4) join here when they exist.
+ * have, until they answer it: a draft they approved is the studio's to follow with
+ * the Final. Approvals (C5, itemApproved) and submitted notes (C4) join here.
  */
 function stateOf(p, money, invoices, deliverables, signed) {
   const items = deliverables.map((d) => ({
     notNeeded: Boolean(d.notNeededAt),
-    // Where the old hub left it (R4), until the item's next file. C5's approvals join here.
-    approved: d.hubStatus === 'approved' || d.hubStatus === 'delivered',
-    awaitingClient: d.versions.some((v) => v.publishedAt),
+    approved: itemApproved(d),
+    awaitingClient: Boolean(newestPublished(d) && !newestPublished(d).approval),
     // Notes sent on the newest version the client has (C4), until the studio publishes
     // the next; or where the old hub left it.
     notesSubmitted: d.hubStatus === 'changes' || Boolean(newestPublished(d) && newestPublished(d).submittedAt),
@@ -365,7 +400,8 @@ function readDelivery(db, p, money, invoices) {
 function deliveryReader(db) {
   const versions = db.prepare('SELECT * FROM deliverable_versions ORDER BY n').all();
   const items = db.prepare('SELECT * FROM deliverables ORDER BY position, created_at, id').all();
-  const submissions = db.prepare('SELECT id, project_id, version_id, submitted_at FROM client_submissions').all();
+  const submissions = db.prepare('SELECT id, project_id, deliverable_id, version_id, stage, submitted_at FROM client_submissions').all();
+  const approvals = db.prepare('SELECT * FROM client_approvals').all();
   const signed = new Set(db.prepare(`
     SELECT DISTINCT e.project_id FROM signatures s
       JOIN estimate_versions v ON v.id = s.version_id
@@ -384,11 +420,14 @@ function deliveryReader(db) {
   const itemsOf = byProject(items);
   const versionsOf = byProject(versions);
   const submissionsOf = byProject(submissions);
+  const approvalsOf = byProject(approvals);
   return (p, money, invoices) => stateOf(p, money, invoices,
-    checklistOf(itemsOf.get(p.id) || [], versionsOf.get(p.id) || [], { submissions: submissionsOf.get(p.id) || [] }), signed.has(p.id));
+    checklistOf(itemsOf.get(p.id) || [], versionsOf.get(p.id) || [], {
+      submissions: submissionsOf.get(p.id) || [], approvals: approvalsOf.get(p.id) || [],
+    }), signed.has(p.id));
 }
 
 module.exports = {
   quotedDeliverables, createChecklist, clientForAcceptance, deliveryState, readDelivery, deliveryReader, readChecklist, newestPublished,
-  BADGES, MAX_PER_LINE,
+  itemApproved, BADGES, MAX_PER_LINE, ROUNDS_INCLUDED,
 };

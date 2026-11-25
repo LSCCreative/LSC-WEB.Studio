@@ -146,16 +146,35 @@ check('the portal’s addresses: dashboard, project, review and photo, by id (C3
   assert.match(fnBody('photoAddress'), /history\.replaceState/);
 });
 
-check('a project is read fresh on arrival, keeping what only the page knows (an approval) on the same version', () => {
-  const carryOver = new Function(`${fnBody('carryOver')}; return carryOver;`)();
-  const asset = (id, n, extra = {}) => ({ id, n, comments: [], approved: false, ...extra });
-  const old = { assets: [asset('a', 1, { approved: true }), asset('b', 1), asset('c', 1, { approved: true })] };
-  const fresh = carryOver(old, { assets: [asset('a', 1), asset('b', 1), asset('c', 2), asset('d', 1)] });
-  assert.deepEqual(fresh.assets.map((a) => [a.id, a.approved]),
-    [['a', true], ['b', false], ['c', false], ['d', false]], 'a new version starts clean; notes come from the server');
-  assert.equal(typeof fresh.loadedAt, 'number');
+check('a project is read fresh on arrival, and its approvals are the server’s (C5)', () => {
+  // Nothing the page decided on its own survives a read: approval comes from the version's record.
+  assert.doesNotMatch(page, /function carryOver/);
+  assert.match(fnBody('portalProject'), /approvedAt: v\.approvedAt \|\| null/);
+  assert.match(fnBody('loadProject'), /fresh\.loadedAt = Date\.now\(\)/);
   // Only the project already on screen, read within the minute, is used as it is.
   assert.match(fnBody('loadProject'), /state\.project === held && Date\.now\(\) - held\.loadedAt < PROJECT_FRESH_MS/);
+  // CONFIRM APPROVAL posts to the server and marks nothing approved until it answers.
+  const bind = fnBody('bindClientAsset');
+  const approve = bind.slice(bind.indexOf("'confirm-approve'"), bind.indexOf("'confirm-send'"));
+  assert.match(approve, /await api\('\/hub\/projects\/'[^;]*'\/approve'/);
+  assert.ok(approve.indexOf('await api') < approve.indexOf('a.approvedAt = r.approval.approvedAt'));
+  // Its date is Sydney's (S19), and a refusal that can't change on a retry re-reads instead of saying "Try again".
+  assert.match(fnBody('renderAssetInteraction'), /fmtSydneyDay\(a\.approvedAt\)/);
+  assert.match(approve, /archived: '/);
+  assert.match(approve, /not_found: '/);
+});
+
+check('the rounds-used notice comes before the note box, and only #asset-interaction repaints for it (C5)', () => {
+  const bind = fnBody('bindAssetInteraction');
+  const want = bind.slice(bind.indexOf("'want-revisions'"), bind.indexOf("'rounds-back'"));
+  assert.match(want, /roundsOut\(a\) && !state\.roundsOk\[a\.versionId\]/);
+  assert.ok(want.indexOf('state.roundsNotice = true') < want.indexOf('toggleRevisions()'), 'the notice before the box');
+  assert.match(want, /refreshAssetInteraction\(\)/);
+  assert.doesNotMatch(want, /setState|render\(\)/);
+  // The brief's wording, with the agreement's rate or none.
+  assert.match(page, /You’ve used both revision rounds/);
+  assert.match(page, /Further revisions are charged at \$\{escapeHtml\(rateWords\(p\)\)\}, and we’ll send you a quote to approve before any work starts\./);
+  assert.match(page, /const rateWords = \(p\) => 'our hourly rate' \+ \(p\.hourlyRate \? ' of AUD ' \+ p\.hourlyRate : ''\);/);
 });
 
 check('no download anywhere on the portal, and notes are saved on the server as they are added (C4)', () => {

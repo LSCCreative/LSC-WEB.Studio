@@ -246,6 +246,10 @@ const ProjectCard = (() => {
       case 'version_added': return 'Added v' + d.n + ' of “' + (d.title || 'a deliverable') + '”' + (d.file ? ': ' + d.file : '');
       case 'version_removed': return 'Removed v' + d.n + ' of “' + (d.title || 'a deliverable') + '”';
       case 'version_published': return 'Published v' + d.n + ' of “' + (d.title || 'a deliverable') + '” as a ' + (d.stage === 'final' ? 'Final' : 'Draft Cut');
+      case 'portal_invite_sent': return 'Portal invite emailed to ' + (d.to || 'the client');
+      case 'portal_invite_failed': return 'The portal invite email to ' + (d.to || 'the client') + ' didn’t go' + (d.error ? ': ' + d.error : '');
+      case 'client_approved': return 'Client approved v' + d.n + ' of “' + (d.title || 'a deliverable') + '”' +
+        (d.stage === 'final' ? ', the Final' : ', a Draft Cut');
       case 'no_deliverables': return 'Said no deliverables are expected';
       case 'deliverables_expected': return 'Said deliverables are expected after all';
       case 'archived': return 'Archived';

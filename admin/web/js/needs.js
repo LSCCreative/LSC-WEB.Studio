@@ -56,7 +56,13 @@ const LSCNeeds = (() => {
       case 'new_project':
         return ['Accepted, not opened yet'];
       case 'revision_notes':
-        return [item.title, plural(item.notes, 'note') + ' sent ' + ago(item.days)];
+        // On a Final, its round; past the included ones it's extra work to quote first (C5).
+        return [item.title, plural(item.notes, 'note') + ' sent ' + ago(item.days),
+          item.extraRound ? 'Round ' + item.round + ', past the ' + item.included + ' included: quote first'
+            : item.round ? 'Round ' + item.round + ' of ' + item.included : ''];
+      case 'final_invoice':
+        // No date when the old hub signed it off (R4): it isn't "today".
+        return [typeof item.days === 'number' ? 'Everything approved ' + ago(item.days) : 'Everything approved'];
       default:
         return [];
     }

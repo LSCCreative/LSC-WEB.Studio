@@ -320,14 +320,17 @@ async function api(path, opts = {}){
 /* The project as this page uses it, from the server's allow-listed view. `items`
    is the whole checklist with where each stands; `assets` are the ones with a
    published version to review, each on its newest, with the client's notes from the
-   server (C4): `comments` on this version, `earlier` on the ones before. Approval
-   lives in this page only until C5 gives it a home on the server. */
+   server (C4): `comments` on this version, `earlier` on the ones before. `approvedAt`
+   is the server's record of this version's approval (C5), `rounds` the revision rounds
+   used on the item (Finals only count), and `wasDraft` says this Final follows a
+   draft cut the client reviewed. */
 function portalProject(view){
   return {
     id: view.id, upid: view.upid || '', name: view.name || '', status: view.status || '', past: !!view.past,
     nextStep: view.nextStep || '', needsYou: !!view.needsYou,
     invoices: Array.isArray(view.invoices) ? view.invoices : [],
     agreement: view.agreement || null,
+    hourlyRate: view.hourlyRate || null,
     items: (view.deliverables || []).map(d => ({ id: d.id, title: d.title || '', status: d.status })),
     assets: (view.deliverables || []).filter(d => d.versions && d.versions.length).map(d => {
       const v = d.versions[d.versions.length - 1];
@@ -340,7 +343,13 @@ function portalProject(view){
         photos: (photo && review && Array.isArray(review.urls))
           ? review.urls.map((url, i) => ({ name: 'Photo ' + (i + 1), reviewLink: url }))
           : [],
-        approved: d.status === 'approved',
+        approvedAt: v.approvedAt || null,
+        itemApproved: d.status === 'approved',
+        // How many rounds a Final includes is the server's to say (delivery.js ROUNDS_INCLUDED).
+        rounds: { included: Number(d.rounds && d.rounds.included) || 0, used: Number(d.rounds && d.rounds.used) || 0 },
+        // The first Final after a draft cut: the version before this one was the draft.
+        wasDraft: v.stage === 'final' && d.versions.length > 1 && d.versions[d.versions.length - 2].stage === 'draft'
+          ? d.versions[d.versions.length - 2].n : null,
       };
       const nOf = Object.fromEntries(d.versions.map(x => [x.id, x.n]));
       const raw = d.notes || [];
@@ -368,15 +377,32 @@ function noteOf(n, a){
   };
 }
 
-/* Where a deliverable stands for the client on this page: approved, notes sent to the
-   studio (waiting for the next version), notes saved but not sent, or ready. */
+/* Where a deliverable stands for the client on this page: approved (a Final, signing it
+   off), a draft cut approved (the Final follows), notes sent to the studio (waiting for
+   the next version), notes saved but not sent, or ready. */
 function statusOf(a){
-  if(a.approved) return 'approved';
+  if(a.approvedAt) return a.stage === 'final' ? 'approved' : 'draftApproved';
+  if(a.itemApproved) return 'approved'; // the old hub's word, until the item's next file
   if(a.submittedAt) return 'sent';
   if(a.comments.some(c => !c.submittedAt)) return 'unsent';
   return 'reviewing';
 }
 const unsentOf = (a) => a.comments.filter(c => !c.submittedAt);
+/* Approved, either way: notes and approval are closed on this version. */
+const isClosed = (st) => st === 'approved' || st === 'draftApproved';
+/* Both included revision rounds used on this Final: starting notes shows the notice first. */
+const roundsOut = (a) => a.stage === 'final' && a.rounds.used >= a.rounds.included;
+/* The rate as the signed agreement wrote it, or none (a project with no signed agreement). */
+const rateWords = (p) => 'our hourly rate' + (p.hourlyRate ? ' of AUD ' + p.hourlyRate : '');
+/* What a Send costs in rounds, for its dialog (brief: Submit confirms that it uses a round
+   and how many are left). Drafts never count. */
+function roundWords(a, p){
+  if(a.stage !== 'final') return 'Notes on a draft cut don’t use a revision round.';
+  const { used, included } = a.rounds;
+  if(used >= included) return `You’ve used both revision rounds, so this set is extra. Further revisions are charged at ${rateWords(p)}, and we’ll send you a quote to approve before any work starts.`;
+  const left = included - used - 1;
+  return `This uses revision round ${used + 1} of ${included}. ` + (left ? `You’ll have ${left} left.` : 'It’s your last included round.');
+}
 
 /* ---------------- addresses ----------------
    #/                         the dashboard
@@ -406,6 +432,11 @@ const fmtDate = (iso) => {
   const d = /^\d{4}-\d{2}-\d{2}/.test(iso || '') ? new Date(iso.slice(0, 10) + 'T00:00:00Z') : null;
   return d && !isNaN(d) ? d.toLocaleDateString('en-AU', { day:'numeric', month:'short', year:'numeric', timeZone:'UTC' }) : '';
 };
+/* The Sydney day of a moment (S19): an approval on a Sydney morning is the day before in UTC. */
+const fmtSydneyDay = (iso) => {
+  const d = new Date(iso || '');
+  return isNaN(d) ? '' : d.toLocaleDateString('en-AU', { day:'numeric', month:'short', year:'numeric', timeZone:'Australia/Sydney' });
+};
 const fmtMoney = (n) => Number(n || 0).toLocaleString('en-AU', { style:'currency', currency:'AUD' });
 const fmtStamp = (iso) => {
   const d = new Date(iso || '');
@@ -417,6 +448,7 @@ const statusMeta = {
   unsent:{ label:'Notes not sent', cls:'badge-changes' },
   sent:{ label:'Notes sent', cls:'badge-project' },
   approved:{ label:'Approved', cls:'badge-approved' },
+  draftApproved:{ label:'Draft approved', cls:'badge-approved' },
 };
 const stageLabel = (stage) => stage === 'final' ? 'Final' : 'Draft cut';
 
@@ -471,6 +503,10 @@ let state = {
   // carry a half-typed note from one photo onto the next as the client arrows through.
   photoDrafts: {},
   approveModalAssetId: null,
+  approving: false,        // CONFIRM APPROVAL is on its way to the server
+  approveError: null,
+  roundsNotice: false,     // "You've used both revision rounds" is showing, before the note box
+  roundsOk: {},            // version id → the client chose Continue past that notice (this page only)
 };
 
 function setState(patch){ Object.assign(state, patch); render(); }
@@ -529,6 +565,7 @@ function offline(e){
 /* Show whatever the address asks for. Signed out, the sign-in screen stays and the
    address is kept, so signing in lands on the page that was asked for. */
 const REVIEW_RESET = { revisionOpen:false, revisionDraft:'', pausedAt:null, pausedSeconds:null, videoFailed:false, approveModalAssetId:null,
+  approving:false, approveError:null, roundsNotice:false,
   noteError:null, noteSaving:false, lbError:null, lbSaving:false, sendModalAssetId:null, sendError:null, sending:false };
 let routing = 0;
 async function route(){
@@ -574,9 +611,9 @@ async function showDashboard(ticket){
 
 /* A project's page model. Coming to a project (from the dashboard, a link, or back to it
    after a while) reads it fresh, so it never disagrees with the dashboard; moving within
-   the project on screen keeps the copy in hand. Notes and approvals made in this page are
-   carried onto the fresh copy for the same version (until C4 saves them). Not found
-   (gone, or another client's: the same answer) shows the not-found screen. */
+   the project on screen keeps the copy in hand. Notes (C4) and approvals (C5) are the
+   server's, so the fresh copy has them. Not found (gone, or another client's: the same
+   answer) shows the not-found screen. */
 const PROJECT_FRESH_MS = 60 * 1000;
 async function loadProject(id, ticket){
   const held = state.cache[id];
@@ -584,7 +621,8 @@ async function loadProject(id, ticket){
   if(!held || state.project !== held) setState({ phase:'loading' });
   try {
     const { project } = await api('/hub/projects/' + encodeURIComponent(id));
-    const fresh = carryOver(held, portalProject(project));
+    const fresh = portalProject(project);
+    fresh.loadedAt = Date.now();
     state.cache[id] = fresh;
     return fresh;
   } catch(e){
@@ -594,18 +632,6 @@ async function loadProject(id, ticket){
     failedRead(e);
     return null;
   }
-}
-
-/* What the client did in this page that the server doesn't keep yet, onto a fresh copy:
-   an approval on the same version (until C5). Notes come from the server (C4). */
-function carryOver(old, fresh){
-  fresh.loadedAt = Date.now();
-  if(!old) return fresh;
-  fresh.assets.forEach(a => {
-    const was = old.assets.find(x => x.id === a.id && x.n === a.n);
-    if(was && was.approved) a.approved = true;
-  });
-  return fresh;
 }
 
 function failedRead(e){
@@ -618,6 +644,7 @@ function signedOut(text){
     phase:'signin', client:null, project:null, projects:[], cache:{}, showPast:false, clientScreen:'landing', activeAssetId:null,
     code:'', loginBusy:false, loginError:false, loginMsg: text ? { text, error:false } : null,
     revisionOpen:false, revisionDraft:'', pausedAt:null, lightboxIdx:null, photoDrafts:{}, approveModalAssetId:null,
+    approving:false, approveError:null, roundsNotice:false, roundsOk:{},
   });
 }
 
@@ -858,7 +885,8 @@ function bindClientChrome(){
    payment block joins the top with payment (F tasks). */
 function renderClientLanding(){
   const p = getViewProject();
-  const allApproved = p.assets.length > 0 && p.assets.every(a => a.approved);
+  // Signed off is every item's Final approved: a draft's approval doesn't count (brief).
+  const allApproved = p.items.length > 0 && p.items.every(i => i.status === 'approved');
   const byId = Object.fromEntries(p.assets.map(a => [a.id, a]));
   const cards = p.items.map(item => {
     const a = byId[item.id];
@@ -984,14 +1012,19 @@ function renderClientAsset(){
     ? renderVideoCanvas(a)
     : `<div id="photo-canvas">${renderPhotoCanvas(a)}</div>`;
 
+  // CONFIRM APPROVAL (C5): the server records who, when, from where and this exact
+  // version. A draft cut's approval lets the studio go ahead; only the Final's signs it off.
   const approveModal = state.approveModalAssetId === a.id ? `
     <div class="modal-scrim">
-      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="approve-title">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="approve-title" aria-describedby="approve-what">
         <h2 id="approve-title" class="display title-lg mb-3">Approve ${escapeHtml(a.title || 'this')}?</h2>
-        <p class="text-sm mb-6">You’re approving the ${stageLabel(a.stage).toLowerCase()} as it is. You won’t be able to add notes to it after this.</p>
+        <p id="approve-what" class="text-sm mb-6">${a.stage === 'final'
+          ? `You’re approving the final, v${a.n}, as it is. We keep a record of this approval with the date and this exact version. You won’t be able to add notes to it after this.`
+          : `You’re approving the draft cut, v${a.n}, as it is, so we’ll go ahead with the final. You’ll review and approve the final too. You won’t be able to add notes to this draft after this.`}</p>
+        ${state.approveError ? `<p class="field-error mb-4" role="alert">${escapeHtml(state.approveError)}</p>` : ''}
         <div class="row">
-          <button id="confirm-approve" class="btn btn-confirm">Confirm approval</button>
-          <button id="cancel-approve" class="btn btn-quiet">Go back</button>
+          <button id="confirm-approve" class="btn btn-confirm" ${state.approving ? 'disabled' : ''}>${state.approving ? 'Approving…' : 'Confirm approval'}</button>
+          <button id="cancel-approve" class="btn btn-quiet" ${state.approving ? 'disabled' : ''}>Go back</button>
         </div>
       </div>
     </div>` : '';
@@ -1001,7 +1034,8 @@ function renderClientAsset(){
     <div class="modal-scrim">
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="send-title">
         <h2 id="send-title" class="display title-lg mb-3">Send ${unsent.length} ${unsent.length === 1 ? 'note' : 'notes'} to the studio?</h2>
-        <p class="text-sm mb-6">We’ll make the changes to ${escapeHtml(a.title || 'this')} and let you know when the new version is ready. You can’t add notes to this version once they’re sent.</p>
+        <p class="text-sm mb-4">We’ll make the changes to ${escapeHtml(a.title || 'this')} and let you know when the new version is ready. You can’t add notes to this version once they’re sent.</p>
+        <p class="text-sm mb-6">${escapeHtml(roundWords(a, p))}</p>
         ${state.sendError ? `<p class="field-error mb-4" role="alert">${escapeHtml(state.sendError)}</p>` : ''}
         <div class="row">
           <button id="confirm-send" class="btn btn-primary" ${state.sending ? 'disabled' : ''}>${state.sending ? 'Sending…' : 'Send notes'}</button>
@@ -1015,7 +1049,13 @@ function renderClientAsset(){
     <main class="wrap section">
       <div class="row mb-4" style="gap:var(--space-4)">
         <span class="badge badge-stage">${stageLabel(a.stage)} · v${a.n}</span>
+        ${a.stage === 'final' ? `<span class="meta">REVISION ROUNDS: ${Math.min(a.rounds.used, a.rounds.included)} OF ${a.rounds.included} USED${a.rounds.used > a.rounds.included ? ` · ${a.rounds.used - a.rounds.included} EXTRA` : ''}</span>` : ''}
       </div>
+      ${a.wasDraft && !isClosed(statusOf(a)) ? `
+      <div class="card pad-sm notice mb-4" role="note">
+        <span style="color:var(--color-status-info-text);flex:0 0 auto">${icon('check', 18)}</span>
+        <span class="text-sm">This is the final. It replaces the draft cut you reviewed (v${a.wasDraft}); your notes on it are under Notes on earlier versions.</span>
+      </div>` : ''}
       ${canvas}
       <div id="asset-interaction">${renderAssetInteraction(a)}</div>
     </main>
@@ -1051,10 +1091,12 @@ function renderAssetInteraction(a){
       <div class="notes mt-3">${a.earlier.map(c => `<div>${c.n ? `<span class="meta">V${c.n}</span>` : ''}${noteCard(c, false)}</div>`).join('')}</div>
     </details>` : '';
 
-  if(st === 'approved'){
+  if(isClosed(st)){
+    const on = a.approvedAt ? ' ' + escapeHtml(fmtSydneyDay(a.approvedAt)) : '';
     return `
     <div class="card pad-sm mt-6" style="text-align:center">
-      <span class="badge badge-approved">${icon('check', 13)}Approved</span>
+      <span class="badge badge-approved">${icon('check', 13)}${st === 'draftApproved' ? 'Draft approved' : 'Approved'}${on}</span>
+      ${st === 'draftApproved' ? `<p class="meta mt-3">We’ll let you know when the final is ready to review.</p>` : ''}
     </div>${earlier}`;
   }
 
@@ -1093,14 +1135,17 @@ function renderAssetInteraction(a){
   }
 
   // While the revision panel is open the approve button is absent from the page
-  // entirely, not just disabled: a client asking for changes isn't approving.
+  // entirely, not just disabled: a client asking for changes isn't approving. So while
+  // the rounds-used notice (C5), which comes before the note box, is up.
+  const asking = state.revisionOpen || state.roundsNotice;
   return `
     <div class="mt-6 row">
-      <button id="want-revisions" class="btn">${state.revisionOpen ? 'Revision form open' : 'Comment revisions'}</button>
-      ${state.revisionOpen ? '' : approve}
+      <button id="want-revisions" class="btn" ${state.roundsNotice ? 'disabled' : ''}>${state.revisionOpen ? 'Revision form open' : 'Comment revisions'}</button>
+      ${asking ? '' : approve}
       ${send}
     </div>
-    ${state.revisionOpen ? '' : hint}
+    ${asking ? '' : hint}
+    ${state.roundsNotice ? renderRoundsNotice(a, 'rounds') : ''}
     ${state.revisionOpen ? renderRevisionForm(a) : ''}
     ${log}${earlier}
   `;
@@ -1272,7 +1317,9 @@ function renderPhotoLightbox(a){
   const mine = commentsForPhoto(a, i);
   const draft = state.photoDrafts[photoDraftKey(a, i)] || '';
   const st = statusOf(a);
-  const locked = st === 'approved' || st === 'sent';
+  const locked = isClosed(st) || st === 'sent';
+  // The rounds-used notice comes before this photo's note box, once per version (C5).
+  const notice = !locked && roundsOut(a) && !state.roundsOk[a.versionId];
 
   return `
   <div id="photo-lightbox" class="lb-scrim" role="dialog" aria-modal="true" aria-label="${escapeAttr(ph.name)}">
@@ -1304,7 +1351,7 @@ function renderPhotoLightbox(a){
 
       ${locked ? `
         <p class="meta">${st === 'sent' ? 'Your notes on these photos were sent, so notes are closed until the next version.' : 'These photos are approved, so notes are closed.'}</p>
-      ` : `
+      ` : notice ? renderRoundsNotice(a, 'lb-rounds') : `
         <label for="lb-text" class="eyebrow" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Note about this photo</label>
         <textarea id="lb-text" class="field mb-3" rows="3" maxlength="4000" placeholder="Add a note about this photo…" ${state.lbError ? 'aria-describedby="lb-error"' : ''}>${escapeHtml(draft)}</textarea>
         ${state.lbError ? `<p id="lb-error" class="field-error mb-3" role="alert">${escapeHtml(state.lbError)}</p>` : ''}
@@ -1312,6 +1359,22 @@ function renderPhotoLightbox(a){
         <p class="meta mt-3">Notes save as you add them. Send them all from the page when you’re done.</p>
       `}
     </aside>
+  </div>`;
+}
+
+/* Both included rounds used on this Final (brief, Revision rounds): shown when the client
+   starts notes, before the box. They can go back or carry on; nothing is charged here,
+   and the studio is flagged when the notes are sent. `id` prefixes the buttons. */
+function renderRoundsNotice(a, id){
+  const p = getViewProject();
+  return `
+  <div class="card pad-sm mt-3" role="region" aria-labelledby="${id}-title">
+    <h3 id="${id}-title" class="display title-lg mb-3">You’ve used both revision rounds</h3>
+    <p class="text-sm mb-6">You can still send us notes on ${escapeHtml(a.title || 'this')}. Further revisions are charged at ${escapeHtml(rateWords(p))}, and we’ll send you a quote to approve before any work starts.</p>
+    <div class="row">
+      <button id="${id}-back" class="btn btn-quiet">Go back</button>
+      <button id="${id}-continue" class="btn btn-primary">Continue</button>
+    </div>
   </div>`;
 }
 
@@ -1432,15 +1495,57 @@ function bindClientAsset(){
   bindPhotoLightbox(a);
   // A lightbox opened by its address (a link, a reload) is a dialog: focus goes into it.
   if(state.lightboxIdx != null){
-    const into = document.getElementById('lb-text') || document.getElementById('lb-close');
+    const into = document.getElementById('lb-text') || document.getElementById('lb-rounds-continue') || document.getElementById('lb-close');
     if(into) into.focus();
   }
 
+  // CONFIRM APPROVAL (C5): recorded on the server against this version. A failure keeps
+  // the dialog open and says why; nothing is approved until the server says so.
   const confirmApprove = document.getElementById('confirm-approve');
-  if(confirmApprove) confirmApprove.onclick = () => {
-    a.approved = true;
-    if(p.assets.every(x => x.approved)) return go(projectHash(p.id));
-    setState({ revisionOpen:false, approveModalAssetId:null });
+  if(confirmApprove) confirmApprove.onclick = async () => {
+    if(state.approving) return;
+    setState({ approving:true, approveError:null });
+    try {
+      const r = await api('/hub/projects/' + encodeURIComponent(p.id) + '/items/' + encodeURIComponent(a.id) + '/approve',
+        { method:'POST', body:{ versionId: a.versionId } });
+      // Onto this copy and the project as it is now (it may have been read fresh meanwhile).
+      // The item's status is the server's: a newer file the studio added means it isn't
+      // signed off, whatever this approval says.
+      const now = state.cache[p.id];
+      [p, now].forEach(x => {
+        if(!x) return;
+        const asset = x.assets.find(y => y.id === a.id && y.versionId === a.versionId);
+        if(asset) asset.approvedAt = r.approval.approvedAt;
+        const item = x.items.find(y => y.id === a.id);
+        if(item && r.itemStatus) item.status = r.itemStatus;
+      });
+      a.approvedAt = r.approval.approvedAt;
+      state.approving = false;
+      if(p.items.length && p.items.every(i => i.status === 'approved')) return go(projectHash(p.id));
+      setState({ revisionOpen:false, roundsNotice:false, approveModalAssetId:null });
+      toast(a.stage === 'final' ? 'Approved. Thanks.' : 'Draft approved. We’ll get on with the final.');
+    } catch(e){
+      // The version moved on, this was settled in another tab, or the studio closed it
+      // (archived, or marked not needed): trying again can't work, so show it as it is now.
+      const SETTLED = {
+        not_current: 'There’s a newer version of this now.',
+        sent: 'Your notes on this version were sent, so it waits for the next one.',
+        approved: 'This was already approved.',
+        archived: 'This project is closed, so nothing was approved.',
+        not_found: 'This isn’t up for review any more, so nothing was approved.',
+      };
+      if(Object.hasOwn(SETTLED, e.code)){
+        delete state.cache[p.id];
+        setState({ approving:false, approveModalAssetId:null });
+        toast(SETTLED[e.code]);
+        return route();
+      }
+      setState({ approving:false, approveError: e.status === 401
+        ? 'You’ve been signed out, so nothing was approved. Sign in again to approve.'
+        : e.status === 0 ? 'Nothing was approved: there’s no connection. Try again.'
+        : e.code === 'unsent_notes' ? 'You have notes that haven’t been sent. Send or remove them first.'
+        : 'Nothing was approved. Try again.' });
+    }
   };
 
   // Send: every unsent note on this version, as one set (C4). A failure keeps the dialog
@@ -1454,6 +1559,7 @@ function bindClientAsset(){
         { method:'POST', body:{ versionId: a.versionId } });
       a.submittedAt = r.submittedAt;
       a.comments.forEach(c => { if(!c.submittedAt) c.submittedAt = r.submittedAt; });
+      if(r.rounds) a.rounds = r.rounds;
       setState({ sending:false, sendModalAssetId:null, revisionOpen:false, pausedAt:null, pausedSeconds:null });
       toast('Your notes were sent to the studio.');
     } catch(e){
@@ -1473,7 +1579,7 @@ function bindClientAsset(){
   if(cancelSend) cancelSend.onclick = () => setState({ sendModalAssetId:null, sendError:null });
   if(confirmSend) confirmSend.focus();
   const cancelApprove = document.getElementById('cancel-approve');
-  if(cancelApprove) cancelApprove.onclick = () => setState({ approveModalAssetId:null });
+  if(cancelApprove) cancelApprove.onclick = () => setState({ approveModalAssetId:null, approveError:null });
   if(confirmApprove) confirmApprove.focus();
 
   bindAssetInteraction(a);
@@ -1504,7 +1610,7 @@ function openLightbox(i){
   state.lbError = null;
   photoAddress(i);
   refreshLightbox();
-  const box = document.getElementById('lb-text') || document.getElementById('lb-close');
+  const box = document.getElementById('lb-text') || document.getElementById('lb-rounds-continue') || document.getElementById('lb-close');
   if(box) box.focus();
 }
 
@@ -1547,6 +1653,16 @@ function bindPhotoLightbox(a){
   if(next) next.onclick = () => stepLightbox(1);
   const close = document.getElementById('lb-close');
   if(close) close.onclick = () => closeLightbox();
+  // The rounds-used notice (C5): Go back leaves the photo, Continue opens its note box.
+  const roundsBack = document.getElementById('lb-rounds-back');
+  if(roundsBack) roundsBack.onclick = () => closeLightbox();
+  const roundsOn = document.getElementById('lb-rounds-continue');
+  if(roundsOn) roundsOn.onclick = () => {
+    state.roundsOk[a.versionId] = true;
+    refreshLightbox();
+    const box = document.getElementById('lb-text');
+    if(box) box.focus();
+  };
 
   const box = document.getElementById('lb-text');
   if(box){
@@ -1584,7 +1700,7 @@ function bindPhotoLightbox(a){
 
 // Escape closes, arrows walk the library, but never while the client is typing a note.
 document.addEventListener('keydown', (e) => {
-  if(state.approveModalAssetId && e.key === 'Escape'){ e.preventDefault(); setState({ approveModalAssetId:null }); return; }
+  if(state.approveModalAssetId && e.key === 'Escape' && !state.approving){ e.preventDefault(); setState({ approveModalAssetId:null, approveError:null }); return; }
   if(state.sendModalAssetId && e.key === 'Escape' && !state.sending){ e.preventDefault(); setState({ sendModalAssetId:null, sendError:null }); return; }
   if(state.lightboxIdx == null) return;
   const typing = e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT');
@@ -1643,8 +1759,7 @@ function bindAssetInteraction(a){
     };
   });
 
-  const wantRev = document.getElementById('want-revisions');
-  if(wantRev) wantRev.onclick = () => {
+  const toggleRevisions = () => {
     state.revisionOpen = !state.revisionOpen;
     const video = document.getElementById('asset-video');
     if(state.revisionOpen){
@@ -1657,6 +1772,31 @@ function bindAssetInteraction(a){
     refreshAssetInteraction();
     const box = document.getElementById('revision-text');
     if(box) box.focus();
+  };
+  const wantRev = document.getElementById('want-revisions');
+  if(wantRev) wantRev.onclick = () => {
+    // Both rounds used: the notice comes first, once per version (C5). Only this container repaints.
+    if(!state.revisionOpen && roundsOut(a) && !state.roundsOk[a.versionId]){
+      state.roundsNotice = true;
+      refreshAssetInteraction();
+      const next = document.getElementById('rounds-continue');
+      if(next) next.focus();
+      return;
+    }
+    toggleRevisions();
+  };
+  const roundsBack = document.getElementById('rounds-back');
+  if(roundsBack) roundsBack.onclick = () => {
+    state.roundsNotice = false;
+    refreshAssetInteraction();
+    const again = document.getElementById('want-revisions');
+    if(again) again.focus();
+  };
+  const roundsOn = document.getElementById('rounds-continue');
+  if(roundsOn) roundsOn.onclick = () => {
+    state.roundsOk[a.versionId] = true;
+    state.roundsNotice = false;
+    toggleRevisions();
   };
 
   const revText = document.getElementById('revision-text');

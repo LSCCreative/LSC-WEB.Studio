@@ -1191,14 +1191,25 @@ const ProjectFolder = (() => {
     (opts.focus ? q(opts.focus) : q('pfd-cancel')).focus();
   }
 
+  /* `choice` ({ legend, options: [{ value, label }] }) adds a radio group, the first
+     option chosen; `run` is then given the chosen value after the button. */
   function openConfirm(opener, opts) {
+    const choice = opts.choice;
     openDialog(opener, {
       title: opts.title,
-      body: '<p class="pfd-text" id="pfd-desc">' + esc(opts.body) + '</p>',
+      body: '<p class="pfd-text" id="pfd-desc">' + esc(opts.body) + '</p>' +
+        (choice
+          ? '<fieldset class="pfd-choice"><legend>' + esc(choice.legend) + '</legend>' +
+            choice.options.map((o, i) => '<label><input type="radio" name="pfd-pick" value="' + esc(o.value) + '"' + (i ? '' : ' checked') + '>' +
+              '<span>' + esc(o.label) + '</span></label>').join('') + '</fieldset>'
+          : ''),
       describe: true,
       confirm: opts.confirm,
       danger: opts.danger,
-      run: opts.run,
+      run: (ok) => {
+        const picked = dlg.overlay.querySelector('input[name="pfd-pick"]:checked');
+        return opts.run(ok, picked ? picked.value : undefined);
+      },
     });
   }
 

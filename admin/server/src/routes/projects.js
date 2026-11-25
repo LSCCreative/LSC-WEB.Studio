@@ -16,6 +16,7 @@ const { docSettings } = require('../documents');
 const { freezeVersion, versionsOf, signatureRow, signaturePdf, takenDays, callSheetDays } = require('../public');
 const { agreementFilename } = require('../pdf');
 const { sendRequest, pendingFor, latestFor, cancelPending, addSend, sydneyDate } = require('../sends');
+const { inviteView } = require('../portal-invite');
 
 /* A paid or declined project leaves the Active view this long after it got
    there (IA, Content Growth Plan). Its own chip, and a search, still find it. */
@@ -342,6 +343,7 @@ function readFolder(db, id, today) {
   const signedOff = db.prepare('SELECT * FROM agreement_evidence WHERE project_id = ?').get(hubIdOf(db, id) || id);
   return {
     project,
+    invite: inviteView(db, p),
     estimates,
     // The client's notes reach the studio when they send them: unsent ones stay theirs.
     deliverables: delivery.deliverables.map((d) => ({ ...d, notes: d.notes.filter((n) => n.submittedAt) })),

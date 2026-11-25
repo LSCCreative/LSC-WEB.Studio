@@ -25,9 +25,20 @@ const {
   createDeliverables, streamFile, toRelativeDeliverablePath, MAX_PHOTOS_PER_FOLDER, VIDEO_EXTENSIONS, PHOTO_EXTENSIONS,
 } = require('../hub/deliverables');
 const { normalizeDeliverablePath } = require('../hub/routes');
+const { inviteView, setEnv, sendInvite } = require('../portal-invite');
 
 const MAX_TITLE = 200;
 const MAX_SHORT = 100;
+const INVITE_REFUSALS = {
+  sent: 'This client has already been invited.',
+  has_access: 'This client can already sign in to the portal.',
+  no_client: 'This project has no client record to invite.',
+  no_email: 'Add the client’s email in Client details first.',
+  email_shared: 'Another client has the same email. Give each client their own before inviting them.',
+  no_portal: 'The Client Portal isn’t set up on this server.',
+  no_mail: 'Email isn’t set up yet, so the invite can’t be sent.',
+  busy: 'An invite is already being sent. Check again in a moment.',
+};
 const PIPELINE = ['draft', 'sent', 'declined'];
 
 function registerDeliverableRoutes(app, db, opts = {}) {
@@ -35,10 +46,19 @@ function registerDeliverableRoutes(app, db, opts = {}) {
 
   const refuse = (res, status, error, message) => res.status(status).json({ error, message });
 
-  function answer(req, res) {
+  /* The portal invite (C6) is part of every folder reply: portal-invite.js reads
+     this environment for readFolder too. */
+  const inviteEnv = opts.portal || {};
+  setEnv(db, inviteEnv);
+  const noneYet = db.prepare(`
+    SELECT 1 FROM deliverable_versions v JOIN deliverables d ON d.id = v.deliverable_id
+     WHERE d.project_id = ? AND v.published_at IS NOT NULL LIMIT 1
+  `);
+
+  function answer(req, res, extra = {}) {
     const today = todayOf(req);
     if (!today) return res.status(400).json({ error: 'today_invalid' });
-    return res.json({ ok: true, ...readFolder(db, req.params.id, today) });
+    return res.json({ ok: true, ...readFolder(db, req.params.id, today), ...extra });
   }
 
   const projectFor = (req, res) => {
@@ -325,6 +345,8 @@ function registerDeliverableRoutes(app, db, opts = {}) {
         return refuse(res, 409, 'file_missing', `${v.file_name || 'That file'} can’t be published. ${source.message}`);
       }
       const now = nowIso();
+      let first = false;
+      let published = false;
       const refused = db.transaction(() => {
         const item = itemNow(p, d);
         if (typeof item === 'string') return item;
@@ -333,11 +355,22 @@ function registerDeliverableRoutes(app, db, opts = {}) {
         // The same publish twice (a double click) is one publish.
         if (fresh.published_at) return null;
         if (newestOf(item.id).id !== fresh.id) return 'not_newest';
+        first = !noneYet.get(p.id);
         db.prepare('UPDATE deliverable_versions SET published_at = ?, photo_count = ? WHERE id = ?').run(now, source.photoCount, fresh.id);
         logActivity(db, p.id, 'version_published', { title: item.title, n: fresh.n, stage: fresh.stage }, now);
+        published = true;
         return null;
       })();
       if (refused) return refuseAfterWait(res, refused);
+      // The invite goes only with the project's first publish, and only if the
+      // studio asked for it in the dialog that named who gets it. The publish
+      // stands whatever happens to the email.
+      if (published && first && (req.body || {}).invite === true) {
+        const sent = await sendInvite(db, p, inviteEnv);
+        // Asked for and not sent: say why, in the same words as the by-hand route.
+        const why = sent.sent === false && !sent.failed ? { message: INVITE_REFUSALS[sent.state] || 'The invite can’t be sent.' } : {};
+        return answer(req, res, { inviteResult: { ...sent, ...why } });
+      }
       return answer(req, res);
     } catch (err) {
       return next(err);
@@ -369,6 +402,23 @@ function registerDeliverableRoutes(app, db, opts = {}) {
     const file = nas.resolveDeliverablePath(relative);
     if (!file) return refuse(res, 404, 'file_missing', 'That file isn’t on the NAS any more.');
     return streamFile(req, res, file.absolute, file.stat, false);
+  });
+
+  /* The invite by hand, before a first publish (C6). Same rules as the dialog's:
+     a client with no way in yet and no invite before, an address of their own,
+     the portal and email set up. Answers with the folder and what happened. */
+  app.post('/api/projects/:id/portal-invite', async (req, res, next) => {
+    try {
+      const p = projectFor(req, res);
+      if (!p || !workable(res, p)) return undefined;
+      const sent = await sendInvite(db, p, inviteEnv);
+      if (sent.sent === false && !sent.failed) {
+        return refuse(res, 409, `invite_${sent.state}`, INVITE_REFUSALS[sent.state] || 'The invite can’t be sent.');
+      }
+      return answer(req, res, { inviteResult: sent });
+    } catch (err) {
+      return next(err);
+    }
   });
 }
 

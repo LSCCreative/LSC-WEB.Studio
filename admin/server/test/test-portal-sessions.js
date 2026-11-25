@@ -464,7 +464,9 @@ test('a project says what to do next, how each item stands, the invoices sent, a
 
 /* Since C3 an invoice the client was sent is theirs to see: its number and the amount it asks for
    (1650 here). Everything else about the money stays out: the ex-GST price (1500), the floor,
-   tax set-aside, take-home, overhead, surcharges and margin, by name and by value. */
+   tax set-aside, take-home, overhead, surcharges and margin, by name and by value. `hourlyRate`
+   (C5) is the rate the client's own signed agreement states, quoted back to them; the studio's
+   rate card is still forbidden by name (`rate` on its own). */
 const FORBIDDEN = /surcharge|floor|taxSetAside|overheadShare|estTakeHome|costBreakdown|clientPrice|totalIncGst|exGst|\bgst\b|\bprice\b|\brate\b|margin|markup|total/i;
 const SECRETS = ['INTERNAL-NOTE-MARKER', 'INTERNAL-CLIENT-NOTE', '0400 111 222', '51824753556', 'SECRET-ADDRESS', 'quote-only@salt.example',
   'SECRET-NAS-PATH', 'PRIVATE-FILENAME', 'SECRET-DRIVE', 'NOT-NEEDED-ITEM', 'FORMAT-INTERNAL', 'INVOICE-SNAPSHOT', '1500', '900', '480'];
@@ -490,9 +492,6 @@ test('the leak test: every portal reply is exactly its allow-list, with nothing 
     session: await call('/hub/session', { cookie: session }),
     projects: await call('/hub/projects', { cookie: session }),
     project: await call(`/hub/projects/${prj}`, { cookie: session }),
-    agreement: await call('/hub/agreement', { method: 'POST', cookie: session, body: {
-      projectId: prj, signerName: 'Priya', signedAt: 'x', signatureDataUrl: 'data:,', consentText: 'ok', consentChecked: true,
-    } }),
     wrong: await signIn('leak@salt.example', '000000'),
     missing: await call('/hub/projects/prj_nobody', { cookie: session }),
     signedOut: await call('/hub/projects'),
@@ -502,14 +501,18 @@ test('the leak test: every portal reply is exactly its allow-list, with nothing 
   assert.match(reviewUrl, /^https:\/\/hub\.example\/hub\/projects\/[\w-]+\/versions\/[\w-]+\/review$/);
   replies.review = await call(reviewUrl.replace('https://hub.example', ''), { cookie: session });
   assert.equal(replies.review.status, 404);
+  // CONFIRM APPROVAL (C5): the reply says when, and nothing of who or from where.
+  const shown = replies.project.body.project.deliverables[0];
+  replies.approve = await call(`/hub/projects/${prj}/items/${shown.id}/approve`, { method: 'POST', cookie: session, body: { versionId: shown.versions[0].id } });
+  assert.equal(replies.approve.status, 201, replies.approve.text);
   replies.signOut = await call('/hub/sign-out', { method: 'POST', cookie: session });
 
   // Exactly these keys, and no others.
   const CLIENT = ['businessName', 'contactName'];
   const CARD = ['id', 'name', 'needsYou', 'nextStep', 'past', 'status', 'upid'];
-  const ITEM = ['deliverables', 'id', 'notes', 'stage', 'status', 'title', 'versions'];
+  const ITEM = ['deliverables', 'id', 'notes', 'rounds', 'stage', 'status', 'title', 'versions'];
   const INVOICE = ['amount', 'dueOn', 'id', 'issuedOn', 'label', 'number', 'paidOn', 'state', 'url'];
-  const VERSION = ['id', 'kind', 'n', 'photoCount', 'publishedAt', 'review', 'stage', 'submittedAt'];
+  const VERSION = ['approvedAt', 'deemed', 'id', 'kind', 'n', 'photoCount', 'publishedAt', 'review', 'stage', 'submittedAt'];
   const sorted = (o) => Object.keys(o).sort();
   assert.deepEqual(sorted(replies.auth.body), ['client', 'ok']);
   assert.deepEqual(sorted(replies.auth.body.client), CLIENT);
@@ -517,7 +520,9 @@ test('the leak test: every portal reply is exactly its allow-list, with nothing 
   assert.deepEqual(sorted(replies.session.body.client), CLIENT);
   replies.projects.body.projects.forEach((p) => assert.deepEqual(sorted(p), CARD));
   const view = replies.project.body.project;
-  assert.deepEqual(sorted(view), [...CARD, 'agreement', 'deliverables', 'invoices'].sort());
+  assert.deepEqual(sorted(view), [...CARD, 'agreement', 'deliverables', 'hourlyRate', 'invoices'].sort());
+  assert.deepEqual(sorted(replies.approve.body), ['approval', 'itemStatus', 'ok']);
+  assert.deepEqual(sorted(replies.approve.body.approval), ['approvedAt', 'deemed', 'versionId']);
   assert.equal(view.invoices.length, 1);
   view.invoices.forEach((inv) => assert.deepEqual(sorted(inv), INVOICE));
   assert.equal(view.invoices[0].amount, 1650, 'what the invoice asks for');
@@ -526,6 +531,7 @@ test('the leak test: every portal reply is exactly its allow-list, with nothing 
     assert.deepEqual(sorted({ ...d, deliverables: 1 }), ITEM);
     assert.deepEqual(d.versions.map((v) => v.n), [1], 'only what has been published');
     d.versions.forEach((v) => assert.deepEqual(sorted(v), VERSION));
+    assert.deepEqual(sorted(d.rounds), ['included', 'used']);
   });
   assert.equal(view.name, 'Harbour launch');
   assert.equal(view.status, 'Ready for your review', 'the client’s wording, not the studio’s badge');

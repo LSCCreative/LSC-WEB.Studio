@@ -51,9 +51,14 @@ off that element's events and `currentTime`:
    reload or jump to 0 (`refreshAssetInteraction()` only repaints
    `#asset-interaction`). If the save fails, the text stays in the box and the
    client is told why. A separate `SEND N NOTES TO THE STUDIO` sends every unsent
-   note on the version as one set, after a confirmation (merged-admin C4; C5
-   counts a Final's as a round).
-4. `APPROVE CONTENT` is absent while the revision panel is open.
+   note on the version as one set, after a confirmation that says, on a Final,
+   which revision round it uses and how many are left (merged-admin C4, C5). Once
+   a Final's two rounds are used, `COMMENT REVISIONS` first shows the rounds-used
+   notice (Go back / Continue) inside `#asset-interaction`, so the video is
+   untouched; Continue opens the panel and stamps as in point 2.
+4. `APPROVE CONTENT` is absent while the revision panel or the rounds-used notice
+   is open. `CONFIRM APPROVAL` records the approval on the server against that
+   version (C5); a failure keeps the dialog open and approves nothing.
 5. A video that can't load falls back to the "couldn't be loaded" card
    (`state.videoFailed`) with Try again, after checking the session: an ended
    session goes back to sign-in instead. Since merged-admin C2 the card has no

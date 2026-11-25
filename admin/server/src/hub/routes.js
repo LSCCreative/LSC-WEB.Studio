@@ -19,7 +19,7 @@ const { sha256Hex, randomToken } = require('./tokens');
 const { createHubCors } = require('./cors');
 const { createPortalAccess, CODE_FORMAT, SESSION_DAYS } = require('../portal-access');
 const { normEmail } = require('../clients');
-const { clientView, projectCard, projectView, noteView } = require('./views');
+const { clientView, projectCard, projectView, noteView, itemStatus } = require('./views');
 const { newId, nowIso } = require('../db');
 const { createBunny, missingBunnySettings, statusFromVideo } = require('./bunny');
 const { createDeliverables, streamFile, VIDEO_EXTENSIONS } = require('./deliverables');
@@ -39,7 +39,6 @@ const VIDEO_LOOKUP_ATTEMPTS = 3;
    for each image, so it has room the reads don't need. */
 const LIMITS = {
   auth: { max: 20, windowMs: 10 * 60 * 1000 },
-  sign: { max: 10, windowMs: 10 * 60 * 1000 },
   read: { max: 300, windowMs: 10 * 60 * 1000 },
   media: { max: 3000, windowMs: 10 * 60 * 1000 },
   note: { max: 300, windowMs: 10 * 60 * 1000 },
@@ -52,6 +51,15 @@ const UNSENT_MAX = 200;
 /* How long the media route trusts what it last read of a client's projects and a
    photo folder (see ownsProject). */
 const MEDIA_MEMORY_MS = 10 * 1000;
+/* The rate as the signed agreement wrote it: "hourly rate of AUD $63.00" in the
+   contract's Revisions clause (documents.js, {hourly_rate}), or "hourly rate is $63.00".
+   Only an amount straight after those words: any other amount nearby (a travel rate, a
+   deposit) is never taken for it, and a clause worded otherwise gives none. */
+const RATE_IN_AGREEMENT = /hourly rate(?:\s+(?:of|is))?(?:\s+AUD)?\s*(\$\s?\d[\d,]*(?:\.\d{1,2})?)/i;
+function rateIn(text) {
+  const m = RATE_IN_AGREEMENT.exec(String(text || ''));
+  return m ? m[1].replace(/\s+/g, '') : null;
+}
 const CODE_FAILURE_LIMIT = 10;
 const CODE_FAILURE_WINDOW_MS = 15 * 60 * 1000;
 
@@ -113,9 +121,9 @@ function createHubRouter(db, opts = {}) {
   const cookieSecure = opts.cookieSecure !== false;
   // Loaded here, not with the module: billing's project code reads its settings as it loads.
   const { readProjectRows, localToday } = require('../routes/projects');
-  const { readChecklist } = require('../delivery');
+  const { readChecklist, ROUNDS_INCLUDED } = require('../delivery');
+  const { logActivity } = require('../routes/projects');
 
-  const getRecord = db.prepare('SELECT data FROM records WHERE project_id = ?');
   const getClient = db.prepare('SELECT * FROM clients WHERE id = ?');
   /* The invoices a client has actually been sent (C3): sent or paid, of a kind with
      a page. Scheduled ones haven't gone yet; a void one was taken back. */
@@ -135,16 +143,20 @@ function createHubRouter(db, opts = {}) {
      ORDER BY s.signed_at DESC LIMIT 1
   `);
   const appUrl = opts.appUrl || '';
-  /* The billing project a portal record belongs to, for this client only: the
-     record's id is the project's, or (from the old hub) linked by hub_imports. */
+  /* What the project's signed agreement says the hourly rate is (C5): the rounds-used
+     notice quotes it, never Settings' rate today (brief, Revision rounds). The newest
+     signature on the project's accepted quote; none when it was Mark accepted. */
+  const signedAgreement = db.prepare(`
+    SELECT s.agreement_text FROM signatures s
+      JOIN estimate_versions v ON v.id = s.version_id
+      JOIN estimates e ON e.id = v.estimate_id
+     WHERE e.project_id = ? AND e.status = 'accepted'
+     ORDER BY s.signed_at DESC LIMIT 1
+  `);
   /* A version the client has been given: published, on an item still needed. */
   const getPublishedVersion = db.prepare(`
     SELECT v.* FROM deliverable_versions v JOIN deliverables d ON d.id = v.deliverable_id
      WHERE v.id = ? AND v.project_id = ? AND v.published_at IS NOT NULL AND d.not_needed_at IS NULL
-  `);
-  const recordProjectOf = db.prepare(`
-    SELECT p.id FROM projects p
-     WHERE p.client_id = ? AND (p.id = ? OR p.id = (SELECT project_id FROM hub_imports WHERE hub_id = ?))
   `);
 
   const insertDeliverableToken = db.prepare(`
@@ -155,25 +167,6 @@ function createHubRouter(db, opts = {}) {
   const findDeliverableTokenByPath = db.prepare('SELECT token FROM deliverable_tokens WHERE relative_path = ? AND downloadable = ?');
   const findDeliverablePathByToken = db.prepare('SELECT relative_path, downloadable FROM deliverable_tokens WHERE token = ?');
 
-  const upsertAgreementEvidence = db.prepare(`
-    INSERT INTO agreement_evidence (
-      project_id, signer_name, signed_at, signature_data_url, consent_text,
-      consent_checked, user_agent, verification_token, ip_address, received_at
-    ) VALUES (
-      @project_id, @signer_name, @signed_at, @signature_data_url, @consent_text,
-      @consent_checked, @user_agent, @verification_token, @ip_address, @received_at
-    )
-    ON CONFLICT(project_id) DO UPDATE SET
-      signer_name        = excluded.signer_name,
-      signed_at          = excluded.signed_at,
-      signature_data_url = excluded.signature_data_url,
-      consent_text       = excluded.consent_text,
-      consent_checked    = excluded.consent_checked,
-      user_agent         = excluded.user_agent,
-      verification_token = excluded.verification_token,
-      ip_address         = excluded.ip_address,
-      received_at        = excluded.received_at
-  `);
 
   const getBunnyAsset = db.prepare('SELECT * FROM bunny_assets WHERE relative_path = ? AND kind = ?');
   const upsertBunnyAsset = db.prepare(`
@@ -522,6 +515,7 @@ function createHubRouter(db, opts = {}) {
         clientId: req.portal.client.id,
         invoices,
         agreement: signed ? { url: `${appUrl}c/#e/${signed.public_token}`, signedOn: sydneyDay(signed.signed_at) } : null,
+        hourlyRate: rateIn((signedAgreement.get(project.id) || {}).agreement_text),
       }),
     });
   });
@@ -538,6 +532,8 @@ function createHubRouter(db, opts = {}) {
     SELECT * FROM deliverable_versions WHERE deliverable_id = ? AND published_at IS NOT NULL ORDER BY n DESC LIMIT 1
   `);
   const submissionOf = db.prepare('SELECT * FROM client_submissions WHERE version_id = ?');
+  const approvalOn = db.prepare('SELECT * FROM client_approvals WHERE version_id = ?');
+  const finalRounds = db.prepare("SELECT COUNT(*) AS n FROM client_submissions WHERE deliverable_id = ? AND stage = 'final'");
   /* Every unsent note this client has on the item, whichever version it was written on:
      notes left unsent when the studio published the next version go with the next set,
      so none is stranded (brief: a note is never silently dropped). */
@@ -556,7 +552,8 @@ function createHubRouter(db, opts = {}) {
   /* The item a client is writing about, on the version they can write on: this
      client's accepted project, not archived; the item still needed; its newest
      published version, which must be the one they were looking at; not sent yet;
-     not approved. Answers and returns null when any isn't so. */
+     not approved (C5: an approved version takes no more notes, and no second
+     approval). Answers and returns null when any isn't so. */
   function writableItem(req, res, versionId) {
     const clientId = req.portal.client.id;
     const p = ownsProject(clientId, req.params.id) && getOwnProject.get(req.params.id, clientId);
@@ -569,6 +566,7 @@ function createHubRouter(db, opts = {}) {
     if (String(versionId || '') !== v.id) return refuseNote(res, 409, 'not_current') && null;
     if (submissionOf.get(v.id)) return refuseNote(res, 409, 'sent') && null;
     if (d.hub_status === 'approved' || d.hub_status === 'delivered') return refuseNote(res, 409, 'approved') && null;
+    if (approvalOn.get(v.id)) return refuseNote(res, 409, 'approved') && null;
     return { p, d, v, clientId };
   }
 
@@ -657,7 +655,66 @@ function createHubRouter(db, opts = {}) {
       throw err;
     }
     if (!count) return refuseNote(res, 409, 'no_notes');
-    return res.json({ ok: true, submittedAt, noteCount: count });
+    // The studio hears of it by email (C6). After the save, off the reply, and it can't fail it.
+    if (typeof opts.onNotesSubmitted === 'function') {
+      Promise.resolve().then(() => opts.onNotesSubmitted({ submissionId: id })).catch(() => {});
+    }
+    // A set on a Final is a revision round (C5); the page says how many are left.
+    return res.json({ ok: true, submittedAt, noteCount: count, rounds: { included: ROUNDS_INCLUDED, used: finalRounds.get(at.d.id).n } });
+  });
+
+  /* ── POST /hub/projects/:id/items/:itemId/approve: { versionId } → CONFIRM APPROVAL (C5).
+     The record (S12): who (the client, and the email and name they had then), when
+     (the server's clock), from where (the address the tunnel saw, and the browser's
+     user agent) and exactly what (the version, its number, stage and file). First
+     write wins: an approval already on the version is the answer, unchanged, so a
+     double click or a second tab can't move its time. Refused while notes on the item
+     are unsent (brief: they'd be lost), and after notes were sent on the version (it
+     waits for the studio's next one). A client write: no backup per write (S16). */
+  /* With the item's status as the server now reads it (views.js itemStatus), so the page
+     never decides on its own that the item is signed off: a newer file the studio added,
+     even unpublished, means the item isn't, whatever this version's approval says. */
+  const approvalReply = (a) => {
+    const item = readChecklist(db, a.project_id).find((d) => d.id === a.deliverable_id);
+    return {
+      ok: true,
+      approval: { versionId: a.version_id, approvedAt: a.approved_at, deemed: a.kind === 'deemed' },
+      itemStatus: item ? itemStatus(item) : null,
+    };
+  };
+  router.post('/hub/projects/:id/items/:itemId/approve', noteLimit, fromThePortal, signedIn, (req, res) => {
+    const versionId = String((req.body || {}).versionId || '');
+    const clientId = req.portal.client.id;
+    const already = versionId && ownsProject(clientId, req.params.id) && approvalOn.get(versionId);
+    if (already && already.project_id === req.params.id && already.deliverable_id === req.params.itemId) {
+      return res.json(approvalReply(already));
+    }
+    const at = writableItem(req, res, versionId);
+    if (!at) return undefined;
+    if (unsentOn.all(at.d.id, clientId).length) return refuseNote(res, 409, 'unsent_notes');
+    const client = req.portal.client;
+    const row = {
+      id: newId('ca'), project_id: at.p.id, deliverable_id: at.d.id, version_id: at.v.id, client_id: clientId,
+      email: String(client.email || ''), name: String(client.contact_name || client.business_name || ''),
+      stage: at.v.stage, version_n: at.v.n, file_name: String(at.v.file_name || ''), approved_at: nowIso(),
+      ip: clientIp(req), user_agent: String(req.headers['user-agent'] || '').slice(0, 255),
+    };
+    try {
+      db.transaction(() => {
+        db.prepare(`
+          INSERT INTO client_approvals (id, project_id, deliverable_id, version_id, kind, client_id, email, name, stage, version_n,
+                                        file_name, approved_at, ip, user_agent)
+          VALUES (@id, @project_id, @deliverable_id, @version_id, 'client', @client_id, @email, @name, @stage, @version_n,
+                  @file_name, @approved_at, @ip, @user_agent)
+        `).run(row);
+        logActivity(db, at.p.id, 'client_approved', { title: at.d.title, n: at.v.n, stage: at.v.stage }, row.approved_at);
+      })();
+    } catch (err) {
+      // Two at once: the first one's record is the approval.
+      if (/UNIQUE/.test(err.message)) return res.json(approvalReply(approvalOn.get(at.v.id)));
+      throw err;
+    }
+    return res.status(201).json(approvalReply(row));
   });
 
   /* ── GET /hub/projects/:id/versions/:versionId/review[?photo=<key>]: the review
@@ -683,42 +740,6 @@ function createHubRouter(db, opts = {}) {
     const file = deliverables.resolveDeliverablePath(relative);
     if (!file) return notFound();
     return streamFile(req, res, file.absolute, file.stat, false, { cacheControl: 'no-store' });
-  });
-
-  // ── POST /hub/agreement (client): the signed deliverables agreement and its
-  // evidence, kept private. Only on the signed-in client's own record (C5
-  // retires this screen); the address is read here, never taken from the client.
-  router.use('/hub/agreement', credentialedCors);
-  router.post('/hub/agreement', limit('sign'), fromThePortal, signedIn, async (req, res) => {
-    const body = req.body || {};
-    const projectId = String(body.projectId || '').trim();
-    const signerName = String(body.signerName || '').trim();
-    const signedAt = String(body.signedAt || '').trim();
-    const signatureDataUrl = String(body.signatureDataUrl || '').trim();
-    const consentText = String(body.consentText || '').trim();
-
-    if (!projectId || !signerName || !signedAt || !signatureDataUrl || !consentText) {
-      return res.status(400).json({ error: 'bad payload' });
-    }
-    if (body.consentChecked !== true) return res.status(400).json({ error: 'consent required' });
-    if (!getRecord.get(projectId) || !recordProjectOf.get(req.portal.client.id, projectId, projectId)) {
-      return res.status(404).json({ error: 'not_found' });
-    }
-
-    await backupBeforeWrite();
-    upsertAgreementEvidence.run({
-      project_id: projectId,
-      signer_name: signerName,
-      signed_at: signedAt,
-      signature_data_url: signatureDataUrl,
-      consent_text: consentText,
-      consent_checked: 1,
-      user_agent: String(body.userAgent || ''),
-      verification_token: String(body.verificationToken || ''),
-      ip_address: clientIp(req),
-      received_at: new Date().toISOString(),
-    });
-    res.json({ ok: true });
   });
 
   // ── GET /hub/files/:token: the stable link itself. Public by design: the

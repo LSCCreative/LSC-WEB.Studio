@@ -471,3 +471,36 @@
 .dlv-client-notes li + li { margin-top: var(--space-4); }
 .dlv-note-at { font-family: var(--font-family-mono); font-size: var(--font-size-xs); color: var(--color-accent-text); }
 .dlv-note-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Approvals (C5): the record CONFIRM APPROVAL left, as a short definition list. */
+.dlv-rounds.is-over { color: var(--color-status-warning-text); }
+.dlv-approval-rec { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-2) var(--space-5); margin: 0; font-size: var(--font-size-sm); }
+.dlv-approval-rec dt { color: var(--color-text-secondary); }
+.dlv-approval-rec dd { margin: 0; overflow-wrap: anywhere; }
+.dlv-approval-ua { font-family: var(--font-family-mono); font-size: var(--font-size-xs); color: var(--color-text-secondary); }
+.dlv-approval .dlv-note { margin-top: var(--space-4); }
+
+/* The portal invite line under the checklist (C6). */
+.dlv-invite {
+  margin: 0;
+  padding: var(--space-4) var(--space-6);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  border-top: 1px solid var(--color-border-hairline);
+}
+.dlv-invite .btn {
+  margin-left: var(--space-3);
+}
+/* A failed invite's code and link (C6), until the studio dismisses them. */
+.dlv-handover {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--color-border-hairline);
+  border-left: 3px solid var(--color-status-error);
+}
+.dlv-handover p { margin: 0; }
+.dlv-handover-h { font-weight: 600; color: var(--color-status-error-text); }
+.dlv-handover .dlv-approval-rec { justify-self: stretch; }
+.dlv-handover .fig { font-size: var(--font-size-lg); letter-spacing: 0.08em; }

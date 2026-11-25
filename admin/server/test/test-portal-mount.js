@@ -121,18 +121,22 @@ test('the portal’s hostname serves the portal and /health only (S4)', async ()
   assert.equal((await s.call('/api/session')).status, 401, 'other hostnames still reach /api');
 });
 
-test('a forged X-Forwarded-For can’t change the IP an agreement records (S7)', async () => {
-  s.db.prepare("INSERT INTO records (project_id, data, updated_at) VALUES ('p_ip', '{}', 'x')").run();
+test('a forged X-Forwarded-For can’t change the IP an approval records (S7)', async () => {
   s.db.prepare(`INSERT INTO clients (id, business_name, contact_name, email, phone, abn, address, notes, created_at, updated_at)
                 VALUES ('cl_ip', 'IP Co', '', 'ip@b.example', '', '', '', '', 'x', 'x')`).run();
-  s.db.prepare("UPDATE projects SET client_id = 'cl_ip' WHERE id = 'p_ip'").run();
+  s.db.prepare("UPDATE projects SET client_id = 'cl_ip', accepted_at = 'x' WHERE id = 'p_ip'").run();
+  s.db.prepare(`INSERT INTO estimates (id, project_id, name, date, status, client_id, client_json, active_rows_json, totals_json, created_at, updated_at)
+                VALUES ('est_ip', 'p_ip', 'IP job', '2026-11-01', 'accepted', 'cl_ip', '{}', '{}', '{}', 'x', 'x')`).run();
+  s.db.prepare("INSERT INTO deliverables (id, project_id, position, title, created_at, updated_at) VALUES ('dlv_ip', 'p_ip', 1, 'Film', 'x', 'x')").run();
+  s.db.prepare(`INSERT INTO deliverable_versions (id, deliverable_id, project_id, n, stage, source_path, file_name, kind, created_at, published_at)
+                VALUES ('ver_ip', 'dlv_ip', 'p_ip', 1, 'draft', 'IP/Film.mp4', 'Film.mp4', 'video', 'x', 'x')`).run();
   const { token } = createPortalAccess(s.db, { secret: 'test-signing-secret' }).startSession('cl_ip', 'code');
-  const signed = await s.call('/hub/agreement', { host: HUB_HOST, method: 'POST',
+  const approved = await s.call('/hub/projects/p_ip/items/dlv_ip/approve', { host: HUB_HOST, method: 'POST',
     headers: { 'x-forwarded-for': '6.6.6.6, 203.0.113.9', cookie: `lsc_portal=${token}` },
-    body: { projectId: 'p_ip', signerName: 'P', signedAt: 'x', signatureDataUrl: 'data:,', consentText: 'ok', consentChecked: true } });
-  assert.equal(signed.status, 200, signed.text);
-  const got = s.db.prepare("SELECT ip_address FROM agreement_evidence WHERE project_id = 'p_ip'").get();
-  assert.equal(got.ip_address, '203.0.113.9', 'the hop the tunnel added, not the one the client wrote');
+    body: { versionId: 'ver_ip' } });
+  assert.equal(approved.status, 201, approved.text);
+  const got = s.db.prepare("SELECT ip FROM client_approvals WHERE version_id = 'ver_ip'").get();
+  assert.equal(got.ip, '203.0.113.9', 'the hop the tunnel added, not the one the client wrote');
 });
 
 test('the Bunny publish routes take billing’s real login, and settings can’t replace it (R3)', async () => {
