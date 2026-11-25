@@ -250,6 +250,9 @@ const ProjectCard = (() => {
       case 'portal_invite_failed': return 'The portal invite email to ' + (d.to || 'the client') + ' didn’t go' + (d.error ? ': ' + d.error : '');
       case 'client_approved': return 'Client approved v' + d.n + ' of “' + (d.title || 'a deliverable') + '”' +
         (d.stage === 'final' ? ', the Final' : ', a Draft Cut');
+      case 'deemed_approved': return 'Marked v' + d.n + ' of “' + (d.title || 'a deliverable') + '” as deemed approved (no reply in 14 business days)';
+      case 'deemed_reminder_sent': return 'Reminder emailed to ' + (d.to || 'the client') + ' about v' + d.n + ' of “' + (d.title || 'a deliverable') + '”';
+      case 'deemed_reminder_failed': return 'The reminder email to ' + (d.to || 'the client') + ' about v' + d.n + ' didn’t go' + (d.error ? ': ' + d.error : '');
       case 'no_deliverables': return 'Said no deliverables are expected';
       case 'deliverables_expected': return 'Said deliverables are expected after all';
       case 'archived': return 'Archived';

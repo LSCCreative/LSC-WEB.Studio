@@ -39,3 +39,4 @@ const db = openDatabase(config.dbFile);
 const app = createApp(db, { mailer, appUrl: config.appUrl || 'http://localhost:5173/' });
 app.listen(config.port, () => console.log(`[stub-mail] dev server on :${config.port}, email printed here${failing ? ' (every send fails)' : ''}`));
 app.locals.outbox.start();
+app.locals.deemedReminders.start();

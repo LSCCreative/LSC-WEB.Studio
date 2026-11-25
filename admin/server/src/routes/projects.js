@@ -17,6 +17,19 @@ const { freezeVersion, versionsOf, signatureRow, signaturePdf, takenDays, callSh
 const { agreementFilename } = require('../pdf');
 const { sendRequest, pendingFor, latestFor, cancelPending, addSend, sydneyDate } = require('../sends');
 const { inviteView } = require('../portal-invite');
+const { deemedClocks } = require('../deemed');
+const { remindersOf } = require('../deemed-reminders');
+
+/* `{ [itemId]: clock }` for the folder: the version it's on, its days, whether the
+   studio may Mark approved yet (`due`), and the client's reminder, if one was tried. */
+function deemedView(db, projectId, today) {
+  const reminders = remindersOf(db, projectId);
+  return Object.fromEntries(deemedClocks(db, { projectId }).map((c) => [c.itemId, {
+    versionId: c.versionId, n: c.n, publishedOn: c.publishedOn, remindOn: c.remindOn, lastDay: c.lastDay, dueOn: c.dueOn,
+    due: Boolean(today) && today >= c.dueOn,
+    reminder: reminders[c.versionId] || null,
+  }]));
+}
 
 /* A paid or declined project leaves the Active view this long after it got
    there (IA, Content Growth Plan). Its own chip, and a search, still find it. */
@@ -344,6 +357,8 @@ function readFolder(db, id, today) {
   return {
     project,
     invite: inviteView(db, p),
+    // Each item's deemed-approval clock (C7), while its newest Final waits on the client.
+    deemed: deemedView(db, p.id, today),
     estimates,
     // The client's notes reach the studio when they send them: unsent ones stay theirs.
     deliverables: delivery.deliverables.map((d) => ({ ...d, notes: d.notes.filter((n) => n.submittedAt) })),

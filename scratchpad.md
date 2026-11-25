@@ -215,7 +215,9 @@ NULL); `itemApproved` already counts it, and the portal shows `deemed`.
 calls and what wasn't checked under C6 in TASKS.md. 1071/1071. Checked in the browser on the scratch admin (dialog, checklist line, invite emailed to the stub mailbox); the invite state now rides on every folder reply (`readFolder`), via `portal-invite.js setEnv`. Scratch project `C6-1` is invited; its client is `c6-tester@example.test`.
 Code review fixes the same day (8 findings, all fixed, 1075/1075): invite wording by what's published, a failed invite's code kept on screen until dismissed and resendable (`retry`), refusal reasons in the publish toast, Needs you's final-invoice date, notes notice without APP_URL, round tie-break, and the approve reply's `itemStatus`. Launch config `portal-api-failmail` makes every email fail; scratch project `C6-2` (client `c6-fail@example.test`) went through a failed invite and a resend.
 
-**Next: C7 Add deemed approval and Complete | Model: Opus 5.5 | Effort: Medium.** (Reminder email for the client is C7's.)
+**C7 done 2026-11-25 (not committed).** Deemed-approval clock (`src/deemed.js`), the client's reminder (`src/deemed-reminders.js`, hourly from `index.js` and the stub script, schema v30), Mark approved on the item page (Needs you row opens it), Complete tested. Calls and what wasn't checked under C7 in TASKS.md. 1083/1083. Scratch: `C7-1` was marked deemed approved (now Complete), `C7-2`'s clock runs to 10 Dec.
+
+**Next: C8 Add View as client | Model: Sonnet 5.5 | Effort: Medium.**
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
 `routes.js` (`createHubRouter(db, opts)`, not mounted yet), `url-signing.js` (was signing.js), `admin-auth.js`,

@@ -132,7 +132,10 @@ const ProjectDeliverables = (() => {
     if (!newest) return 'No file yet';
     const published = item.versions.filter((v) => v.publishedAt).pop();
     if (newest.approval) return 'v' + newest.n + ' ' + approvedWord(newest.approval) + ' ' + when(newest.approval.approvedAt);
-    if (newest.publishedAt) return 'v' + newest.n + ' published ' + when(newest.publishedAt);
+    if (newest.publishedAt) {
+      const clock = deemedOf(item);
+      return 'v' + newest.n + ' published ' + when(newest.publishedAt) + (clock && clock.due ? ' · approval due' : '');
+    }
     return 'v' + newest.n + ' not published' + (published ? ' · v' + published.n + ' is with the client' : '');
   }
 
@@ -582,12 +585,59 @@ const ProjectDeliverables = (() => {
     return sets.concat(approvals).sort((x, y) => String(y.at).localeCompare(String(x.at))).map((e) => e.html).join('');
   }
 
+  /* The deemed-approval clock on a Final waiting on the client (C7): when it runs out,
+     the client's reminder, and Mark approved once it has. Nothing is deemed on its own. */
+  const deemedOf = (item) => ((ctx.folder.deemed || {})[item.id]) || null;
+
+  function reminderWords(c) {
+    const r = c.reminder;
+    if (r && r.status === 'sent') return 'Reminder emailed to ' + r.to + ' ' + when(r.sentAt) + '.';
+    if (r && r.status === 'failed') return 'The reminder email to ' + r.to + ' didn’t go: ' + r.error;
+    // No record says only that none was tried: why (no email of their own, no way into the
+    // portal, or a clock that ran before reminders existed) isn't kept, so it isn't claimed.
+    if (c.due || today() > c.lastDay) return 'No reminder was emailed.';
+    return 'The client is emailed a reminder on ' + when(c.remindOn) + ' if they have an email of their own and a way into the portal.';
+  }
+
+  function deemedMarkup(item) {
+    const c = deemedOf(item);
+    if (!c) return '';
+    const head = c.due
+      ? 'No reply to v' + c.n + ' by ' + when(c.lastDay) + ', 14 business days after it was published ' + when(c.publishedOn) + '. The agreement deems it approved once you mark it.'
+      : 'If the client sends nothing on v' + c.n + ' by the end of ' + when(c.lastDay) + ' (14 business days after ' + when(c.publishedOn) + '), you can mark it approved.';
+    return '<div class="dlv-deemed' + (c.due ? ' is-due' : '') + '">' +
+      '<p class="dlv-client-head">' + (c.due ? 'Approval due' : 'Deemed approval') + '</p>' +
+      '<p class="dlv-note">' + esc(head) + '</p>' +
+      '<p class="dlv-note">' + esc(reminderWords(c)) + '</p>' +
+      (c.due && !filed() ? '<button type="button" class="btn btn-sm" data-write id="dlv-deem">Mark approved…</button>' : '') +
+      '</div>';
+  }
+
+  function markDeemed(item, opener) {
+    const c = deemedOf(item);
+    if (!c) return;
+    const v = item.versions.find((x) => x.id === c.versionId);
+    ctx.confirm(opener, {
+      title: 'Mark v' + c.n + ' approved?',
+      body: 'The client sent no notes and didn’t approve v' + c.n + (v && v.fileName ? ' (' + v.fileName + ')' : '') +
+        ' within 14 business days of ' + when(c.publishedOn) + '. This records it as deemed approved under the agreement, not as their approval, ' +
+        'and the item counts as approved. A new version would take it back out.',
+      confirm: 'Mark approved',
+      run: () => write('post', versionUrl(item, { id: c.versionId }, '/deem'), undefined, {
+        working: 'Saving…',
+        ok: 'v' + c.n + ' marked as deemed approved.',
+        rethrow: true,
+        focus: '#dlv-item-h',
+      }),
+    });
+  }
+
   function clientSideMarkup(item) {
     return (
       '<section class="panel" aria-labelledby="dlv-client-h">' +
       '<div class="panel-head"><h3 class="panel-title" id="dlv-client-h">From the client</h3>' +
       roundsLine(item) + '</div>' +
-      '<div class="panel-body">' + clientSetsMarkup(item) + '</div></section>'
+      '<div class="panel-body">' + deemedMarkup(item) + clientSetsMarkup(item) + '</div></section>'
     );
   }
 
@@ -667,6 +717,8 @@ const ProjectDeliverables = (() => {
 
     const publishBtn = $('dlv-publish');
     if (publishBtn) publishBtn.addEventListener('click', () => publish(item, publishBtn));
+    const deemBtn = $('dlv-deem');
+    if (deemBtn) deemBtn.addEventListener('click', () => markDeemed(item, deemBtn));
     const previewBtn = $('dlv-preview');
     if (previewBtn) previewBtn.addEventListener('click', () => togglePreview(item, newest, previewBtn));
     const removeBtn = $('dlv-remove-version');

@@ -536,6 +536,47 @@ function notesSubmittedEmail(v) {
   };
 }
 
+/* 'YYYY-MM-DD' as "Monday 21 December", read in UTC so no timezone moves the day. */
+const longDay = (ymd) => {
+  const d = new Date(String(ymd || '') + 'T00:00:00Z');
+  return Number.isNaN(d.getTime()) ? String(ymd || '') : d.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+};
+
+/**
+ * The client's reminder before a Final is deemed approved (merged-admin C7;
+ * contract clause 4). It says what is waiting and since when, the last day for
+ * notes, and what happens after it: the studio may then record it as approved.
+ * It goes only while the client hasn't answered (deemed-reminders.js).
+ *
+ * @param {{business:object, appUrl:string, contactName?:string, projectName?:string,
+ *          upid?:string, itemTitle:string, versionN:number, publishedOn:string,
+ *          lastDay:string, link:string}} v  days are 'YYYY-MM-DD' (Sydney)
+ */
+function deemedReminderEmail(v) {
+  const b = businessOf(v);
+  const business = b.name;
+  const item = `the final of “${v.itemTitle || 'your deliverable'}” (v${v.versionN})`;
+  const lines = [
+    v.contactName ? `Hi ${v.contactName},` : 'Hi,',
+    `${item}${v.projectName ? ` for ${v.projectName}` : ''} has been in your Client Portal since ${longDay(v.publishedOn)}, and we haven’t had your notes or approval yet.`,
+    `If you’d like changes, please send your notes by the end of ${longDay(v.lastDay)}. If we don’t hear from you by then, it will be taken as approved, as our agreement sets out (14 business days from delivery).`,
+    'If you’re happy with it, you can approve it in the portal now.',
+  ];
+  const button = 'Open your Client Portal';
+  return {
+    subject: `Reminder: ${v.itemTitle || 'your final'} is waiting for your review · ${business}`,
+    text: `${lines.join('\n\n')}\n\n${button}: ${v.link}\n\n${business}`,
+    html: shell({
+      heading: 'Waiting for your review',
+      sub: line(v.projectName, v.upid),
+      bodyHtml: lines.map((l) => `<p style="margin:0 0 14px">${esc(l)}</p>`).join(''),
+      button: { label: button, url: v.link },
+      business: b,
+      appUrl: v.appUrl,
+    }),
+  };
+}
+
 /** Settings → Email's "Send a test email": in the clients' dress, footer and
     all, since checking how they see it is what it's for. */
 function testEmail(v = {}) {
@@ -581,5 +622,5 @@ function passwordResetEmail(v) {
 module.exports = {
   createMailer, isEmail, NOT_CONFIGURED, logoUrlOf,
   documentEmail, ownerSignedEmail, signedCopyEmail, testEmail, passwordResetEmail, callSheetEmail,
-  portalInviteEmail, notesSubmittedEmail,
+  portalInviteEmail, notesSubmittedEmail, deemedReminderEmail,
 };

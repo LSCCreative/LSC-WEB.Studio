@@ -27,6 +27,7 @@
 
 const { amountDue, parseJson } = require('./invoices');
 const { ROUNDS_INCLUDED } = require('./delivery');
+const { deemedClocks } = require('./deemed');
 
 const QUOTE_DAYS = 7;
 
@@ -61,6 +62,20 @@ function readNeeds(db, { today, briefs, rows }) {
     };
   };
   const items = [];
+
+  // Approval due (C7): a Final the client left unanswered past its 14 business days
+  // (deemed.js). From the day after their last day; it leaves when the studio marks
+  // it, the client answers, or a newer file restarts the clock. The row opens the
+  // item, where Mark approved is.
+  deemedClocks(db).filter((c) => today >= c.dueOn).forEach((c) => {
+    items.push({
+      ...base('deemed_approval', { project_id: c.projectId, client_id: c.clientId, upid: c.upid, name: c.name }, {
+        itemId: c.itemId, versionId: c.versionId, title: c.title, n: c.n, lastDay: c.lastDay,
+        since: c.dueOn, days: daysBetween(c.dueOn, today),
+      }),
+      id: 'deemed_approval:' + c.versionId,
+    });
+  });
 
   // Revision notes (C4): a set the client sent on the newest version they have, until the
   // studio publishes the next one. One row per item; the oldest waiting first.

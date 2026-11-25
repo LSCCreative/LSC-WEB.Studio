@@ -28,6 +28,7 @@ const { registerGoogleOAuthRoutes, registerGoogleRoutes } = require('./routes/go
 const { createGoogleSync } = require('./google-sync');
 const { createMailer } = require('./mail');
 const { notesSubmitted } = require('./owner-notices');
+const { createDeemedReminders } = require('./deemed-reminders');
 const { createOutbox } = require('./sends');
 const { createHnry } = require('./hnry');
 const { createHnryPusher } = require('./hnry-push');
@@ -195,6 +196,12 @@ function createApp(db, opts = {}) {
   });
   app.locals.outbox = outbox;
   app.locals.mailer = mailer;
+  // The client's reminder before a deemed approval (C7): started with the send queue (index.js).
+  app.locals.deemedReminders = createDeemedReminders(db, {
+    mailer,
+    appUrl: appUrlOf(opts.appUrl !== undefined ? opts.appUrl : config.appUrl),
+    portalUrl: (hub && hub.signingSecret && ((hub && hub.portalUrl) || config.hub.portalUrl)) || '',
+  });
 
   // Hnry (hnry-invoicing): an accepted project's deposit or single invoice is
   // pushed there as a draft, after the accept commits and in the background.

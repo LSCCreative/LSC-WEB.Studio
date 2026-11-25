@@ -26,6 +26,7 @@ const {
 } = require('../hub/deliverables');
 const { normalizeDeliverablePath } = require('../hub/routes');
 const { inviteView, setEnv, sendInvite } = require('../portal-invite');
+const { deemedClocks } = require('../deemed');
 
 const MAX_TITLE = 200;
 const MAX_SHORT = 100;
@@ -402,6 +403,49 @@ function registerDeliverableRoutes(app, db, opts = {}) {
     const file = nas.resolveDeliverablePath(relative);
     if (!file) return refuse(res, 404, 'file_missing', 'That file isn’t on the NAS any more.');
     return streamFile(req, res, file.absolute, file.stat, false);
+  });
+
+  /* Mark approved (C7): the studio records a Final as deemed approved once the
+     client's 14 business days have run out with no notes and no approval (deemed.js).
+     Only on a click: nothing is deemed on its own. Refused while the clock is still
+     running, and once the version isn't waiting on the client any more (they answered,
+     or a newer file replaced it). Recorded like the client's own, as kind 'deemed',
+     with no client session behind it, so no email, name, address or device. */
+  app.post('/api/projects/:id/deliverables/:itemId/versions/:versionId/deem', (req, res, next) => {
+    try {
+      const p = projectFor(req, res);
+      if (!p || !workable(res, p)) return undefined;
+      const today = todayOf(req);
+      if (!today) return res.status(400).json({ error: 'today_invalid' });
+      const clock = deemedClocks(db, { projectId: p.id })
+        .find((c) => c.itemId === req.params.itemId && c.versionId === req.params.versionId);
+      if (!clock) {
+        // Already deemed (a double click): the record stands, answer with it.
+        const done = db.prepare("SELECT 1 FROM client_approvals WHERE version_id = ? AND project_id = ? AND kind = 'deemed'")
+          .get(req.params.versionId, p.id);
+        if (done) return answer(req, res);
+        return refuse(res, 409, 'not_waiting', 'This version isn’t waiting on the client any more, so there’s nothing to mark.');
+      }
+      if (today < clock.dueOn) {
+        return refuse(res, 409, 'not_due', `The client has until the end of ${clock.lastDay} to reply.`);
+      }
+      const at = nowIso();
+      try {
+        db.transaction(() => {
+          db.prepare(`
+            INSERT INTO client_approvals (id, project_id, deliverable_id, version_id, kind, client_id, stage, version_n, file_name, approved_at)
+            VALUES (?, ?, ?, ?, 'deemed', ?, 'final', ?, ?, ?)
+          `).run(newId('ca'), p.id, clock.itemId, clock.versionId, p.client_id || null, clock.n, clock.fileName, at);
+          logActivity(db, p.id, 'deemed_approved', { title: clock.title, n: clock.n, lastDay: clock.lastDay }, at);
+        })();
+      } catch (err) {
+        // The client approved in the same moment: theirs is the record.
+        if (!/UNIQUE/.test(err.message)) throw err;
+      }
+      return answer(req, res);
+    } catch (err) {
+      return next(err);
+    }
   });
 
   /* The invite by hand, before a first publish (C6). Same rules as the dialog's:

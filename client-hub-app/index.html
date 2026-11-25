@@ -344,6 +344,8 @@ function portalProject(view){
           ? review.urls.map((url, i) => ({ name: 'Photo ' + (i + 1), reviewLink: url }))
           : [],
         approvedAt: v.approvedAt || null,
+        // Recorded by the studio after 14 business days with no notes (C7), not by the client.
+        deemed: !!v.deemed,
         itemApproved: d.status === 'approved',
         // How many rounds a Final includes is the server's to say (delivery.js ROUNDS_INCLUDED).
         rounds: { included: Number(d.rounds && d.rounds.included) || 0, used: Number(d.rounds && d.rounds.used) || 0 },
@@ -1097,6 +1099,7 @@ function renderAssetInteraction(a){
     <div class="card pad-sm mt-6" style="text-align:center">
       <span class="badge badge-approved">${icon('check', 13)}${st === 'draftApproved' ? 'Draft approved' : 'Approved'}${on}</span>
       ${st === 'draftApproved' ? `<p class="meta mt-3">We’ll let you know when the final is ready to review.</p>` : ''}
+      ${a.deemed ? `<p class="meta mt-3">Taken as approved: no notes came within 14 business days of delivery, as our agreement sets out.</p>` : ''}
     </div>${earlier}`;
   }
 

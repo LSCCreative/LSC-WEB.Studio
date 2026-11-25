@@ -31,6 +31,8 @@ function main() {
   // (marked late, D47), then ticks every minute. Without the SMTP key a due
   // send fails visibly instead of waiting silently.
   app.locals.outbox.start();
+  // The client's deemed-approval reminders (C7): a pass now, then hourly.
+  app.locals.deemedReminders.start();
   console.log(`[mail] ${config.smtp.pass && config.mailFrom ? `connected as ${config.mailFrom}` : 'not set up (no SMTP key / MAIL_FROM)'}`);
   // Without it every email with a link fails with no_app_url (C7): say so at boot.
   if (!config.appUrl) console.log(`[mail] APP_URL ${process.env.APP_URL ? 'is not an http(s) address' : 'is not set'}: emails with a link will fail until it is`);
@@ -47,6 +49,7 @@ function main() {
     console.log(`\n${signal} received, shutting down.`);
     backupSchedule.stop();
     app.locals.outbox.stop();
+    app.locals.deemedReminders.stop();
     server.close(() => {
       try { db.close(); } catch (_) { /* already closed */ }
       process.exit(0);

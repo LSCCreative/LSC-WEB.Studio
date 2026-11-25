@@ -33,7 +33,7 @@ const hub = {
   signingSecret: 'test-signing-secret', corsOrigins: [PORTAL], publicBaseUrl: 'https://hub.example', appUrl: 'https://app.example/',
   portalUrl: 'https://lsccreative.studio/client-hub-app/', deliverablesDir: DELIVERABLES, backupDir: BACKUPS, bunny: {},
 };
-const TODAY = new Date().toISOString().slice(0, 10);
+const TODAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney' }).format(new Date()); // the server counts Sydney days
 
 let db;
 let server;

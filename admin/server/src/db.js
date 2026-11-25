@@ -1118,6 +1118,13 @@ const MIGRATIONS = [
       require('./migrations/v29-approvals').migrateV29(db);
     },
   },
+  {
+    version: 30,
+    name: 'deemed_reminders: the client\'s reminder before a deemed approval, one per version (C7)',
+    up(db) {
+      require('./migrations/v30-deemed-reminders').migrateV30(db);
+    },
+  },
 ];
 
 /**
