@@ -33,6 +33,12 @@
  * invoices (task 19). Each invoice has its own page (InvoiceView, task 20),
  * where it is sent and marked paid, its extras edited, and a sent one voided
  * and remade; the folder's next action leads there once invoices exist.
+ *
+ * ONCE ACCEPTED (merged-admin R3; IA "Project") it is four tabs under one header,
+ * each an address: Deliverables (the default, project-deliverables.js), Production,
+ * Payments, Documents. The record's state decides which shape it is, not the
+ * address: draw() puts the address right. A move between tabs redraws only the
+ * panel, so a tab chosen by keyboard keeps its focus.
  */
 
 const ProjectFolder = (() => {
@@ -49,11 +55,18 @@ const ProjectFolder = (() => {
   let busy = false; // an action in flight: every action button waits on it
   let following = null; // the follow-up look while an email goes (SendPanel.follow)
   let tries = 0;
+  const TABS = ProjectCard.PROJECT_TABS;
+  let tab = null; // the tab asked for; null is the one page before acceptance
+  let itemId = null; // under Deliverables, the item asked for
+  let held = null; // a reply already read, for the redraw an address correction causes
 
   const $ = (id) => root.querySelector('#' + id);
   const onScreen = () => Boolean(root && root.querySelector('#project-folder'));
   const pathOf = (id) => '/projects/' + encodeURIComponent(id);
   const lead = () => (folder && folder.estimates[0]) || null;
+  const tabPath = (id, key) => pathOf(id) + '/' + key;
+  /* Accepted, whichever way: it has left the Pipeline for good (IA). */
+  const inTabs = (project) => Boolean(project.delivery) && project.delivery.group !== 'pipeline';
 
   /* An email still waiting to go, or going: one at a time per document. */
   const waiting = (send) => Boolean(send && (send.status === 'scheduled' || send.status === 'sending'));
@@ -149,6 +162,10 @@ const ProjectFolder = (() => {
     const items = moreActions(project).slice();
     if (project.stage === 'declined' && lead()) items.push({ id: 'view', label: 'View estimate' });
     if (lead()) items.push({ id: 'duplicate', label: 'Duplicate as new project' });
+    // Filed from Complete only, and back the same way (IA "Project State Model").
+    const badge = project.delivery && project.delivery.badge;
+    if (badge === 'complete') items.push({ id: 'archive', label: 'Archive' });
+    if (badge === 'archived') items.push({ id: 'unarchive', label: 'Unarchive' });
     if (project.stage !== 'declined' && !hasLiveInvoice()) items.push({ id: 'decline', label: 'Decline…', danger: true });
     items.push({ id: 'delete', label: 'Delete…', danger: true });
     return items;
@@ -169,6 +186,38 @@ const ProjectFolder = (() => {
     if (!a) return null;
     if (a.act) return Object.assign(actItem({ id: a.act, label: a.label, danger: a.danger }), { hint: a.hint });
     return { text: a.label, hint: a.hint, danger: a.danger, attrs: { 'data-doc': a.id, 'data-id': a.target } };
+  }
+
+  const FLAGS = {
+    no_upid: ['No UPID', 'is-alert'],
+    no_agreement: ['No signed agreement', ''],
+    payment_required: ['Payment required', 'is-info'],
+  };
+
+  /* The badge beside the flags (IA: "Flags sit beside the badge, not instead of it"),
+     then View as client (C8) once there is a client to see it as. */
+  function badgesMarkup(project) {
+    const flags = (project.delivery && project.delivery.flags) || [];
+    const asClient = project.client && project.client.id
+      ? '<button type="button" class="btn btn-ghost btn-sm pf-as-client" data-act="as-client" data-write ' +
+        'aria-label="View as client (opens the Client Portal in a new tab, read-only)">' +
+        '<span class="spinner"></span>View as client<span class="pf-as-client-arrow" aria-hidden="true">↗</span></button>'
+      : '';
+    return (
+      '<div class="pf-badges">' + ProjectCard.badgeMarkup(project) +
+      flags.filter((f) => FLAGS[f]).map((f) => '<span class="pf-chip ' + FLAGS[f][1] + '">' + FLAGS[f][0] + '</span>').join('') +
+      asClient +
+      '</div>'
+    );
+  }
+
+  /* Who it's for: their page, once it has a client record. */
+  function clientMarkup(client) {
+    const words = esc([client.businessName, client.contactName].filter(Boolean).join(' · '));
+    if (!words) return '';
+    return '<p class="pf-client">' + (client.id
+      ? '<a href="#/clients/' + encodeURIComponent(client.id) + '/projects">' + words + '</a>'
+      : words) + '</p>';
   }
 
   function headMarkup(project, today) {
@@ -192,9 +241,8 @@ const ProjectFolder = (() => {
       '<div class="pf-overview">' +
       '<p class="eyebrow pf-upid' + (project.upid ? '' : ' is-missing') + '">' + upid + '</p>' +
       '<h1 class="pf-title">' + esc(project.name || 'Untitled') + '</h1>' +
-      (client.businessName || client.contactName
-        ? '<p class="pf-client">' + esc([client.businessName, client.contactName].filter(Boolean).join(' · ')) + '</p>'
-        : '') +
+      clientMarkup(client) +
+      (inTabs(project) ? badgesMarkup(project) : '') +
       '<div class="pf-stage">' + ProjectCard.stageMarkup(project, today) + '</div>' +
       '<dl class="pf-facts">' + facts.map(([k, v, cls]) => '<div><dt>' + k + '</dt><dd' + (cls ? ' class="' + cls + '"' : '') + '>' + v + '</dd></div>').join('') + '</dl>' +
       '</div>' +
@@ -301,7 +349,12 @@ const ProjectFolder = (() => {
           tripNote(day.trip) +
           '</span>' +
           '<span class="pf-day-go" aria-hidden="true">Edit →</span>' +
-          '</button></li>'
+          '</button>' +
+          // The tab has room to name each day's way to its travel view (IA "Project: Production").
+          (tab && day.trip
+            ? '<a class="pf-day-travel" href="#' + esc(estimatePath(project, estimate, false)) + '?trip=' + encodeURIComponent(day.id) + '">Travel view</a>'
+            : '') +
+          '</li>'
         );
       }).join('') + '</ol></div>';
   }
@@ -535,6 +588,131 @@ const ProjectFolder = (() => {
     );
   }
 
+  // ── The tabs after acceptance (R3) ──────────────────────────────────────
+
+  function docsPanel(title, headId, docs, empty) {
+    return (
+      '<section class="panel" aria-labelledby="' + headId + '"><div class="panel-head"><h2 class="panel-title" id="' + headId + '">' + esc(title) +
+      (docs.length ? '<span class="panel-count">' + docs.length + '</span>' : '') + '</h2></div>' +
+      (docs.length
+        ? '<div class="panel-body is-flush"><ul class="pf-docs">' + docs.map(docRow).join('') + '</ul>' +
+          '<div class="pf-doc-error" id="pf-doc-error" role="alert"></div></div>'
+        : '<div class="panel-body"><p class="pf-empty">' + esc(empty) + '</p></div>') +
+      '</section>'
+    );
+  }
+
+  function productionMarkup(project, today) {
+    const sheets = folder.estimates.filter((e) => e.callSheet).map(callSheetDoc);
+    return (
+      '<section class="panel pf-days-panel" aria-labelledby="pf-days-h">' + daysMarkup(project, today) + '</section>' +
+      docsPanel('Call sheets', 'pf-sheets-h', sheets, 'A call sheet appears once a production day has a trip.')
+    );
+  }
+
+  /* Payments is a stub until F4: the words, and the invoices. */
+  function paymentsMarkup(project, today) {
+    const required = project.delivery.flags.includes('payment_required');
+    const invoices = folder.invoices.filter((i) => i.status !== 'void')
+      .concat(folder.invoices.filter((i) => i.status === 'void'))
+      .map((inv) => invoiceDoc(inv, today));
+    return (
+      '<section class="panel" aria-labelledby="pf-unlock-h"><div class="panel-head"><h2 class="panel-title" id="pf-unlock-h">Downloads</h2></div>' +
+      '<div class="panel-body"><p class="pf-words">' +
+      (required
+        ? 'Payment is required on this project: downloads wait for it.'
+        : 'Payment isn’t required on this project, so the client’s approval is what releases its files.') +
+      '</p></div></section>' +
+      docsPanel('Invoices', 'pf-invoices-h', invoices, needsInvoices(project)
+        ? 'None made yet. Create them from the button at the top of this page.'
+        : 'No invoices on this project.')
+    );
+  }
+
+  function agreementMarkup(project, today) {
+    const signatures = folder.signatures || [];
+    const evidence = folder.evidence;
+    const rows = signatures.map((sig) =>
+      '<li><span>' + esc(sig.fullName || 'Signed') + ' · ' + esc(ProjectCard.dayMonth(sig.signedAt, today)) + '</span>' +
+      '<button type="button" class="btn btn-sm" data-doc="agreement" data-id="' + esc(sig.id) + '"><span class="spinner"></span>Signed agreement PDF</button></li>').join('');
+    // Hub evidence is client-written text: esc() on all of it, and only an image as an image.
+    const signature = evidence && /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(evidence.signatureDataUrl || '')
+      ? '<img class="pf-signature" alt="Signature of ' + esc(evidence.signerName) + '" src="' + esc(evidence.signatureDataUrl) + '">'
+      : '';
+    const fact = (label, value) => (value ? '<div><dt>' + label + '</dt><dd>' + esc(value) + '</dd></div>' : '');
+    return (
+      '<section class="panel" aria-labelledby="pf-agreement-h"><div class="panel-head"><h2 class="panel-title" id="pf-agreement-h">Agreement</h2></div>' +
+      '<div class="panel-body">' +
+      (rows ? '<ul class="pf-agreements">' + rows + '</ul>' : '') +
+      (!rows && !evidence
+        ? '<p class="pf-words">' + (folder.hub
+          ? 'No signed agreement. This project came over from the old hub, and the server has no sign-off for it.'
+          : 'No signed agreement. This project was accepted with Mark accepted, so there’s no signature on record.') +
+          ' Delivery isn’t blocked by it.</p>'
+        : '') +
+      (evidence
+        ? '<h3 class="dlv-sub" style="margin-top:' + (rows ? 'var(--space-6)' : '0') + '">Sign-off from the old hub</h3>' + signature +
+          '<dl class="pf-evidence">' + fact('Signed by', evidence.signerName) + fact('Signed at', evidence.signedAt) +
+          fact('Received', evidence.receivedAt) + fact('Address', evidence.ipAddress) + fact('Device', evidence.userAgent) +
+          fact('Verification', evidence.verificationToken) + fact('Consent', evidence.consentText) + '</dl>'
+        : '') +
+      '<div class="pf-doc-error" id="pf-agreement-error" role="alert"></div>' +
+      '</div></section>'
+    );
+  }
+
+  /* What the old hub knew that has nowhere else to live yet (R4): its message,
+     invoice names, the client's notes, a sign-off only its browser held. All of
+     it is someone's typing, so all of it goes through esc(). */
+  function hubMarkup(today) {
+    const hub = folder.hub;
+    if (!hub) return '';
+    const clock = (s) => {
+      const n = Math.max(0, Math.floor(Number(s) || 0));
+      return String(Math.floor(n / 60)).padStart(2, '0') + ':' + String(n % 60).padStart(2, '0');
+    };
+    const when = (iso) => (iso ? ProjectCard.dayMonth(iso, today) : '');
+    const signoff = hub.browserSignoff && !folder.evidence
+      ? '<h3 class="dlv-sub">Sign-off in the old browser</h3>' +
+        '<p class="pf-words">' + esc(hub.browserSignoff.signerName || 'Someone') + ' signed in the old hub' +
+        (hub.browserSignoff.signedAt ? ' on ' + esc(when(hub.browserSignoff.signedAt)) : '') +
+        '. Only that browser kept it, so there’s no server evidence (signature, address, device) behind it.</p>'
+      : '';
+    const message = hub.message
+      ? '<h3 class="dlv-sub">Message to the client</h3><p class="pf-words pf-hub-text">' + esc(hub.message) + '</p>'
+      : '';
+    const invoices = hub.invoices.length
+      ? '<h3 class="dlv-sub">Invoices on the hub</h3><ul class="pf-hub-list">' + hub.invoices.map((i) =>
+        '<li>' + (i.url
+          ? '<a href="' + esc(i.url) + '" target="_blank" rel="noopener noreferrer">' + esc(i.name || 'Invoice') + '</a>'
+          : esc(i.name || 'Invoice')) + (i.type ? ' <span class="ref">' + esc(i.type) + '</span>' : '') + '</li>').join('') + '</ul>'
+      : '';
+    const notes = hub.notes.length
+      ? '<h3 class="dlv-sub">Client notes<span class="panel-count">' + hub.notes.length + '</span></h3><ul class="pf-hub-list">' + hub.notes.map((n) =>
+        '<li><span class="ref">' + esc([n.asset, n.photo, n.timestamp === null ? '' : clock(n.timestamp), when(n.at)].filter(Boolean).join(' · ')) + '</span>' +
+        '<p class="pf-hub-text">' + esc(n.text) + '</p></li>').join('') + '</ul>'
+      : '';
+    return (
+      '<section class="panel" aria-labelledby="pf-hub-h"><div class="panel-head"><h2 class="panel-title" id="pf-hub-h">From the old hub</h2></div>' +
+      '<div class="panel-body"><p class="pf-words">' + (hub.outcome === 'joined' ? 'Added to this project' : 'Brought over') +
+      ' from the old hub on ' + esc(when(hub.importedAt)) + '. Its client links and login carry on.</p>' +
+      signoff + message + invoices + notes +
+      (!signoff && !message && !invoices && !notes ? '<p class="pf-empty">The hub held nothing else for this project.</p>' : '') +
+      '</div></section>'
+    );
+  }
+
+  function documentsTabMarkup(project, today) {
+    return (
+      docsPanel('Quotes', 'pf-quotes-h', folder.estimates.map((e) => estimateDoc(e, project, today)), 'No quotes on this project.') +
+      agreementMarkup(project, today) +
+      hubMarkup(today) +
+      '<section class="panel" aria-labelledby="pf-approvals-h"><div class="panel-head"><h2 class="panel-title" id="pf-approvals-h">Approvals</h2></div>' +
+      '<div class="panel-body"><p class="pf-empty">No deliverable has been approved yet.</p></div></section>' +
+      '<section class="panel pf-activity-panel" aria-labelledby="pf-activity-h">' + activityMarkup(today) + '</section>'
+    );
+  }
+
   // ── Activity ────────────────────────────────────────────────────────────
 
   /* The latest few; Show all (N) opens the rest in place (IA growth plan). */
@@ -571,10 +749,41 @@ const ProjectFolder = (() => {
   function draw() {
     const today = LSCUtil.today();
     const project = folder.project;
+    // The record's state says which shape it is. An acceptance, or an old address,
+    // moves the address; the reply already read draws there.
+    if (inTabs(project) !== Boolean(tab)) {
+      held = folder;
+      LSCRouter.go(inTabs(project) ? tabPath(project.id, 'deliverables') : pathOf(project.id), { replace: true, skipGuard: true });
+      return;
+    }
     LSCMenu.close(false);
+    // Where this project belongs follows its state, so the tab and the title
+    // change when an acceptance or a payment moves it. Back returns to the
+    // list it was opened from when that is one step behind (ProjectCard.backOf).
+    LSCShell.placeProject(project.id, ProjectCard.placeOf(project));
+    const back = ProjectCard.backOf(project);
+    if (tab) {
+      root.innerHTML =
+        '<div id="project-folder" class="project-folder" data-id="' + esc(project.id) + '">' +
+        '<button class="back-btn" id="js-back">← ' + esc(back.crumb) + '</button>' +
+        '<div id="pf-head">' + headMarkup(project, today) + noticeMarkup(project, today) + '</div>' +
+        LSCSubTabs.markup({
+          label: project.name || 'Project',
+          current: tab,
+          panelId: 'pf-panel',
+          tabs: TABS.map(([id, label]) => ({ id, label, path: tabPath(project.id, id) })),
+        }) +
+        '<div id="pf-panel" role="tabpanel" aria-labelledby="subtab-' + tab + '" tabindex="-1"></div>' +
+        '</div>';
+      LSCSubTabs.bind(root.querySelector('#project-folder'));
+      bindHead();
+      drawPanel();
+      afterDraw();
+      return;
+    }
     root.innerHTML =
-      '<div id="project-folder" class="project-folder">' +
-      '<button class="back-btn" id="js-back">← All projects</button>' +
+      '<div id="project-folder" class="project-folder" data-id="' + esc(project.id) + '">' +
+      '<button class="back-btn" id="js-back">← ' + esc(back.crumb) + '</button>' +
       headMarkup(project, today) +
       noticeMarkup(project, today) +
       '<div class="pf-body">' +
@@ -583,8 +792,61 @@ const ProjectFolder = (() => {
       '<section class="panel pf-days-panel" aria-labelledby="pf-days-h">' + daysMarkup(project, today) + '</section>' +
       '<section class="panel pf-activity-panel" aria-labelledby="pf-activity-h">' + activityMarkup(today) + '</section>' +
       '</div></div></div>';
-    document.title = (project.upid ? project.upid + ' · ' : '') + (project.name || 'Project') + ' — LSC Billing';
-    bind();
+    bindHead();
+    bindWithin(root.querySelector('.pf-body'));
+    afterDraw();
+  }
+
+  /* The tab asked for. Each panel binds its own controls, so it can be redrawn alone. */
+  function drawPanel() {
+    const today = LSCUtil.today();
+    const project = folder.project;
+    const panel = $('pf-panel');
+    panel.setAttribute('aria-labelledby', 'subtab-' + tab);
+    setTitle();
+    if (tab === 'deliverables') {
+      ProjectDeliverables.draw(panel, {
+        folder,
+        itemId,
+        apply: applyReply,
+        confirm: openConfirm,
+        authLost: () => handlers.onAuthLost({ keepScreen: true }),
+        missing: showMissing,
+      });
+      return;
+    }
+    panel.innerHTML = '<div class="pf-tab-stack">' + (tab === 'production' ? productionMarkup(project, today)
+      : tab === 'payments' ? paymentsMarkup(project, today)
+        : documentsTabMarkup(project, today)) + '</div>';
+    bindWithin(panel);
+  }
+
+  /* The folder a checklist write answered with: the header (its badge may have
+     moved) and the panel, the tabs left alone, then focus where the write said. */
+  function applyReply(reply, focus) {
+    if (!onScreen() || !folder || !reply || !reply.project || folder.project.id !== reply.project.id) return;
+    folder = reply;
+    if (inTabs(folder.project) !== Boolean(tab)) {
+      draw();
+      return;
+    }
+    const today = LSCUtil.today();
+    $('pf-head').innerHTML = headMarkup(folder.project, today) + noticeMarkup(folder.project, today);
+    bindWithin($('pf-head'));
+    const fix = $('js-fix-upid');
+    if (fix) fix.addEventListener('click', () => LSCRouter.go('/setup/upids'));
+    drawPanel();
+    const target = (focus && root.querySelector(focus)) || $('pf-panel');
+    target.focus({ preventScroll: Boolean(focus) });
+  }
+
+  function setTitle() {
+    const project = folder.project;
+    document.title = LSCShell.title((project.upid ? project.upid + ' · ' : '') + (project.name || 'Project'));
+  }
+
+  function afterDraw() {
+    setTitle();
     clearTimeout(following);
     following = SendPanel.follow(folder.estimates.map((e) => e.send).concat(folder.invoices.map((i) => i.send)),
       (n) => { tries = n; refresh(true); }, tries);
@@ -598,24 +860,29 @@ const ProjectFolder = (() => {
     return (menu && menu.querySelector('.menu-btn')) || el;
   }
 
-  function bind() {
-    $('js-back').addEventListener('click', () => LSCRouter.leaveTo('/projects'));
+  /* What sits above the panels: Back, the header and its notices. */
+  function bindHead() {
+    $('js-back').addEventListener('click', () => LSCRouter.leaveTo(ProjectCard.backOf(folder.project).path));
     const fix = $('js-fix-upid');
     if (fix) fix.addEventListener('click', () => LSCRouter.go('/setup/upids'));
+    root.querySelectorAll('.pf-head [data-act]').forEach((b) => b.addEventListener('click', () => runAction(b.dataset.act, b)));
+  }
+
+  function bindWithin(container) {
     // Buttons and closed menus' items alike: menu.js clicks a chosen item in place.
-    root.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => runAction(b.dataset.act, b)));
-    root.querySelectorAll('[data-doc]').forEach((b) => b.addEventListener('click', () => runDoc(b.dataset.doc, b.dataset.id, b)));
-    SendPanel.bindStatus(root, {
+    container.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => runAction(b.dataset.act, b)));
+    container.querySelectorAll('[data-doc]').forEach((b) => b.addEventListener('click', () => runDoc(b.dataset.doc, b.dataset.id, b)));
+    SendPanel.bindStatus(container, {
       edit: (sendId, b) => openEditSend(sendId, b),
       changed: () => refresh(),
       authLost: () => handlers.onAuthLost({ keepScreen: true }),
       error: (message) => showDocError(message),
     });
-    root.querySelectorAll('.pf-day').forEach((b) => b.addEventListener('click', () => {
+    container.querySelectorAll('.pf-day').forEach((b) => b.addEventListener('click', () => {
       const estimate = folder.estimates.find((e) => e.id === b.dataset.estimate);
       if (estimate) openEstimate(estimate, false, { focusDay: b.dataset.day });
     }));
-    const more = $('pf-activity-more');
+    const more = container.querySelector('#pf-activity-more');
     if (more) more.addEventListener('click', () => {
       activityAll = true;
       root.querySelectorAll('#pf-activity > li[hidden]').forEach((li) => (li.hidden = false));
@@ -724,7 +991,16 @@ const ProjectFolder = (() => {
       run: (b) => post('decline', undefined, b, 'Declining…', 'Declined. Its days are off the calendars.'),
     });
     if (id === 'reopen') return reopen(button);
+    if (id === 'archive') {
+      return post('archive', undefined, button, 'Archiving…', 'Archived. It’s under Past projects for the client.')
+        .catch((err) => showActionError('Couldn’t archive: ' + failureText(err)));
+    }
+    if (id === 'unarchive') {
+      return post('unarchive', undefined, button, 'Unarchiving…', 'Back in Complete.')
+        .catch((err) => showActionError('Couldn’t unarchive: ' + failureText(err)));
+    }
     if (id === 'duplicate') return duplicate(lead(), button);
+    if (id === 'as-client') return viewAsClient(button);
     if (id === 'delete') return openConfirm(button, {
       title: 'Delete this project?',
       body: 'This deletes ' + describeContents() + '. It can’t be undone.',
@@ -732,6 +1008,43 @@ const ProjectFolder = (() => {
       danger: true,
       run: remove,
     });
+    return undefined;
+  }
+
+  /* View as client (C8): the real portal on this project, in a new tab, read-only.
+     The tab opens in the click itself, so a popup blocker rarely stops it, and is
+     sent to the portal once the server hands back the link; it is closed again if
+     that fails. A browser that blocks it anyway gets a link to click (a click of
+     the studio's own opens a tab), never this page swapped out under unsaved work.
+     The link opens once, within minutes. */
+  async function viewAsClient(button) {
+    if (busy) return;
+    const id = folder.project.id;
+    clearActionError();
+    const tab = window.open('', '_blank');
+    if (tab) tab.opener = null; // the portal never reaches back into the admin
+    setBusy(button, true);
+    try {
+      const reply = await LSCApi.post('/api/projects/' + encodeURIComponent(id) + '/portal-preview');
+      setBusy(button, false);
+      if (tab) {
+        tab.location.replace(reply.url);
+      } else {
+        const open = document.createElement('a');
+        open.href = reply.url;
+        open.target = '_blank';
+        open.rel = 'noopener';
+        open.textContent = 'Open the client’s view';
+        open.addEventListener('click', () => setTimeout(clearActionError, 0));
+        showActionError('Your browser blocked the new tab.', open);
+      }
+    } catch (err) {
+      setBusy(button, false);
+      if (tab) tab.close();
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
+      showActionError('Couldn’t open the client’s view: ' + failureText(err));
+    }
     return undefined;
   }
 
@@ -819,7 +1132,11 @@ const ProjectFolder = (() => {
       setBusy(button, false);
       Toast.ok('Project deleted.');
       closeDialog(false);
-      if (onScreen() && folder.project.id === id) LSCRouter.go('/projects', { replace: true, skipGuard: true });
+      if (onScreen() && folder.project.id === id) {
+        // Where Back would have gone (the list or client page it was opened
+        // from, with its chip and search), else where the project belonged.
+        LSCRouter.leaveTo(ProjectCard.backOf(folder.project).path, { replace: true, skipGuard: true });
+      }
       return true;
     } catch (err) {
       setBusy(button, false);
@@ -919,14 +1236,25 @@ const ProjectFolder = (() => {
     (opts.focus ? q(opts.focus) : q('pfd-cancel')).focus();
   }
 
+  /* `choice` ({ legend, options: [{ value, label }] }) adds a radio group, the first
+     option chosen; `run` is then given the chosen value after the button. */
   function openConfirm(opener, opts) {
+    const choice = opts.choice;
     openDialog(opener, {
       title: opts.title,
-      body: '<p class="pfd-text" id="pfd-desc">' + esc(opts.body) + '</p>',
+      body: '<p class="pfd-text" id="pfd-desc">' + esc(opts.body) + '</p>' +
+        (choice
+          ? '<fieldset class="pfd-choice"><legend>' + esc(choice.legend) + '</legend>' +
+            choice.options.map((o, i) => '<label><input type="radio" name="pfd-pick" value="' + esc(o.value) + '"' + (i ? '' : ' checked') + '>' +
+              '<span>' + esc(o.label) + '</span></label>').join('') + '</fieldset>'
+          : ''),
       describe: true,
       confirm: opts.confirm,
       danger: opts.danger,
-      run: opts.run,
+      run: (ok) => {
+        const picked = dlg.overlay.querySelector('input[name="pfd-pick"]:checked');
+        return opts.run(ok, picked ? picked.value : undefined);
+      },
     });
   }
 
@@ -1029,8 +1357,9 @@ const ProjectFolder = (() => {
      to the first action, as after any action. */
   async function refresh(quiet) {
     if (!folder) return;
-    if (quiet && LSCMenu.isOpen()) {
-      // A redraw would close the open menu: look again once it's closed.
+    const typing = tab === 'deliverables' && $('pf-panel') && ProjectDeliverables.holdsInput($('pf-panel'));
+    if (quiet && (LSCMenu.isOpen() || typing)) {
+      // A redraw would close the open menu or lose what's typed: look again later.
       clearTimeout(following);
       following = setTimeout(() => refresh(true), 2000);
       return;
@@ -1351,7 +1680,7 @@ const ProjectFolder = (() => {
   }
 
   function showDocError(message, withSettings) {
-    const box = $('pf-doc-error');
+    const box = $('pf-doc-error') || $('pf-agreement-error');
     if (!box) return;
     box.textContent = message;
     if (withSettings) {
@@ -1432,10 +1761,12 @@ const ProjectFolder = (() => {
 
   function placeholder(body) {
     folder = null;
+    // No project to place: back where it was opened from, else the Pipeline.
+    const back = ProjectCard.backOf(null);
     root.innerHTML =
-      '<button class="back-btn" id="js-back">← All projects</button>' +
+      '<button class="back-btn" id="js-back">← ' + esc(back.crumb) + '</button>' +
       '<div class="empty-state">' + body + '</div>';
-    root.querySelector('#js-back').addEventListener('click', () => LSCRouter.leaveTo('/projects'));
+    root.querySelector('#js-back').addEventListener('click', () => LSCRouter.leaveTo(back.path));
   }
 
   /* A project that's gone says so where it was asked for (IA, router rules). */
@@ -1451,7 +1782,8 @@ const ProjectFolder = (() => {
     try {
       // Whether Hnry is set up is asked alongside the folder, not after it (it never rejects).
       const [reply] = await Promise.all([
-        LSCApi.get('/api/projects/' + encodeURIComponent(id) + '?today=' + LSCUtil.today()),
+        // `open=1`: this is the studio opening it, which clears Needs you's "New project".
+        LSCApi.get('/api/projects/' + encodeURIComponent(id) + '?today=' + LSCUtil.today() + '&open=1'),
         LSCHnry.ready(),
       ]);
       if (!LSCRouter.isCurrent(ticket)) return;
@@ -1479,15 +1811,37 @@ const ProjectFolder = (() => {
       handlers = options;
     },
 
-    /* The router's way in, with the project id. */
-    show(id) {
+    /* The router's way in: the project id, its tab if the address names one, and
+       the rest of the address (under Deliverables, an item). False for a shape
+       this screen doesn't have. */
+    show(id, wantedTab, rest) {
+      const more = rest || [];
+      if (more.length > (wantedTab === 'deliverables' ? 1 : 0)) return false;
       closeDialog(false);
       SendPanel.close(false);
       CallSheetShare.close(false);
+      tab = wantedTab || null;
+      itemId = more[0] || null;
+      if (held && held.project.id === id) {
+        folder = held;
+        held = null;
+        busy = false;
+        draw();
+        return true;
+      }
+      held = null;
+      const tabsUp = tab && folder && folder.project.id === id && onScreen() && $('pf-panel');
+      if (tabsUp && inTabs(folder.project)) {
+        LSCSubTabs.mark(root.querySelector('#project-folder'), tab);
+        LSCMenu.close(false);
+        drawPanel();
+        return true;
+      }
       load(id);
       return true;
     },
 
+    TABS,
     estimatePath,
     closeDialog,
     /* The folder's dialog, for the invoice screen's Mark sent, Mark paid and

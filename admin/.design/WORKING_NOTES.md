@@ -177,6 +177,50 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   account 2026-10-23). So the main line is "<project>: Deposit invoice (N%)" then "Shoot: …" (confirmed
   days, read at push time) and "Deliverables: …" lines, max 500 chars, and the shoot sets Hnry's Period
   (`hnry-push.js` `mainDescription`/`periodOf`). Accepting confirms every dated day (`confirmDays`).
+- Accepting also opens the project (merged-admin R1, `delivery.js`): it links a client (found by email,
+  then business name, else made from the quote) and makes one checklist item per quoted deliverable,
+  once. Where a project stands is `deliveryState()`, the IA's table, read from `readDelivery`; later
+  tasks add inputs to the loader, not new badge logic elsewhere. An empty checklist never completes a
+  project unless `projects.no_deliverables_at` is set (v22 set it once on projects already paid).
+- A client's email is their portal login (merged-admin R2, S13; `src/clients.js`): one spelling (trimmed, lower-case,
+  on every write) and one holder (a new address another client has is refused, 409 `email_taken`; no unique index,
+  because two clients left sharing one from before stay until changed, and the record says so). Changing it moves
+  their projects' `private_auth` rows in the same transaction. C1's invite refuses no email and a shared one.
+- Portal sign-in (C1, `src/portal-access.js`): one Client code per client (6 digits, `client_logins`), signed in by email; the
+  session is an HttpOnly cookie `lsc_portal` (path `/hub`, Lax) checked against `client_sessions` on every client route. Codes and
+  session ids are HMACs under `HUB_SIGNING_SECRET`, so rotating it signs everyone out and voids every code. Old 4-digit per-project
+  codes (`private_auth`) sign the client in until they're issued a code. A client's projects are found through the session's client,
+  so anyone else's is the same 404. Portal replies are built in `src/hub/views.js` only; `test-portal-sessions.js` holds them to
+  their keys, so a new field goes in both.
+- The portal page (`client-hub-app/index.html`, C2) reads only tokens: `css/tokens.css` is a copy of `web/css/tokens.css` made by
+  `scripts/copy-portal-tokens.sh` (locally and in the Pages workflow), never committed there. `test-portal-page.js` fails on a
+  `var(--x)` the tokens don't define, a size under 11px, any script tag with a `src`, or the `<video>` moving inside `#asset-interaction`.
+  Media reaches the client by ids through `/hub/projects/:id/versions/:versionId/review`, built at reply time; never a path or file name.
+  A photo is `?photo=<key>`, the first 16 hex of SHA-256 of `photo\n<name>`, so links survive the folder changing. The route trusts its
+  memory of a client's projects and a folder for 10s (`MEDIA_MEMORY_MS`), and looks up anything it hasn't seen.
+- Client feedback (C4, S10): `client_notes` and `client_submissions` are written only by the portal's routes, never by the studio.
+  A note sits on the version the client saw; the server refuses anything but the item's newest published version (`not_current`).
+  One sent set per version (UNIQUE); after it, that version takes nothing more. Send takes every unsent note on the item, so a
+  note left on an earlier version goes with the next set. `client_key` makes a retried save return the note already saved. The studio's reply carries sent notes only
+  (`readFolder` filters); the portal's carries the client's own, never a photo's file name. Client writes take no pre-write backup
+  (S16): the nightly one (02:00) covers them.
+- Approvals (C5, S12): one `client_approvals` row per version, first write wins; an item is approved only while its newest version
+  (published or not) is an approved Final (`itemApproved`). Rounds = sets sent on Finals (`ROUNDS_INCLUDED`); the rate comes from the signed text.
+- View as client (C8): a preview is never a client session (`portal_previews`, its own cookie) and applies only to calls marked
+  `?preview=1`. Its read-only rule lives in the hub's `signedIn`, so **every client write route must go through `signedIn`**;
+  `test-portal-preview.js` fails otherwise. A new review/media link built for the page must carry the marker under a preview.
+- Deemed approval (C7): `deemed.js` is the clock (14 Mon–Fri days after the Sydney publish day, `holidays` skipped); only Mark
+  approved records it (`kind 'deemed'`). Reminders run hourly from `index.js` (`deemed-reminders.js`); the stub script starts them too.
+- Portal invoices (C3): sent or paid only, with the amount `invoiceView` says is due (the client's own page's figure). An invoice in
+  Hnry gets Hnry's number and no link to billing's page. The leak test admits an invoice's number and amount, nothing else of money.
+- A deliverable's version never changes once published, because the client may have commented on it and C5's approvals name it:
+  the next file is a new version. The item's `stage` says what the next version is, and carries the newest along only while it's
+  unpublished. Files are NAS paths checked on add and on publish (`routes/deliverables.js`); the studio's preview reads them behind the
+  login and mints no public token. `/hub/*` writes nothing to `records` since R3: C1-C3 build the portal's reply from these rows.
+- Live projects, the client's groups and the Dashboard's Open read the state model (`project.delivery`, on every
+  `GET /api/projects` row through `deliveryReader`), not the money stage: a paid job with open items is Live. The
+  `payment-due` list is wider than the badge: anything live with a sent invoice unpaid, so Outstanding invoices' link
+  isn't empty mid-job. Archive is Complete only; a new list goes in `LISTS` (routes/projects.js).
 
 ## Frontend traps
 
@@ -209,13 +253,25 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   outcome must not touch a screen the user has left (`onScreen()` check); `onAuthLost({keepScreen})`.
 - Info controls are buttons with `aria-expanded`, not hover tooltips. Finance sub-tabs are `<nav>` +
   `aria-current`, not `role=tablist`.
-- Fonts: the face is named **'LSC Metro Sans'** on purpose (a Fontspring demo on the studio Mac has
-  `±` glyphs). It has no tabular figures: money uses `--font-figures` (mono). Brand font masters in
+- Fonts: the admin's body face is **'LSC Funnel Sans'** (OFL 1.1, merged-admin L1); the client pages
+  (`web/c/`, `data-theme="light"`) keep **'LSC Metro Sans'**. Private names on purpose: a page that names
+  an installed font looks right only on the studio Mac. Neither has ▾ ⋯ ✓ (they fall through to the
+  system face) or useful tabular figures: money uses `--font-figures` (mono). Brand font masters in
   `Visual Design/` are gitignored (licence); only `.woff2` goes in `web/fonts/`.
+- Look (merged-admin L1): every `.btn` is mono caps via `--btn-*` tokens; `.btn-confirm` (sage outline)
+  is for Approve and Confirm only. No font size under `--font-size-xs` (11px). The light block in
+  `tokens.css` pins every value the dark theme changed, so a dark-theme change can't reach `web/c/`.
 - Test money layouts with a five-figure total, not the fixtures (scratch tops out near $560).
 - Dashboard layout: below 768 the column wrappers (`.dash-main`, `.dash-side`) are `display: contents`,
   so Coming up can sit between the lists and Recent activity. Any `grid-area` on their children must be
   reset to `auto` at ≥768. View-transition names go on only while the calendar resizes (`.is-moving`).
+- A project's shape follows its state, not its address: `ProjectFolder.draw` puts the address right (`held` carries the reply over the
+  redirect, so it isn't read twice). A checklist write redraws through `applyReply`, leaving the tabs up. In `project-deliverables.js`, a
+  404 with the code `not_found` is the record gone; `file_not_found` is a 404 too and is only a refusal.
+- Sub-tabs (`js/subtabs.js`): each tab is an address, and the screen keeps the tabs on the page and redraws
+  only the panel, or a keyboard user loses their place. The router resets the title on every route, so a panel move
+  sets it again. `--shadow-focus` is two shadows, so `inset var(--shadow-focus)` draws its outer ring outside the box
+  (side bars in a clipped row): write the inset ring out.
 - Module globals are top-level `const`s: `window.LSCData` is undefined; use `typeof`.
 - Ad blockers hide by name, on every site: `ad-*` and its like are off limits for a class or id (the day dialog's
   `.ad-box` was hidden by EasyList, leaving only its backdrop; it is `dd-*` now). `test-blocker-names.js` guards the prefix.
@@ -260,5 +316,5 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
 - **Tests and the clock:** public accept, re-send and retry read the real clock, not the app's injected `today`. A test that passes through them needs a date worked out from `Date.now()`, because a fixed one starts failing the day after it passes.
 - **Migrations copy first:** `openDatabase` takes a `premigrate-*.db` copy before migrating an existing database, into the `backups/` folder beside it unless `backupDir` says otherwise, and refuses to start if it can't. The scripts get it too; `backupDir: false` opts out.
 - **Hub routes:** their writes take the same pre-write copy as `/api`, after the request is checked. Client sign-in is rate-limited per address and stops after 10 wrong codes per email in 15 minutes. They read the client's address through billing's `clientIp`.
-- **Portal boundaries (M3):** `app.js` always trusts one proxy hop; `TRUST_PROXY` is retired and `clientIp` reads `CF-Connecting-IP` first. The hub's hostname (from `HUB_PUBLIC_BASE_URL`, read off the Host header in one spelling: no port, no trailing dot) serves `/hub/*` and `/health` only. `/health` is plain liveness; the deliverables folder's state is `GET /hub/deliverables-health` (editor) and the start-up log. Billing's CORS skips `/hub` and never grants a `HUB_CORS_ORIGINS` origin. The portal router mounts before billing's `express.json`; raw-body routes go above both.
+- **Portal boundaries (M3):** `app.js` always trusts one proxy hop; `TRUST_PROXY` is retired and `clientIp` reads `CF-Connecting-IP` first. The hub's hostname (from `HUB_PUBLIC_BASE_URL`, read off the Host header in one spelling: no port, no trailing dot) serves `/hub/*` and `/health` only. `/health` is plain liveness; the deliverables folder's state is the start-up log and the checklist's own refusals. Billing's CORS skips `/hub` and never grants a `HUB_CORS_ORIGINS` origin. The portal router mounts before billing's `express.json`; raw-body routes go above both.
 - **A full run can stall on a Mac** (seen 2026-11-06, local disk too, not Google Drive as first thought): a file that renders real PDFs (`test-api`, `test-hnry-send`) finishes its tests, then sits at 0% CPU. Its headless Chrome's `chrome_crashpad_handler` outlived Chrome and still holds the test's pipe. Find it with `lsof -p <test pid>` (a unix socket to `chrome_cr`), kill that handler only, or rerun. The flags `--disable-crash-reporter --disable-breakpad` didn't clearly stop it. Not seen on the NAS, which renders with Linux Chromium. Under the same load a real render can also time out (`test-pdf`'s "renders a real PDF", 500 after 30 s); it passes alone.

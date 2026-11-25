@@ -1,10 +1,14 @@
 'use strict';
 
 const { newId, nowIso } = require('../db');
-const { STAGES, projectStage, settledAt, upidLocked } = require('../projects');
+const {
+  STAGES, projectStage, settledAt, upidLocked, clientDataHeld, clientDataRefusal, ARCHIVE_ADVICE,
+} = require('../projects');
 const { readDays } = require('../days');
 const { readRentals } = require('../rentals');
 const { loadEstimate } = require('../estimate');
+const { clientForAcceptance, createChecklist, readDelivery, deliveryReader } = require('../delivery');
+const { hubIdOf, hubFacts } = require('../hub/adopt');
 const { readSettings } = require('../ratecard');
 const { depositAmount, finalInvoiceTotals, singleInvoiceTotals, tripLineQty } = require('../calc');
 const { amountDue, hnryFields } = require('../invoices');
@@ -12,6 +16,20 @@ const { docSettings } = require('../documents');
 const { freezeVersion, versionsOf, signatureRow, signaturePdf, takenDays, callSheetDays } = require('../public');
 const { agreementFilename } = require('../pdf');
 const { sendRequest, pendingFor, latestFor, cancelPending, addSend, sydneyDate } = require('../sends');
+const { inviteView } = require('../portal-invite');
+const { deemedClocks } = require('../deemed');
+const { remindersOf } = require('../deemed-reminders');
+
+/* `{ [itemId]: clock }` for the folder: the version it's on, its days, whether the
+   studio may Mark approved yet (`due`), and the client's reminder, if one was tried. */
+function deemedView(db, projectId, today) {
+  const reminders = remindersOf(db, projectId);
+  return Object.fromEntries(deemedClocks(db, { projectId }).map((c) => [c.itemId, {
+    versionId: c.versionId, n: c.n, publishedOn: c.publishedOn, remindOn: c.remindOn, lastDay: c.lastDay, dueOn: c.dueOn,
+    due: Boolean(today) && today >= c.dueOn,
+    reminder: reminders[c.versionId] || null,
+  }]));
+}
 
 /* A paid or declined project leaves the Active view this long after it got
    there (IA, Content Growth Plan). Its own chip, and a search, still find it. */
@@ -27,8 +45,35 @@ const HOME_KINDS = ['sent', 'opened', 'accepted', 'signed', 'invoices_created', 
 const HOME_LIMIT = 10;
 const HOME_MAX = 50;
 
-/* The Dashboard's "Open projects": every stage short of paid or declined. */
-const OPEN_STAGES = ['draft', 'sent', 'accepted', 'invoiced'];
+/* The admin's lists (merged-admin L3, R2). The Pipeline's default is the work
+   still awaiting a reply (Declined is a filter of its own). Live is the state
+   model's Live group: accepted, and neither Complete nor Archived. */
+const PIPELINE_STAGES = ['draft', 'sent'];
+const inPipeline = (row) => PIPELINE_STAGES.includes(row.project.stage);
+const isLive = (row) => row.project.delivery.group === 'live';
+const hasBadge = (badge) => (row) => row.project.delivery.badge === badge;
+/* An invoice has gone out and isn't paid. Payment due is more than the badge
+   of that name, which waits for every item to be approved: the Dashboard's
+   Outstanding invoices opens this list, and a deposit is owed mid-job too. */
+const owesMoney = ({ project }) => /_sent$/.test(project.stageDetail.step || '') || project.stageDetail.step === 'legacy';
+/* GET /api/projects's named lists, as (row, q) => kept. Each is also a count
+   in the reply; any other `stage` must be one of STAGES. */
+const LISTS = {
+  active: (row, q) => Boolean(q) || !row.old,
+  all: () => true,
+  // The Dashboard's "Open projects": awaiting a reply, or live.
+  open: (row) => inPipeline(row) || isLive(row),
+  pipeline: inPipeline,
+  live: isLive,
+  'in-production': hasBadge('in_production'),
+  'in-review': hasBadge('in_review'),
+  revisions: hasBadge('revisions'),
+  'payment-due': (row) => isLive(row) && (owesMoney(row) || ['payment_due', 'payment_claimed'].includes(row.project.delivery.badge)),
+  // A client's page: everything but what sits behind Archived, or under Pipeline's Declined.
+  current: (row) => row.project.stage !== 'declined' && row.project.delivery.badge !== 'archived',
+  complete: hasBadge('complete'),
+  archived: hasBadge('archived'),
+};
 
 /* A real calendar date: '2026-13-01' and '2026-02-30' are not (an invalid
    Date's toISOString throws, so it is checked first). */
@@ -148,7 +193,8 @@ function summarize(p, own, bills, ctx) {
     id: p.id,
     upid: p.upid,
     needsUpid: p.needs_upid === 1,
-    name: lead ? lead.name : '',
+    // No estimate names a project the old hub brought (R4): it keeps the hub's name.
+    name: lead ? lead.name : p.name || '',
     client: {
       id: p.client_id || null,
       businessName: snapshot.businessName || (record && record.business_name) || '',
@@ -186,6 +232,65 @@ function callSheetState(row, days) {
   };
 }
 
+/**
+ * Every project (or one client's) as the lists read it: `project` is its
+ * summary with its delivery state, `text` all it is searched by, `jobText` the
+ * part that is the job's own (UPIDs and names, not its client), `old` whether
+ * it settled long enough ago to leave the Active view.
+ */
+function readProjectRows(db, { today, clientId = null }) {
+  const projects = clientId === null
+    ? db.prepare('SELECT * FROM projects').all()
+    : db.prepare('SELECT * FROM projects WHERE client_id = ?').all(clientId);
+  const estimates = groupBy(db.prepare(`
+    SELECT ${ESTIMATE_COLUMNS} FROM estimates WHERE project_id IS NOT NULL
+  `).all(), 'project_id');
+  const invoices = groupBy(db.prepare(`SELECT ${INVOICE_COLUMNS} FROM invoices`).all(), 'project_id');
+  const lastActivity = new Map(db.prepare(`
+    SELECT project_id, MAX(at) AS at FROM activity GROUP BY project_id
+  `).all().map((r) => [r.project_id, r.at]));
+  const sends = new Map();
+  db.prepare("SELECT project_id, at, detail_json FROM activity WHERE kind = 'sent' ORDER BY at, id").all()
+    .forEach((r) => sends.set(r.project_id, sendOf(r)));
+  const nextDay = new Map();
+  db.prepare(NEXT_DAY_SQL + ' ORDER BY d.date, d.start_time, d.id').all(today).forEach((r) => {
+    if (!nextDay.has(r.project_id)) nextDay.set(r.project_id, { date: r.date, status: r.status });
+  });
+  const clients = new Map(db.prepare('SELECT id, business_name, contact_name FROM clients').all()
+    .map((c) => [c.id, c]));
+
+  const taken = takenDays(db);
+  const stateOf = deliveryReader(db);
+  const cutoff = addDays(today, -SETTLED_DAYS);
+  return projects.map((p) => {
+    const own = estimates.get(p.id) || [];
+    const bills = invoices.get(p.id) || [];
+    const record = p.client_id ? clients.get(p.client_id) : null;
+    const project = summarize(p, own, bills, {
+      sent: sends.get(p.id),
+      nextDay: nextDay.get(p.id),
+      client: record,
+      lastActivityAt: lastActivity.get(p.id),
+    });
+    project.takenDays = taken.get(p.id) || [];
+    project.delivery = stateOf(p, project.stage, bills);
+    const settled = settledAt(p, bills, project.stage);
+    const lead = own.find((e) => e.id === project.estimateId);
+    const snapshot = lead ? JSON.parse(lead.client_json || '{}') : {};
+    const jobText = [p.upid, p.name, ...own.map((e) => e.upid), ...own.map((e) => e.name)]
+      .filter(Boolean).join('\n').toLowerCase();
+    return {
+      project,
+      old: Boolean(settled) && settled.slice(0, 10) < cutoff,
+      jobText,
+      text: [
+        jobText, snapshot.businessName, snapshot.contactName,
+        record && record.business_name, record && record.contact_name,
+      ].filter(Boolean).join('\n').toLowerCase(),
+    };
+  });
+}
+
 function readFolder(db, id, today) {
   const p = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
   if (!p) return null;
@@ -210,12 +315,17 @@ function readFolder(db, id, today) {
     depositPct: p.deposit_pct === null || p.deposit_pct === undefined ? null : p.deposit_pct,
     // What Mark accepted's deposit % starts at (D33).
     depositPctDefault: depositPctFor(db, p),
+    archivedAt: p.archived_at || null,
+    noDeliverablesAt: p.no_deliverables_at || null,
     createdAt: p.created_at,
     updatedAt: p.updated_at,
   });
   project.upidLocked = upidLocked(db, id);
   // Proposed dates on the quote the client has that another project has since confirmed (C6).
   project.takenDays = takenDays(db, id).get(id) || [];
+  // Where it stands, money and delivery in one badge, and its checklist (merged-admin R1).
+  const delivery = readDelivery(db, p, project.stage, bills);
+  project.delivery = delivery.state;
   const rows = db.prepare('SELECT * FROM estimates WHERE project_id = ?').all(id);
   const flags = rebookFlags(db, rows.map((r) => r.id));
   const sent = versionsOf(db, rows.map((r) => r.id));
@@ -241,9 +351,28 @@ function readFolder(db, id, today) {
     })
     .sort((a, b) => (a.id === project.estimateId ? -1 : b.id === project.estimateId ? 1 : 0) ||
       (b.updatedAt > a.updatedAt) - (b.updatedAt < a.updatedAt));
+  // A sign-off the old hub took: the Documents tab's evidence. It stays under the
+  // hub's id, which hub_imports links to this project (R4).
+  const signedOff = db.prepare('SELECT * FROM agreement_evidence WHERE project_id = ?').get(hubIdOf(db, id) || id);
   return {
     project,
+    invite: inviteView(db, p),
+    // Each item's deemed-approval clock (C7), while its newest Final waits on the client.
+    deemed: deemedView(db, p.id, today),
     estimates,
+    // The client's notes reach the studio when they send them: unsent ones stay theirs.
+    deliverables: delivery.deliverables.map((d) => ({ ...d, notes: d.notes.filter((n) => n.submittedAt) })),
+    hub: hubFacts(db, id),
+    evidence: signedOff ? {
+      signerName: signedOff.signer_name,
+      signedAt: signedOff.signed_at,
+      signatureDataUrl: signedOff.signature_data_url,
+      consentText: signedOff.consent_text,
+      userAgent: signedOff.user_agent,
+      verificationToken: signedOff.verification_token,
+      ipAddress: signedOff.ip_address,
+      receivedAt: signedOff.received_at,
+    } : null,
     invoices: bills.map((i) => ({
       id: i.id,
       kind: i.kind,
@@ -594,7 +723,9 @@ function confirmDays(db, estimateId, ownIds, now) {
  * signature (task 27). The estimate becomes accepted, its dated days are
  * confirmed with any clash flagged (confirmDays), the invoices are made
  * unsent (createInvoices), and the project records the choice and the
- * moment. One activity row says so.
+ * moment. The project opens under its client (found or made from the quote)
+ * with one checklist item per quoted deliverable (delivery.js, merged-admin
+ * R1). One activity row says so.
  *
  * @param {object} p        the project row
  * @param {string} lead     the estimate accepted
@@ -611,21 +742,34 @@ function acceptEstimate(db, p, lead, ownIds, choice, now, opts = {}) {
   // An estimate email still waiting would ask the client to accept again.
   cancelPending(db, 'estimate', ownIds, now);
   const rebook = confirmDays(db, lead, ownIds, now);
-  const made = choice ? createInvoices(db, p, lead, choice, now, opts.frozen) : [];
+  // The quote as accepted, read once: the version the client signed, else the
+  // row as it now stands (accepted, its days confirmed). The invoices keep it
+  // as their snapshot; the client and the checklist come from it.
+  const row = db.prepare('SELECT * FROM estimates WHERE id = ?').get(lead);
+  const quote = opts.frozen || loadEstimate(row, readDays(db, lead), readRentals(db, lead));
+  // Before the invoices, so they (and the Hnry push after commit) find the project's client.
+  const client = clientForAcceptance(db, p, { ...quote, clientId: row.client_id || quote.clientId || null }, now);
+  if (client.clientId) p = { ...p, client_id: client.clientId };
+  const made = choice ? createInvoices(db, p, lead, choice, now, quote) : [];
   db.prepare(`
     UPDATE projects SET accepted_at = ?, invoicing = COALESCE(?, invoicing), deposit_pct = COALESCE(?, deposit_pct),
            updated_at = ?
      WHERE id = ?
   `).run(now, choice ? choice.invoicing : null, choice ? choice.pct : null, now, p.id);
+  const checklist = createChecklist(db, p.id, { ...quote, id: lead }, now);
   logActivity(db, p.id, opts.kind || 'accepted', {
     estimateId: lead,
     invoicing: choice ? choice.invoicing : null,
     depositPct: choice ? choice.pct : null,
     invoices: made.map((i) => i.number),
     rebook: rebook.map((r) => r.date),
+    checklist,
+    client: client.how,
+    // A choice the studio may want to check: a shared email, or the quote's differing one.
+    ...(client.note ? { clientNote: client.note } : {}),
     ...(opts.detail || {}),
   }, now);
-  return { rebook, made };
+  return { rebook, made, checklist, client };
 }
 
 /**
@@ -634,7 +778,9 @@ function acceptEstimate(db, p, lead, ownIds, choice, now, opts = {}) {
  * GET /api/projects — one card per project, newest activity first.
  *
  * Query:
- *   stage   `active` (the default), `all`, `open`, or one of projects.js STAGES.
+ *   stage   `active` (the default), `all`, `open`, `pipeline`, `live`, or one of
+ *           projects.js STAGES. Pipeline is draft and sent; live is accepted
+ *           and invoiced.
  *           Active is every project except paid and declined ones settled more
  *           than 90 days ago, unless `q` is given: a search looks at everything.
  *           Open (the Dashboard's list) is every project not yet paid or
@@ -733,7 +879,7 @@ function registerProjectRoutes(app, db, opts = {}) {
 
   app.get('/api/projects', (req, res) => {
     const stage = String(req.query.stage || 'active');
-    if (stage !== 'active' && stage !== 'all' && stage !== 'open' && !STAGES.includes(stage)) {
+    if (!Object.hasOwn(LISTS, stage) && !STAGES.includes(stage)) {
       return res.status(400).json({ error: 'stage_invalid' });
     }
     const today = todayOf(req);
@@ -748,64 +894,19 @@ function registerProjectRoutes(app, db, opts = {}) {
     const cursor = before === null ? null : before.split('~');
     if (cursor && cursor.length !== 2) return res.status(400).json({ error: 'before_invalid' });
 
-    const projects = clientId === null
-      ? db.prepare('SELECT * FROM projects').all()
-      : db.prepare('SELECT * FROM projects WHERE client_id = ?').all(clientId);
-    const estimates = groupBy(db.prepare(`
-      SELECT ${ESTIMATE_COLUMNS} FROM estimates WHERE project_id IS NOT NULL
-    `).all(), 'project_id');
-    const invoices = groupBy(db.prepare(`SELECT ${INVOICE_COLUMNS} FROM invoices`).all(), 'project_id');
-    const lastActivity = new Map(db.prepare(`
-      SELECT project_id, MAX(at) AS at FROM activity GROUP BY project_id
-    `).all().map((r) => [r.project_id, r.at]));
-    const sends = new Map();
-    db.prepare("SELECT project_id, at, detail_json FROM activity WHERE kind = 'sent' ORDER BY at, id").all()
-      .forEach((r) => sends.set(r.project_id, sendOf(r)));
-    const nextDay = new Map();
-    db.prepare(NEXT_DAY_SQL + ' ORDER BY d.date, d.start_time, d.id').all(today).forEach((r) => {
-      if (!nextDay.has(r.project_id)) nextDay.set(r.project_id, { date: r.date, status: r.status });
-    });
-    const clients = new Map(db.prepare('SELECT id, business_name, contact_name FROM clients').all()
-      .map((c) => [c.id, c]));
-
-    const taken = takenDays(db);
-    const cutoff = addDays(today, -SETTLED_DAYS);
-    const all = projects.map((p) => {
-      const own = estimates.get(p.id) || [];
-      const bills = invoices.get(p.id) || [];
-      const record = p.client_id ? clients.get(p.client_id) : null;
-      const project = summarize(p, own, bills, {
-        sent: sends.get(p.id),
-        nextDay: nextDay.get(p.id),
-        client: record,
-        lastActivityAt: lastActivity.get(p.id),
-      });
-      project.takenDays = taken.get(p.id) || [];
-      const settled = settledAt(p, bills, project.stage);
-      const lead = own.find((e) => e.id === project.estimateId);
-      const snapshot = lead ? JSON.parse(lead.client_json || '{}') : {};
-      return {
-        project,
-        old: Boolean(settled) && settled.slice(0, 10) < cutoff,
-        text: [
-          p.upid, ...own.map((e) => e.upid), ...own.map((e) => e.name),
-          snapshot.businessName, snapshot.contactName,
-          record && record.business_name, record && record.contact_name,
-        ].filter(Boolean).join('\n').toLowerCase(),
-      };
-    });
+    const all = readProjectRows(db, { today, clientId });
 
     const searched = q ? all.filter((row) => row.text.includes(q)) : all;
-    const inActive = (row) => q || !row.old;
-    const isOpen = (row) => OPEN_STAGES.includes(row.project.stage);
-    const counts = { active: searched.filter(inActive).length, all: searched.length, open: searched.filter(isOpen).length };
+    const counts = {};
+    Object.entries(LISTS).forEach(([name, keep]) => {
+      counts[name] = searched.filter((row) => keep(row, q)).length;
+    });
     STAGES.forEach((s) => {
       counts[s] = searched.filter((row) => row.project.stage === s).length;
     });
-    const wanted = stage === 'all' ? () => true
-      : stage === 'active' ? inActive
-        : stage === 'open' ? isOpen
-          : (row) => row.project.stage === stage;
+    const wanted = Object.hasOwn(LISTS, stage)
+      ? (row) => LISTS[stage](row, q)
+      : (row) => row.project.stage === stage;
     const shown = searched
       .filter(wanted)
       .map((row) => row.project)
@@ -844,7 +945,17 @@ function registerProjectRoutes(app, db, opts = {}) {
     return p || null;
   }
 
-  app.get('/api/projects/:id', (req, res) => folderReply(req, res));
+  /* Opening an accepted project is what clears Needs you's "New project" (IA).
+     Only the project page says it is opening one (`?open=1`): other screens read
+     the folder too (Settings' agreement preview, the page's own refresh), and a
+     read that fails opens nothing. */
+  app.get('/api/projects/:id', (req, res) => {
+    if (req.query.open === '1' && todayOf(req)) {
+      db.prepare('UPDATE projects SET opened_at = ? WHERE id = ? AND accepted_at IS NOT NULL AND opened_at IS NULL')
+        .run(nowIso(), req.params.id);
+    }
+    return folderReply(req, res);
+  });
 
   if (opts.markSent) app.post('/api/projects/:id/sent', (req, res) => {
     const p = projectFor(req, res);
@@ -975,10 +1086,54 @@ function registerProjectRoutes(app, db, opts = {}) {
       db.prepare("UPDATE estimates SET status = 'draft' WHERE project_id = ?").run(p.id);
       db.prepare('UPDATE projects SET declined_at = NULL, accepted_at = NULL, updated_at = ? WHERE id = ?')
         .run(now, p.id);
-      logActivity(db, p.id, 'reopened', {}, now);
+      // Back to a quote, so the checklist the last acceptance opened owes nothing:
+      // the items nobody worked on go, and the next acceptance opens them from the
+      // quote as it then stands (createChecklist only fills an empty list). An item
+      // with a file, or where the old hub left one, stays on record.
+      const cleared = db.prepare(`
+        DELETE FROM deliverables
+         WHERE project_id = ? AND hub_status IS NULL
+           AND NOT EXISTS (SELECT 1 FROM deliverable_versions v WHERE v.deliverable_id = deliverables.id)
+      `).run(p.id).changes;
+      logActivity(db, p.id, 'reopened', cleared ? { checklistCleared: cleared } : {}, now);
     })();
     touchGoogle(req, p.id);
     return folderReply(req, res, { pencilled: clash.pencilled });
+  });
+
+  /* Filing a finished project away (IA "Project State Model"; brief, "Complete
+     and archive"): offered on Complete only. Unarchiving returns it to Complete,
+     since nothing about the job changed while it was filed. */
+  app.post('/api/projects/:id/archive', (req, res) => {
+    const p = projectFor(req, res);
+    if (!p) return;
+    if (p.archived_at) return folderReply(req, res);
+    const { stage, bills } = stageNow(db, p);
+    const { state } = readDelivery(db, p, stage, bills);
+    if (state.badge !== 'complete') {
+      return res.status(409).json({
+        error: 'not_complete',
+        message: `Only a Complete project can be archived. This one is ${state.label}.`,
+      });
+    }
+    const now = nowIso();
+    db.transaction(() => {
+      db.prepare('UPDATE projects SET archived_at = ?, updated_at = ? WHERE id = ?').run(now, now, p.id);
+      logActivity(db, p.id, 'archived', {}, now);
+    })();
+    return folderReply(req, res);
+  });
+
+  app.post('/api/projects/:id/unarchive', (req, res) => {
+    const p = projectFor(req, res);
+    if (!p) return;
+    if (!p.archived_at) return folderReply(req, res);
+    const now = nowIso();
+    db.transaction(() => {
+      db.prepare('UPDATE projects SET archived_at = NULL, updated_at = ? WHERE id = ?').run(now, p.id);
+      logActivity(db, p.id, 'unarchived', {}, now);
+    })();
+    return folderReply(req, res);
   });
 
   /* The estimate a project's invoices bill: an accepted one if it has any
@@ -1088,6 +1243,8 @@ function registerProjectRoutes(app, db, opts = {}) {
         message: `${gone.number || 'An invoice'} has gone out, so this project can’t be deleted.`,
       });
     }
+    const held = clientDataHeld(db, p.id);
+    if (held) return res.status(409).json(clientDataRefusal(held, 'This project', 'deleted', ARCHIVE_ADVICE));
     // Estimates (and through them days and rentals), invoices and activity
     // all hang off the project, ON DELETE CASCADE. Sends name their document
     // by id only, so they go first: a waiting one would email a deleted job.
@@ -1105,7 +1262,7 @@ function registerProjectRoutes(app, db, opts = {}) {
 }
 
 module.exports = {
-  registerProjectRoutes, summarize, readFolder, logActivity, todayOf, localToday, isYmd, projectBriefs,
+  registerProjectRoutes, summarize, readFolder, readProjectRows, logActivity, todayOf, localToday, isYmd, projectBriefs,
   // The client's signature (signing.js) accepts through the same pieces.
   acceptEstimate, depositPctFor, invoiceNumbers, cannotInvoice, stageNow,
   // The estimate save that changes a sent quote sends the change (C2, C3).

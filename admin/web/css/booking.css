@@ -168,7 +168,7 @@
 }
 
 .day-hint {
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
 }
 .day-note {
@@ -587,7 +587,7 @@
 }
 .sur-note {
   flex: 1 0 100%;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   line-height: 1.35;
   text-align: right;
   color: var(--muted);
@@ -844,7 +844,7 @@
 /* The surcharge a production line carries, as on its card (owner-only, D8). */
 .onset-note {
   display: block;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-style: normal;
   color: var(--muted);
 }
@@ -1206,7 +1206,7 @@
   border: none;
   color: var(--muted);
   font: inherit;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   text-align: left;
   text-decoration: underline;
   text-decoration-color: var(--muted2);
@@ -1222,7 +1222,7 @@
 .est-vendor {
   display: block;
   margin-top: 2px;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
 }
 

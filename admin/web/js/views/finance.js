@@ -48,7 +48,7 @@ const FinanceView = (() => {
      both screens, and app.js's first-run step asks for 'pricing'. The label is
      what the person reads; the id is what the code asks for. */
   const TABS = [
-    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'dashboard', label: 'Overview' },
     { id: 'pricing', label: 'Rate Card' },
     { id: 'overhead', label: 'Overhead' },
     { id: 'capacity', label: 'Capacity' },

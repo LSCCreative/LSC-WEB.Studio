@@ -24,6 +24,20 @@ const MIME_TYPES = {
    client's grid. */
 const PHOTO_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
 
+/* What a video deliverable may be. Bunny's publish reads the same list. */
+const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.webm', '.m4v']);
+
+/* The absolute path the studio copies out of the UGREEN file manager: the source of
+   the deliverables volume in docker-compose.yml. Anything under it converts to the
+   relative path this folder works in; a `/`-prefixed path that doesn't match is
+   another share, and must fail rather than register the wrong file. */
+const NAS_PATH_PREFIX = '/volume4/LSC Creative_Media/Client Deliverables_Media';
+
+function toRelativeDeliverablePath(raw) {
+  if (raw === NAS_PATH_PREFIX || raw.startsWith(NAS_PATH_PREFIX + '/')) return raw.slice(NAS_PATH_PREFIX.length).replace(/^\/+/, '');
+  return raw.startsWith('/') ? null : raw;
+}
+
 /* A mis-pasted path (the share root instead of one project folder) would
    otherwise mint two tokens for every image on the NAS in one click. */
 const MAX_PHOTOS_PER_FOLDER = 200;
@@ -79,7 +93,7 @@ function createDeliverables(dir) {
   }
 
   /* Whether the folder can be read, and how many project folders it holds:
-     for the editor and the start-up log, never the public /health. Async, so
+     for the start-up log and the checklist's own refusals, never the public /health. Async, so
      a slow share can't hold up other requests. */
   async function health() {
     try {
@@ -92,13 +106,35 @@ function createDeliverables(dir) {
   return { root, resolveDeliverablePath, listDeliverableFolderImages, health };
 }
 
+/* The file down the reply. A read can fail after the stat (the share drops, the
+   file goes), which unhandled would stop the server: before any bytes that's a
+   404, after them the reply is cut. A client leaving (each seek in a video does)
+   lets the file go too, or its descriptor stays open. */
+function sendFile(res, absolutePath, range) {
+  const stream = createReadStream(absolutePath, range);
+  stream.on('error', (err) => {
+    console.warn(`[deliverables] couldn't read a file: ${err.code}`);
+    if (res.headersSent) {
+      res.destroy();
+      return;
+    }
+    for (const name of ['Accept-Ranges', 'Cache-Control', 'Content-Disposition', 'Content-Length', 'Content-Range', 'Last-Modified']) {
+      res.removeHeader(name);
+    }
+    res.status(404).json({ error: 'not_found' });
+  });
+  res.on('close', () => stream.destroy());
+  stream.pipe(res);
+}
+
 /* HTTP Range support (RFC 7233), so a video can seek instead of restarting.
    `downloadable` only changes whether the browser saves or plays the file;
-   the token is the access control either way. */
-function streamFile(req, res, absolutePath, stat, downloadable) {
+   the token is the access control either way. `cacheControl`: a file behind a
+   session passes 'no-store', so signing out leaves no copy to play. */
+function streamFile(req, res, absolutePath, stat, downloadable, { cacheControl = 'private, max-age=3600' } = {}) {
   res.setHeader('Accept-Ranges', 'bytes');
   res.setHeader('Content-Type', contentTypeFor(absolutePath));
-  res.setHeader('Cache-Control', 'private, max-age=3600');
+  res.setHeader('Cache-Control', cacheControl);
   res.setHeader('Last-Modified', stat.mtime.toUTCString());
   res.setHeader('Content-Disposition', downloadable
     ? `attachment; filename="${basename(absolutePath).replace(/"/g, '')}"`
@@ -107,7 +143,7 @@ function streamFile(req, res, absolutePath, stat, downloadable) {
   const range = req.headers.range;
   if (!range) {
     res.setHeader('Content-Length', stat.size);
-    createReadStream(absolutePath).pipe(res);
+    sendFile(res, absolutePath);
     return;
   }
 
@@ -132,7 +168,7 @@ function streamFile(req, res, absolutePath, stat, downloadable) {
   res.status(206);
   res.setHeader('Content-Range', `bytes ${start}-${end}/${stat.size}`);
   res.setHeader('Content-Length', end - start + 1);
-  createReadStream(absolutePath, { start, end }).pipe(res);
+  sendFile(res, absolutePath, { start, end });
 }
 
-module.exports = { createDeliverables, streamFile, MAX_PHOTOS_PER_FOLDER };
+module.exports = { createDeliverables, streamFile, toRelativeDeliverablePath, MAX_PHOTOS_PER_FOLDER, VIDEO_EXTENSIONS, PHOTO_EXTENSIONS };

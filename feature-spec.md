@@ -6,16 +6,16 @@
 ## Feature Name & Goal
 
 **Bunny delivery layer** — the NAS stays the master archive, Bunny becomes the
-client-facing copy, and Client Hub plays/serves from Bunny.
+client-facing copy, and the Client Portal plays/serves from Bunny.
 
 ```
-Desktop widget ──► NAS (master files, client-hub-api holds the Bunny keys)
+Deliverables tab ─► NAS (master files; lsc-admin holds the Bunny keys)
                      │  publish
                      ▼
                Bunny Stream (video, HLS)  +  Bunny Edge Storage (photos, masters)
                      │  CDN
                      ▼
-               Client Hub (review → approve → agreement → final delivery)
+               Client Portal (review → approve → pay → final delivery)
 ```
 
 Why: today clients stream the raw master straight off the office upload link
@@ -46,12 +46,24 @@ off that element's events and `currentTime`:
 1. Pausing before `COMMENT REVISIONS` is clicked shows no timestamp pill.
 2. Clicking `COMMENT REVISIONS` while parked on a frame stamps that frame;
    pausing again while the panel is open re-stamps it; playing clears it.
-3. `SUBMIT REVISION` saves `{text, timestamp}`, leaves the panel open with an
-   empty box, and the video does not reload or jump to 0
-   (`refreshAssetInteraction()` only repaints `#asset-interaction`).
-4. `APPROVE CONTENT` is absent while the revision panel is open.
-5. A video that can't load falls back to the Google Drive card
-   (`state.videoFailed`).
+3. `ADD NOTE` (was `SUBMIT REVISION`) saves `{text, timestamp}` on the server
+   as it's added, leaves the panel open with an empty box, and the video does not
+   reload or jump to 0 (`refreshAssetInteraction()` only repaints
+   `#asset-interaction`). If the save fails, the text stays in the box and the
+   client is told why. A separate `SEND N NOTES TO THE STUDIO` sends every unsent
+   note on the version as one set, after a confirmation that says, on a Final,
+   which revision round it uses and how many are left (merged-admin C4, C5). Once
+   a Final's two rounds are used, `COMMENT REVISIONS` first shows the rounds-used
+   notice (Go back / Continue) inside `#asset-interaction`, so the video is
+   untouched; Continue opens the panel and stamps as in point 2.
+4. `APPROVE CONTENT` is absent while the revision panel or the rounds-used notice
+   is open. `CONFIRM APPROVAL` records the approval on the server against that
+   version (C5); a failure keeps the dialog open and approves nothing.
+5. A video that can't load falls back to the "couldn't be loaded" card
+   (`state.videoFailed`) with Try again, after checking the session: an ended
+   session goes back to sign-in instead. Since merged-admin C2 the card has no
+   Google Drive button: portal replies carry no Drive links, so nothing on the
+   review screen is a download.
 6. Timestamps are accurate to the frame the client is looking at (HLS
    `currentTime` == the same timeline as the source file).
 
@@ -81,55 +93,52 @@ Relevant code today: `renderVideoCanvas` (~L1340), `bindClientAsset`
 - Keep `controlsList="nodownload"`, `disablePictureInPicture`, and the
   context-menu block.
 
-### Linking widget ↔ editor: by NAS path
-Admin project data lives in the admin browser's `localStorage`; the NAS only
-sees published records. So nothing outside the editor can write into an
-asset. The link between "published to Bunny" and "this asset" is the **NAS
-relative path** — the same `deliverablePath` the editor already stores and
-the same key `deliverable_tokens` uses. Publishing is idempotent per path:
-the widget publishes a path, and the editor asking about that same path gets
-the existing result back instantly.
+### Linking: by deliverable version (re-planned 2026-11-07, merge task B1)
+Since the merge, projects, deliverables and their versions live on the server
+(merge task R1). A Bunny row belongs to one **deliverable version**; the NAS
+relative path is only where its file came from. Publishing is a server action
+on that version, idempotent per version and kind. (The old "link by NAS path"
+rule existed only because projects lived in one browser's `localStorage`.)
 
-### NAS API (`nas/client-hub-api`)
-- New `src/bunny.js`: the only file that talks to Bunny. Native `fetch`, no
-  SDK, no new npm deps.
-- New table `bunny_assets` (`relative_path`, `kind` video|photo|master,
-  `bunny_video_id` / `storage_path`, `collection_id`, `status`,
-  `error`, timestamps; UNIQUE on `relative_path, kind`). Plus
-  `bunny_collections` (project folder name → Stream collection id).
-- Video publish = Stream **fetch-from-URL**: the NAS mints (or reuses) the
-  existing `/hub/files/<token>` URL and Bunny pulls it. No upload code, no
-  laptop has to stay awake. Fall back to a server-side PUT/TUS only if fetch
-  turns out not to support collections or hits limits (check the OpenAPI
-  at `https://video.bunnycdn.com/openapi/bunnynet-video-api.public.json`
-  before coding).
-- One Stream collection per project, named after the top-level NAS project
-  folder.
+### Server (`admin/server`, the merged `lsc-admin` container)
+- `src/hub/bunny.js`: the only file that talks to Bunny. Native `fetch`, no
+  SDK, no new npm deps. Publishing logic moves to `src/bunny-publish.js`.
+- `bunny_assets` keyed by `(version_id, kind)` (kind video|photo|master), with
+  project, item, source path/size/mtime, `bunny_video_id` / `storage_path`,
+  `collection_id`, `status`, `error`, progress, timestamps.
+  `bunny_collections` keyed by `project_id`.
+- Admin routes under `/api` behind billing's `requireAuth` (the hub PIN
+  retires in R3). The webhook and the source route live on `hub-api`.
+- Video publish = Stream **fetch-from-URL**: Bunny pulls a short-lived signed
+  `/hub/source/…` URL (no new permanent `/hub/files/` tokens). No upload code,
+  no laptop has to stay awake.
+- One Stream collection per project, named `<projectId> <project name>`
+  (a UPID can be empty or change).
 - Photos and video masters → Edge Storage via `PUT`, streamed from the
-  read-only deliverables mount at `/<project folder>/<file path>`.
-- Status: Stream webhook (`POST /hub/bunny-webhook`, HMAC-SHA256 over the
-  raw body with the library's read-only key, constant-time compare) plus a
-  polling route for the editor and the widget.
+  read-only deliverables mount to `/<projectId>/<itemId>/<versionId>/<file>`.
+- Status: Stream webhook (`POST /hub/bunny-webhook`, raw body, mounted before
+  any JSON parser per merge safeguard S20, HMAC-SHA256 with the library's
+  read-only key, constant-time compare) plus a polling route.
 - The deliverables mount stays **read-only**. The NAS never writes media.
 
-### Client Hub data model
-Video asset gains `bunnyVideoId`, `posterLink`, `publishStatus`.
-`reviewLink` becomes the Bunny HLS URL, and `downloadLink` the Edge Storage
-master URL. Photos keep `{name, reviewLink, downloadLink}`, where
-`reviewLink` is the CDN URL without size params (the UI adds them).
-`buildPublishedRecord` whitelist and the `loadProjects` normaliser must carry
-the new fields.
+### Portal data
+The server builds media URLs when it answers instead of storing them in the
+record: a Bunny version gets `review: { type:'hls', url, poster }`, photos
+`{ name, review, download }`, and a download only where the server-side gate
+allows it. Versions without a Bunny row keep their NAS links.
 
 ### Photos
-Bunny Optimizer on the storage pull zone: grid `?width=600`, lightbox
-`?width=2400`, download = original. Replaces CSS-scaled full-size JPGs.
+No Bunny Optimizer (user, 2026-11-07). The server makes a grid size (~600px)
+and a lightbox size (~2400px) with `sharp` at publish and stores them beside
+the untouched original, which stays the download. Replaces CSS-scaled
+full-size JPGs.
 
 ### Security (late slice)
-Token authentication on both pull zones. Records store **unsigned** Bunny
-URLs; `GET /hub/records/:projectId` signs them on the way out (HLS needs a
+Token authentication on both pull zones. The DB stores **unsigned** Bunny
+URLs; the portal's project reply signs them on the way out (HLS needs a
 directory/path token so every segment under `/<videoId>/` is covered).
-Gated downloads (`gated !== false` and no signed agreement) are **omitted
-server-side**, not just hidden in the UI. Long enough TTL for a review
+Downloads the server-side gate refuses (Draft Cuts always; later the payment
+unlock rule, merge task F3) are **omitted server-side**, not just hidden. Long enough TTL for a review
 session. On a 403 mid-session the player re-fetches the record and resumes
 at the same `currentTime`.
 
@@ -137,8 +146,18 @@ at the same `currentTime`.
 macOS menu-bar app (SwiftUI `MenuBarExtra`) in a new `desktop-publisher/`
 folder. Drag a file/folder on → if it's not already on the mounted NAS share,
 copy it into the chosen project folder there first → call the publish route
-→ show progress → copy the NAS path to the clipboard for the editor. Logs in
-with the existing admin email + PIN (`/hub/admin-auth`). Holds no Bunny key.
+→ add it as a new version of the chosen deliverable → publish → show
+progress. Logs in with the billing account. Holds no Bunny key. Slice 10
+is still wanted (user, 2026-11-07).
+
+### Cleanup
+Only objects no client reply refers to are removed (replaced versions after
+the retention window, deleted projects). The current version of every
+deliverable stays, including on archived projects shown under Past projects.
+A manual **Take offline** button on an archived project removes its Bunny
+files on purpose; its hover (and focus, and the confirm dialog) explains what
+that means. The client sees the files as offline under Past projects, and
+**Bring back online** republishes from the NAS.
 
 ### Secrets
 Bunny keys live in a 1Password Environment and the NAS `.env` only:

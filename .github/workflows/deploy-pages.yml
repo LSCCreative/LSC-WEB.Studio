@@ -25,6 +25,11 @@ jobs:
 
       # Allow-list: only these paths reach the public site. Docs, planning files and
       # nas/ stay out. A new public file or folder has to be added here to go live.
+      # The portal's design tokens and their fonts come from the admin at deploy (C2),
+      # so the two products share one file. scripts/ itself is never published.
+      - name: Copy the design tokens into the portal
+        run: sh scripts/copy-portal-tokens.sh
+
       - name: Copy public site files
         run: |
           mkdir _site

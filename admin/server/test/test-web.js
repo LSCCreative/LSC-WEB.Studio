@@ -187,7 +187,7 @@ test('only the folders the pages need are served', async () => {
 
 test('the portal’s hostname serves none of the admin (S4)', async () => {
   const hub = await start({ hub: {
-    signingSecret: 'test-signing-secret', adminEmail: 'owner@lsc.example', adminPinHash: sha('4821'),
+    signingSecret: 'test-signing-secret',
     corsOrigins: ['https://lsccreative.studio'], publicBaseUrl: `https://${HUB_HOST}`,
     deliverablesDir: TMP, backupDir: path.join(TMP, 'backups'), bunny: {},
   } });

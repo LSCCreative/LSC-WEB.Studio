@@ -17,6 +17,9 @@ const { registerCalendarRoutes } = require('./routes/calendar');
 const { registerHolidayRoutes } = require('./routes/holidays');
 const { registerSetupRoutes } = require('./routes/setup');
 const { registerProjectRoutes } = require('./routes/projects');
+const { registerDeliverableRoutes } = require('./routes/deliverables');
+const { registerHubImportRoutes } = require('./routes/hub-import');
+const { registerNeedsRoutes } = require('./routes/needs');
 const { registerInvoiceRoutes } = require('./routes/invoices');
 const { registerPublicRoutes, rateLimit, clientIp } = require('./routes/public');
 const { registerEmailRoutes, registerSendRoutes } = require('./routes/email');
@@ -24,6 +27,8 @@ const { registerRecoveryRoutes, registerAccountRoutes } = require('./routes/acco
 const { registerGoogleOAuthRoutes, registerGoogleRoutes } = require('./routes/google');
 const { createGoogleSync } = require('./google-sync');
 const { createMailer } = require('./mail');
+const { notesSubmitted } = require('./owner-notices');
+const { createDeemedReminders } = require('./deemed-reminders');
 const { createOutbox } = require('./sends');
 const { createHnry } = require('./hnry');
 const { createHnryPusher } = require('./hnry-push');
@@ -101,18 +106,19 @@ function portalHostOnly(portalHost) {
 }
 
 /**
- * The Client Portal's routes, or a 503 for them when its secrets aren't set:
- * billing still starts without them, saying why. Setting only one of the two
- * is a mistake, so that stops the server instead.
+ * The Client Portal's routes, or a 503 for them when its secret isn't set:
+ * billing still starts without it, saying why.
  */
-function buildPortal(db, hub) {
+function buildPortal(db, hub, appUrl, hooks = {}) {
   if (!hub) return null;
-  if (!hub.signingSecret && !hub.adminPinHash) {
-    console.warn('[hub] HUB_SIGNING_SECRET and HUB_ADMIN_PIN_HASH aren\'t set, so the Client Portal\'s /hub routes answer 503');
+  if (!hub.signingSecret) {
+    console.warn('[hub] HUB_SIGNING_SECRET isn\'t set, so the Client Portal\'s /hub routes answer 503');
     return null;
   }
   // Billing's limiter and client address, so both halves count and record visitors alike.
-  const portal = createHubRouter(db, { rateLimit, clientIp, ...hub });
+  const portal = createHubRouter(db, {
+    rateLimit, clientIp, cookieSecure: config.cookieSecure, ...hub, requireAdmin: requireAuth(db), appUrl, ...hooks,
+  });
   portal.deliverablesHealth().then((h) => {
     if (!h.ok) console.warn(`[hub] the deliverables folder can't be read (${h.error}); file links and publishing will fail`);
   });
@@ -141,7 +147,13 @@ function createApp(db, opts = {}) {
   // The Client Portal (merge task M3). Tests pass their own settings, or get
   // the 503 stub: a test never reads the developer's real hub settings.
   const hub = opts.hub !== undefined ? opts.hub : (config.isTest ? null : config.hub);
-  const portal = buildPortal(db, hub);
+  // The client's quote and invoice pages, which the portal links to (C3).
+  // The studio's emails about what a client did go through the mailer built further down, so they look it up when they fire.
+  const portal = buildPortal(db, hub, appUrlOf(opts.appUrl !== undefined ? opts.appUrl : config.appUrl), {
+    onNotesSubmitted: (ev) => notesSubmitted(db, {
+      mailer: app.locals.mailer, appUrl: appUrlOf(opts.appUrl !== undefined ? opts.appUrl : config.appUrl),
+    }, ev),
+  });
 
   app.use(portalHostOnly(hub ? hostnameOf(hub.publicBaseUrl) : ''));
   app.use(createCors(config.corsOrigins, (hub || config.hub).corsOrigins || []));
@@ -153,6 +165,8 @@ function createApp(db, opts = {}) {
   if (portal) app.use(portal);
   else app.use('/hub', (_req, res) => res.status(503).json({ error: 'portal not set up' }));
 
+  // A browser's list of hub projects holds signature images (R4). Only behind the login.
+  app.use('/api/setup/hub-import', requireAuth(db), express.json({ limit: '8mb' }));
   app.use(express.json({ limit: '2mb' }));
 
   // The admin's pages (merge task M4), built here so a missing web/ or a copy
@@ -182,6 +196,12 @@ function createApp(db, opts = {}) {
   });
   app.locals.outbox = outbox;
   app.locals.mailer = mailer;
+  // The client's reminder before a deemed approval (C7): started with the send queue (index.js).
+  app.locals.deemedReminders = createDeemedReminders(db, {
+    mailer,
+    appUrl: appUrlOf(opts.appUrl !== undefined ? opts.appUrl : config.appUrl),
+    portalUrl: (hub && hub.signingSecret && ((hub && hub.portalUrl) || config.hub.portalUrl)) || '',
+  });
 
   // Hnry (hnry-invoicing): an accepted project's deposit or single invoice is
   // pushed there as a draft, after the accept commits and in the background.
@@ -278,7 +298,10 @@ function createApp(db, opts = {}) {
     render: opts.renderPdf,
     appUrl: opts.appUrl !== undefined ? opts.appUrl : config.appUrl,
   });
-  registerClientRoutes(app, db);
+  // Client codes are kept under the portal's secret, so the studio issues them only where the portal runs.
+  registerClientRoutes(app, db, {
+    portal: { secret: hub ? hub.signingSecret : '', url: (hub && hub.portalUrl) || config.hub.portalUrl },
+  });
   registerPricingRoutes(app, db);
   registerSettingsRoutes(app, db);
   registerOverheadRoutes(app, db);
@@ -292,6 +315,18 @@ function createApp(db, opts = {}) {
   // the app sends through …/send, whose checks they don't share.
   const stageD = { markSent: opts.markSentRoutes !== undefined ? opts.markSentRoutes : config.isTest };
   registerProjectRoutes(app, db, { ...stageD, hnryPush });
+  registerDeliverableRoutes(app, db, {
+    deliverablesDir: opts.deliverablesDir || (hub || config.hub).deliverablesDir,
+    // The portal invite carries a Client code, so it's sent from the request that issues it (portal-invite.js).
+    portal: {
+      portalSecret: hub ? hub.signingSecret : '',
+      portalUrl: (hub && hub.portalUrl) || config.hub.portalUrl,
+      appUrl: appUrlOf(opts.appUrl !== undefined ? opts.appUrl : config.appUrl),
+      mailer,
+    },
+  });
+  registerHubImportRoutes(app, db);
+  registerNeedsRoutes(app, db);
   registerInvoiceRoutes(app, db, { ...stageD, hnryPush });
   registerSendRoutes(app, db, { outbox });
   registerGoogleRoutes(app, db, { oauth, sync: googleSync });

@@ -461,7 +461,7 @@
 }
 .lab-unit {
   margin-top: 3px;
-  font-size: 10.5px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
 }
 /* The line's unit, switchable (estimate-editor.js switchUnit): the Rate Card's
@@ -474,7 +474,7 @@
   border: 1px solid var(--input-border);
   color: var(--text);
   font-family: var(--font-family-body);
-  font-size: 10.5px;
+  font-size: var(--font-size-xs);
   padding: 2px 4px;
   outline: none;
   cursor: pointer;
@@ -524,7 +524,7 @@
 /* Were inline styles. The Take-Home note used --muted2 (1.67:1); --muted is
    6.15:1 on --bg. The accent labels read --accent-text (a11y.css). */
 .sum-label-note {
-  font-size: 9px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
 }
 .field label.label-accent,

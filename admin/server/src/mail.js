@@ -451,6 +451,132 @@ function callSheetEmail(v) {
   return { subject, text, html };
 }
 
+/**
+ * The client's invitation to the Client Portal (merged-admin C6): the link that
+ * opens their sign-in and their Client code, which is the only way it reaches
+ * them (the server keeps only a hash). It says what is waiting, never more than
+ * the project's name: a first cut, a Final, or nothing yet (an invite sent by hand
+ * before anything was published).
+ *
+ * @param {{business:object, appUrl:string, contactName?:string, email:string,
+ *          projectName?:string, upid?:string, shown?:'draft'|'final'|null,
+ *          code:string, link:string}} v
+ */
+function portalInviteEmail(v) {
+  const b = businessOf(v);
+  const business = b.name;
+  const hello = v.contactName ? `Hi ${v.contactName},` : 'Hi,';
+  const project = v.projectName || 'your project';
+  const what = v.shown === 'draft'
+    ? `${business} has put ${v.projectName ? `the first cut of ${v.projectName}` : 'the first cut of your project'} in your Client Portal, where you can watch it, leave notes and approve it.`
+    : v.shown === 'final'
+      ? `${business} has put ${project} in your Client Portal, where you can review it, leave notes and approve it.`
+      : `${business} has set up your Client Portal for ${project}. Nothing is up for review yet: when it is, you’ll find it there to review, leave notes on and approve.`;
+  const lines = [
+    hello,
+    what,
+    `Sign in with this email address (${v.email}) and your Client code: ${v.code}`,
+    'Keep this email: the code is how you get back in.',
+  ];
+  const button = 'Open your Client Portal';
+  return {
+    subject: `Your Client Portal${v.projectName ? `: ${v.projectName}` : ''} · ${business}`,
+    text: `${lines.join('\n\n')}\n\n${button}: ${v.link}\n\n${business}`,
+    html: shell({
+      heading: 'Your Client Portal',
+      sub: line(v.projectName, v.upid),
+      bodyHtml: lines.map((l) => `<p style="margin:0 0 14px">${esc(l)}</p>`).join(''),
+      button: { label: button, url: v.link },
+      business: b,
+      appUrl: v.appUrl,
+    }),
+  };
+}
+
+/**
+ * The owner's notice that a client sent a set of notes (C6). It says what was
+ * sent and, on a Final, which revision round it used, so the studio knows whether
+ * more is billable.
+ *
+ * @param {{business:object, appUrl:string, clientName:string, projectName?:string,
+ *          upid?:string, itemTitle:string, versionN:number, stage:'draft'|'final',
+ *          noteCount:number, round?:number, included?:number, link:string}} v
+ *          `round`: this set's number among the Final's rounds (Finals only)
+ */
+function notesSubmittedEmail(v) {
+  const n = Number(v.noteCount) || 0;
+  const what = `${n} note${n === 1 ? '' : 's'}`;
+  const final = v.stage === 'final';
+  const lines = [
+    `${v.clientName || 'The client'} sent ${what} on v${v.versionN} of “${v.itemTitle}”${final ? ', the Final' : ', a Draft Cut'}${v.projectName ? ` (${v.projectName})` : ''}.`,
+  ];
+  if (final) {
+    const over = Number(v.round) > Number(v.included);
+    lines.push(over
+      ? `This is revision round ${v.round}, past the ${v.included} included, so it is billable at the hourly rate.`
+      : `This is revision round ${v.round} of the ${v.included} included.`);
+  } else {
+    lines.push('A Draft Cut’s notes don’t use a revision round.');
+  }
+  lines.push(final ? 'The Final waits for a new version.' : 'The draft waits for a new version.');
+  // No link when the server doesn't know its own address (APP_URL unset): the notice still goes.
+  const button = 'Open the project';
+  return {
+    subject: `${v.clientName || 'Client'} sent ${what}${v.itemTitle ? `: ${v.itemTitle}` : ''}${v.upid ? ` (${v.upid})` : ''}`,
+    text: `${lines.join('\n\n')}${v.link ? `\n\n${button}: ${v.link}` : ''}`,
+    html: shell({
+      heading: `${v.clientName || 'The client'} sent ${what}`,
+      sub: line(v.projectName, v.upid),
+      bodyHtml: lines.map((l) => `<p style="margin:0 0 14px">${esc(l)}</p>`).join(''),
+      button: v.link ? { label: button, url: v.link } : null,
+      business: businessOf(v),
+      appUrl: v.appUrl,
+      owner: true,
+    }),
+  };
+}
+
+/* 'YYYY-MM-DD' as "Monday 21 December", read in UTC so no timezone moves the day. */
+const longDay = (ymd) => {
+  const d = new Date(String(ymd || '') + 'T00:00:00Z');
+  return Number.isNaN(d.getTime()) ? String(ymd || '') : d.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+};
+
+/**
+ * The client's reminder before a Final is deemed approved (merged-admin C7;
+ * contract clause 4). It says what is waiting and since when, the last day for
+ * notes, and what happens after it: the studio may then record it as approved.
+ * It goes only while the client hasn't answered (deemed-reminders.js).
+ *
+ * @param {{business:object, appUrl:string, contactName?:string, projectName?:string,
+ *          upid?:string, itemTitle:string, versionN:number, publishedOn:string,
+ *          lastDay:string, link:string}} v  days are 'YYYY-MM-DD' (Sydney)
+ */
+function deemedReminderEmail(v) {
+  const b = businessOf(v);
+  const business = b.name;
+  const item = `the final of “${v.itemTitle || 'your deliverable'}” (v${v.versionN})`;
+  const lines = [
+    v.contactName ? `Hi ${v.contactName},` : 'Hi,',
+    `${item}${v.projectName ? ` for ${v.projectName}` : ''} has been in your Client Portal since ${longDay(v.publishedOn)}, and we haven’t had your notes or approval yet.`,
+    `If you’d like changes, please send your notes by the end of ${longDay(v.lastDay)}. If we don’t hear from you by then, it will be taken as approved, as our agreement sets out (14 business days from delivery).`,
+    'If you’re happy with it, you can approve it in the portal now.',
+  ];
+  const button = 'Open your Client Portal';
+  return {
+    subject: `Reminder: ${v.itemTitle || 'your final'} is waiting for your review · ${business}`,
+    text: `${lines.join('\n\n')}\n\n${button}: ${v.link}\n\n${business}`,
+    html: shell({
+      heading: 'Waiting for your review',
+      sub: line(v.projectName, v.upid),
+      bodyHtml: lines.map((l) => `<p style="margin:0 0 14px">${esc(l)}</p>`).join(''),
+      button: { label: button, url: v.link },
+      business: b,
+      appUrl: v.appUrl,
+    }),
+  };
+}
+
 /** Settings → Email's "Send a test email": in the clients' dress, footer and
     all, since checking how they see it is what it's for. */
 function testEmail(v = {}) {
@@ -496,4 +622,5 @@ function passwordResetEmail(v) {
 module.exports = {
   createMailer, isEmail, NOT_CONFIGURED, logoUrlOf,
   documentEmail, ownerSignedEmail, signedCopyEmail, testEmail, passwordResetEmail, callSheetEmail,
+  portalInviteEmail, notesSubmittedEmail, deemedReminderEmail,
 };

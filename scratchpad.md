@@ -3,7 +3,7 @@
 > High-frequency memory zone. Wiped clean when the current feature merges to
 > main. Keep this brutally current — overwrite, don't append history.
 
-## BUILD: merged admin + paid delivery. On branch `merged-admin`, P1-P4 and M1-M5 done, M6 prep done
+## BUILD: merged admin + paid delivery. On branch `merged-admin`, P1-P4 and M1-M6 done, live
 
 **M3 done 2026-11-06 (local, not pushed).** The portal is mounted in billing's `app.js`: trust proxy always 1
 hop; `hub-api` serves `/hub/*` and `/health` only (Host header); billing's CORS skips `/hub` and ignores portal
@@ -43,9 +43,201 @@ note is the live state). Prep done on the NAS from local `a0c2baa`: `/volume4/ls
 compose (`lsc-admin`, `127.0.0.1:8098`, `LSC_ADMIN_DATA` override), `.env` built NAS-side (20 names), image
 `lsc-admin:latest` built, full rehearsal on live copies 17/17 checks + PDF + 28/31 tokens (deleted after).
 Old containers untouched and healthy. Pushed; draft PR LSCCreative/LSC-WEB.Studio#1. Waiting on the user:
-P5 and P6 done 2026-11-07 (Maps values in the NAS `.env`, `app` redirect URI in Google). Pre-cutover review fixed (`21aba29`, 949/949; NAS image rebuilt, re-rehearsed 20/20). **Cut over 2026-11-07 19:43: live on `lsc-admin`, C1-C8 passed** (log in CUTOVER.md). Left: C9 (push, merge PR #1 with the user's OK, `gh workflow disable` on lsc-billing-app), then the Afterwards list.
+P5 and P6 done 2026-11-07 (Maps values in the NAS `.env`, `app` redirect URI in Google). Pre-cutover review fixed (`21aba29`, 949/949; NAS image rebuilt, re-rehearsed 20/20). **Cut over 2026-11-07 19:43: live on `lsc-admin`, C1-C8 passed** (log in CUTOVER.md). C9 done: PR #1 merged as `dc6eac3` (site deploy ok, `/admin/` not published), lsc-billing-app's Pages workflow disabled. **M6 done.** Afterwards (CUTOVER.md): remove `CORS_ORIGINS` on 2026-11-14; old containers out after 2026-11-21 on the user's OK; repoint any hub `/health` monitor; ssh config + router reservation; `db.productiondecks.online` route still on .45.
 
-**Next: M6 cutover (C1-C9) | Model: Opus 5.5 | Effort: High.** [USER + API].
+**B1 done 2026-11-07: plan approved by the user and committed.** `buildplan.md` Slices
+2-12 rewritten and `feature-spec.md`'s Decisions updated (not committed). Main changes: Bunny rows belong to a
+deliverable version (R1), not a NAS path; admin publish/status move to `/api` behind billing's login; the server
+builds (and in Slice 9 signs) media URLs when it answers; collections/storage paths use `projects.id`, not UPIDs or
+folder names; Bunny pulls a 6h signed `/hub/source/` URL, not a permanent `/hub/files/` token; the webhook mounts
+in the raw-body slot (S20) with a regression test; Slice 11 removes only what no client reply refers to, so Past
+projects keep their files. User decisions 2026-11-07, now in the plan: no Bunny Optimizer (Slice 6 makes sizes with `sharp`;
+ask before falling back to originals if it won't build on the NAS); add a manual Take offline button for archived
+projects, explained on hover, focus and in the confirm dialog, with Bring back online (Slice 11); the desktop
+widget is still wanted (Slice 10). **Order:** Slice 2 needs R1, R3, C1, C2, so per TASKS.md the next build task after B1 is **L1**,
+not B2.
+
+**L1 done 2026-11-07: look signed off by the user, ticked and committed.**
+- `admin/web/css/tokens.css` = `.design/merged-admin/tokens.css`. Funnel Sans added as
+  `web/fonts/FunnelSans-Variable.woff2` (from the installed TTF; licence read from the font: OFL 1.1).
+- `app.css`: buttons are mono caps from `--btn-*`, plain `.btn` is an outline, new `.btn-confirm`
+  (sage, not yet used: Approve/Confirm arrive with the portal work). All text fields and dropdowns
+  take `--input-radius` through one `:where()` rule. `.stage-chip` gets 8px corners.
+- All 30 sizes under 11px raised to `--font-size-xs`. The five `border-radius: 0` rules are deliberate
+  (pencilled dot, rail tabs, flat sub-sections) and stay.
+- Checked on the scratch admin: 11 screens at 1280/768/375, no page or button overflow. Calendar:
+  Confirmed sage fill vs Proposed warm-grey shorter tile, distinct. `web/c/` quote page: computed
+  styles identical old vs new on all 89 elements. 949 server tests pass.
+- Scratch DB now holds a sample project `L1-TEST` (sent by link) for later visual checks.
+
+**L2 done 2026-11-07 (not committed when written).** New `admin/web/js/shell.js` (`LSCShell`: AREAS, set,
+title, setUser, bind) and `css/shell.css` (phone first). Header = wordmark + two area tabs (manual
+activation) + account menu (declarative `LSCMenu`: Settings, Sign out). `#app-subnav` = the area's numbered
+pages, not sticky, so every 52px sticky offset still holds. Titles "<Page> — <Area>"; login card "Scope &
+Sales"; Finance tab + heading "Overview" (route id still `dashboard`). Old `#hdr-right`/compact menu and their
+CSS removed from app.css/responsive.css/app.js. Checked on the scratch admin at 1280/768/375; guard asks on
+tab, page, wordmark, sign-out; keyboard sign-out and sign back in land on the asked page. 949/949.
+`#/pipeline` + the `?stage=` redirects moved to L3 (noted in TASKS.md L3).
+Trap: a scripted `.click()` on an open menu item does nothing (the browser's re-entrant click rule); test
+menus with real clicks or keys.
+
+**L3 done 2026-11-07 (not committed when written).** Pipeline/Live split: one `ProjectsView` with `MODES`;
+server `stage=pipeline|live`; redirects per IA except `accepted|invoiced` keep their chip (Live's own
+addresses). `ProjectCard.placeOf(project)` + `LSCShell.placeProject(id, place)` decide the tab and Back crumb
+from state (folder and invoice screens call it; `projectPlace(id)` carries it to estimate/call-sheet screens).
+Review fixes (same day): list subtitle counts the whole list (sum of one-stage chips, so Pipeline's
+Declined is in it); a card click notes its place first (`LSCShell.notePlace`) and estimate screens place
+themselves on a deep link; folder Back uses `ProjectCard.backOf` (the list or client page one Back away,
+via `LSCRouter.behindPath()`, else placeOf); old `?stage=` redirects keep `q`; server lists are one
+`LISTS` map; new test with real accepted/invoiced/paid projects. Bare old `#/projects` now means Live
+by design (it is Live's address). Tests 950/950.
+Trap: a local `const next` in `show()` shadowed the module's paging cursor; the preview server keeps old
+API code until restarted (`preview_stop` then start). Test post-acceptance pages by patching `LSCApi.get`.
+
+**L4 done 2026-11-08 (not committed when written).** Every delete asks `clientDataHeld` (`src/projects.js`,
+`CLIENT_DATA`: records, private_auth, agreement_evidence): project delete, last-estimate delete, setup merge
+-> 409 `has_client_data`; client with projects -> 409 `has_projects`. R1/R3 must add their tables to
+`CLIENT_DATA`; reword `clientDataRefusal` to point at Archive once R2 lands.
+**L1-L4 review fixed 2026-11-08 (not committed):** one refusal helper (`clientDataRefusal(held, subject, verb,
+advice)`) for delete and merge, lookups prepared once per db; merge refusal tested; `/hub/publish` now 404s
+`unknown_project` unless `record.id` is a billing `projects.id` (the guard looks there; the old client-hub-app
+publishes its own ids, so it can no longer publish; live hub never had records). Client page titled
+"<Name> — Clients"; its Delete explains at once when the client has projects; a deleted project returns where
+Back would. Root CLAUDE.md's responsive rules now name the marketing site only. 952/952; checked in the browser.
+
+**R1 done 2026-11-08 (not committed when written).** Migration v22 (`src/migrations/v22-deliverables.js`):
+`deliverables` (checklist items: title, format, duration, quote line, `stage` draft|final, `not_needed_at`) and
+`deliverable_versions` (numbered per item, own stage, `source_path`, `published_at`; Bunny and C5 approvals hang
+off a version), neither cascading from projects; projects gain `archived_at`, `no_deliverables_at`,
+`payment_required` (0). v22 marks every already fully paid project `no_deliverables_at` once (IA: Complete at
+import), so R4 needn't. `src/delivery.js`: `acceptEstimate` (both accept paths) links the client (project's, then
+the quote's record, then match by email, then business name, else create from the quote; a quote with neither
+stays without) and makes one item per quoted deliverable ("3 × Cut-down" = "Cut-down (1 of 3)".., max 50 a line),
+once; activity detail gains `checklist` and `client`. `deliveryState()` is the IA table (Archived checked before
+Live rows; empty checklist asks `checklist_empty` and never completes unless `no_deliverables_at`; payment off =
+approval completes; payment claimed / downloads locked read future columns, absent today; flags `no_upid`,
+`no_agreement`, `payment_required`). Folder reply: `project.delivery` + `deliverables`. `deliverables` added to
+`CLIENT_DATA`. Mark accepted can't accept a project with no UPID (invoice numbers), so "No UPID" only arises via
+signing; covered in the state tests. Old accepted projects with no client still get theirs in R4.
+R1 review fixed (same day): matching folds in JS like the editor (accents); two clients sharing an email are
+told apart by business name, else the oldest + activity `clientNote: shared_email`; a name match fills a missing
+client email, or keeps its own and notes `email_differs`; a new client is named business || contact || email;
+scheduled final counts as sent; the quote is loaded once after `confirmDays` and is the invoices' snapshot;
+CLIENT_DATA rows carry their own reason (a checklist: "Accepted work stays on record…"); ROADMAP updated.
+959/959; scratch admin migrated v21→v22 (backup taken), folder page clean.
+
+**R2 done 2026-11-08 (not committed when written).** Schema v23 (emails normalised). `src/clients.js`: one spelling, one holder
+(409 `email_taken`; existing shared pairs stay, warned on Client details), login moves with the email. Lists read `project.delivery`
+(`deliveryReader`): Live = state model's group; `in-production`, `in-review`, `revisions`, `payment-due`, `current`, `complete`, `archived`.
+Screens: client list search (project names, UPIDs), `#/clients/<id>/projects|details|invoices`, Archive/Unarchive, `js/subtabs.js`.
+`test-client-record.js` 10/10. Checked in a real browser on scratch admin at desktop and 375: tabs by keyboard, unsaved guard between tabs,
+archive focus, invoice table stacked, deep links, unknown client, unknown tab. Scratch DB now holds the R2 sample clients (ids `cl_r2*`) at v23.
+Decisions to confirm are under R2 in TASKS.md.
+
+**R3 done 2026-11-08 (not committed when written).** Schema v24. Accepted projects are four tabs, `ProjectFolder` + `project-deliverables.js`;
+checklist, stage, versions and publish in `routes/deliverables.js`. PIN and hub editor routes gone; `/hub/publish-asset|status` behind billing's
+login until Slice 2. 978+ tests. Checked on the scratch admin at desktop and 375: refusals beside the path field, publish dialog, stage flip, preview,
+archive from the header, acceptance moving into the tabs, invoice Back to Payments, a hostile signer name rendered as text. Launch configs gained
+`DELIVERABLES_DIR=/tmp/lsc-admin-scratch/deliverables`. Not checked: a real video playing in the preview (no small sample here; the error branch ran,
+the Range route is tested), a day's Travel view link (scratch has no trips). Decisions to confirm are under R3 in TASKS.md.
+
+R3 review fixed (same day, 10 findings): `streamFile` survives a failed read and lets a file go when the client leaves; `folderBack` only goes to a tab; a
+deliverable counts as with the client from its first published version; adding an item clears "none expected"; publish says when the NAS is away; archived
+projects are read-only on screen; a save keeps what's half-typed in the other forms; photo preview no longer lists per image; the real login on the Bunny
+routes is tested and settings can't replace it.
+
+**R4 done 2026-11-20 (not committed; R3 isn't committed either: last commit is R2).** Schema v25, `src/hub/adopt.js`,
+`routes/hub-import.js`, screen `#/setup/hub-import` reached from Settings → Old hub. Details and calls to confirm under R4
+in TASKS.md. This session finished what an earlier session left: wired the screen in (script tag, route, Settings section,
+CSS), added `POST …/restore` (Bring back), the Documents "From the old hub" panel, fixed a 503-not-404 test setup, a
+double change handler, the list forgetting imported projects when nothing is pasted, and phone overflow. Review fixes (same day): "Paste another list" reloads the server list; Bring back hands a browser-only copy back to the page; "New client" only reuses a same-named client with no other address; duplicate decisions are a 400; v25 carries a frozen copy of clientForAcceptance instead of calling live code. 1009/1009.
+Scratch admin at `/tmp/lsc-admin-scratch` was re-seeded (it had been wiped): dev account, clients `cl_acme`, `cl_b1`/`cl_b2`
+(shared email), and two imported test hub projects.
+Trap: the import screen's unsaved guard (a list held only in the page) silently reverts a scripted hash change; test other
+pages in a new tab.
+
+**R5 done 2026-11-20 (committed 2026-11-24; R3 and R4 are in `ba3c15a`).** v26 `projects.opened_at`, `src/needs.js`, `GET /api/needs`, `web/js/needs.js`
+(header count + Dashboard card). Later tasks add kinds in `readNeeds` (KINDS lists the IA order). Details and calls under R5 in TASKS.md. 1019 tests.
+
+**Branch review fixes 2026-11-24 (committed).** `/code-review` of merged-admin vs main: 4 important fixed. (1) v25 reads the
+accepted quote first, not the newest one (v25 hasn't run on live yet). (2) Only `GET /api/projects/:id?open=1` (the project page's
+first load) stamps `opened_at`, and only with a valid `today`; Settings' agreement preview and the page's refresh no longer clear
+"New project". (3) Add-version and publish re-read the item, version and archive state inside their write, after the NAS wait
+(not reachable by a test today: the success path has no real await; it matters once Bunny's fetch sits in publish). (4) Reopen
+deletes checklist items with no version and no hub_status (activity `checklistCleared`), so the next acceptance builds from the
+quote. Left as reported: imported `accepted_at` unvalidated, Drive link editable on a published version. 1020/1020.
+
+**C1 done 2026-11-24 (not committed).** v27 `client_logins` + `client_sessions`; `src/portal-access.js`, `src/hub/views.js`; portal
+routes `/hub/auth` (cookie `lsc_portal`), `/hub/invite`, `/hub/session`, `/hub/sign-out`, `/hub/projects[/:id]`; studio
+`GET|POST /api/clients/:id/portal`. Details and calls to confirm under C1 in TASKS.md. 1032/1032; leak test proven by a planted leak.
+**C2 done 2026-11-24 (not committed).** Portal page rewritten on the tokens and C1's session; admin code gone; new
+`GET /hub/projects/:id/versions/:versionId/review` plays published versions from the NAS (user's call). Details, calls and what
+wasn't checked (Safari, iPhone, HLS) under C2 in TASKS.md. 1039/1039.
+**To run the portal locally:** `sh scripts/copy-portal-tokens.sh`, then launch configs `portal-api` (8090, scratch db, throwaway
+`HUB_SIGNING_SECRET`) and `lsc-static` (8734); open `http://127.0.0.1:8734/client-hub-app/` (127.0.0.1:8090 is the portal-only host,
+localhost:8090 stays the admin). Scratch client `c2-tester@example.test` has a published video and three stills under
+`/tmp/lsc-admin-scratch/deliverables/C2Test`; issue it a new code with `createPortalAccess(db,{secret}).issue(id)` (C6 builds the button).
+**For C3:** the page opens one project (`openProjects` picks invite's, else the first current). The dashboard replaces that pick;
+`portalProject()` is the one place the server's view becomes the page's model. Hash routes must keep `#/invite/<token>` working
+(`boot` + the `hashchange` listener).
+
+**C2 committed 2026-11-25 (`524ca18`), with the 10 review fixes.**
+
+**C3 done 2026-11-25 (not committed).** Hash routes, dashboard, project page with invoices and the signed agreement. Details and
+calls under C3 in TASKS.md. 1041/1041. Scratch tester (`c2-tester@example.test`) now also has an archived project `C3-PAST`, a
+paid deposit and a sent final, a signed quote and an unpublished item; the other scratch client is `c2-other@example.test`.
+**C3 review:** all 9 findings fixed (details under C3 in TASKS.md). 1042/1042.
+**For C4:** notes and approvals live on `state.cache[projectId]` assets (`comments`, `status`), lost on reload; `carryOver()` keeps
+them across a fresh read for the same version. C4 saves them: `portalProject()` is where server notes come in, and `bindAssetInteraction`/`bindPhotoLightbox` are where a note is added (keep the
+partial repaint: no `setState` there). Photo notes are keyed by `photoKey` (the photo's review URL); the server's key is its `?photo=`.
+
+**C3 committed 2026-11-25 (`9354c7f`).**
+
+**C4 done 2026-11-25 (not committed), with its review fixes.** Scratch db got `client_notes.client_key` by hand (v28 changed after
+it ran there; live has never run v28). v28 client notes and submissions; add, remove, send; the studio sees sent sets on the
+item and in Needs you. Details, calls and the S16 check under C4 in TASKS.md. 1050/1050. Scratch: the tester's Hero film v1 and
+Launch stills have sent sets (both items in Revisions); publish a v2 of either to reopen notes.
+**For C5:** approvals join `client_submissions`' neighbours as their own table; `asset.approved` in the page is page-only today
+(`carryOver` keeps it). Rounds: count `client_submissions` with stage 'final' per item. The rounds-used notice goes before the
+revision box opens (`want-revisions`), and Send's dialog says the rounds left.
+
+**C5 done 2026-11-25 (not committed).** v29 `client_approvals`; approve route; rounds and the rounds-used notice; the old hub's
+`/hub/agreement` gone. Details and calls under C5 in TASKS.md. 1062/1062. Scratch (`/tmp/lsc-admin-scratch`, migrated to v29): the
+tester's Hero film is a Final at v5, approved, with 3 final rounds (one extra); Cut-down 15s has its draft approved; the project's
+signed agreement text now names $63.00. `delete from client_approvals` on the scratch db to approve again.
+**C5 review:** all 8 findings fixed (details under C5 in TASKS.md), incl. Needs you's Send final invoice row. 1063/1063.
+Restart `portal-api` after server edits: node doesn't reload, and a stale process showed "3 of 0 rounds".
+**For C6:** Needs you's `revision_notes` rows carry `round`/`extraRound` for the "notes submitted" email; an approval logs
+`client_approved` in activity. **For C7:** a deemed approval is a `client_approvals` row with `kind = 'deemed'` (client_id may be
+NULL); `itemApproved` already counts it, and the portal shows `deemed`.
+
+**C6 done 2026-11-25 (not committed).** Invite (first publish, one confirmation, or by hand) and the notes-submitted notice; details,
+calls and what wasn't checked under C6 in TASKS.md. 1071/1071. Checked in the browser on the scratch admin (dialog, checklist line, invite emailed to the stub mailbox); the invite state now rides on every folder reply (`readFolder`), via `portal-invite.js setEnv`. Scratch project `C6-1` is invited; its client is `c6-tester@example.test`.
+Code review fixes the same day (8 findings, all fixed, 1075/1075): invite wording by what's published, a failed invite's code kept on screen until dismissed and resendable (`retry`), refusal reasons in the publish toast, Needs you's final-invoice date, notes notice without APP_URL, round tie-break, and the approve reply's `itemStatus`. Launch config `portal-api-failmail` makes every email fail; scratch project `C6-2` (client `c6-fail@example.test`) went through a failed invite and a resend.
+
+**C7 done 2026-11-25, committed 2026-11-26 as `aab3c80`.** Deemed-approval clock (`src/deemed.js`), the client's reminder (`src/deemed-reminders.js`, hourly from `index.js` and the stub script, schema v30), Mark approved on the item page (Needs you row opens it), Complete tested. Calls and what wasn't checked under C7 in TASKS.md. Scratch: `C7-1` was marked deemed approved (now Complete), `C7-2`'s clock runs to 10 Dec.
+The same commit fixed `test-portal-approvals.js`: its TODAY was the UTC date, so it failed before 11am Sydney.
+
+**C8 done 2026-11-26 (not committed).** View as client: schema v31 `portal_previews`, `POST /api/projects/:id/portal-preview`,
+`/hub/preview` + `/hub/preview/end`, the read-only rule in the hub's `signedIn`, the header button and the portal's preview bar.
+Calls and what wasn't checked under C8 in TASKS.md. Review fixes the same day (all 6), 1092/1092: previews apply only to calls
+marked `?preview=1`, `portal_previews` cascades. Scratch db at v31; its `portal_previews` was rebuilt by hand for the cascade
+(live has never run v31). In the browser pane the button's new tab is blocked as a popup, so the admin shows a link to click;
+the pane blocks that too, so open the link's URL in a fresh tab to test (a hash-only change on an open portal page doesn't reload it).
+
+**C9 in progress (2026-11-26).** Step 1: `merged-admin` pushed (`5853094`). Step 2: live db (v21) dry-run migrated to v31 on a
+copy, no existing value changed, server boots on it. Step 3: **NAS deployed** at `5853094`: live backup
+`data/backups/pre-c9-20261126-094514.db`, rollback image `lsc-admin:pre-c9` (`7e42400afaf3`), previous app folder
+`/volume4/lsc-admin/app.prev-c9`; new image `178549010c2b`, migrated v21→v31 on boot, `m6-checks.sh` ALL PASS. The build takes
+~10 minutes on the NAS (npm). **The NAS moved to 192.168.1.46** (same host keys as .45): use
+`ssh -o HostName=192.168.1.46 -o HostKeyAlias=192.168.1.45 lsc-nas` until the router reserves it and ~/.ssh/config is updated.
+Until step 4 the old portal page on Pages can't sign in (its routes are gone); no client is live.
+**Rollback:** `cd /volume4/lsc-admin && mv app app.c9 && mv app.prev-c9 app && docker tag lsc-admin:pre-c9 lsc-admin:latest`, put the
+pre-c9 db back as `data/billing.db` (container stopped), then `cd app && docker compose up -d` (no --build).
+Left: step 4 (PR merged-admin → main, which deploys Pages), step 5 (the user's real job on a phone), step 6 (docs, CORS_ORIGINS, old containers).
+
+**Next within C9: step 4 | Model: Opus 5.5 | Effort: High.** Merge `merged-admin` to `main`, redeploy (NAS before Pages),
+one real job start to finish with a test client on a real phone. Payment stays off. Ask the user before any push or deploy.
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
 `routes.js` (`createHubRouter(db, opts)`, not mounted yet), `url-signing.js` (was signing.js), `admin-auth.js`,

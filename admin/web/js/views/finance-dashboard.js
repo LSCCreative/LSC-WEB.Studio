@@ -886,7 +886,7 @@ const FinanceDashboardView = (() => {
 
   function markup(f) {
     return (
-      '<div class="page-head"><div><h1 class="page-title">Dashboard</h1>' +
+      '<div class="page-head"><div><h1 class="page-title">Overview</h1>' +
       '<div class="page-sub">What an hour, a half day and a full day must sell for — and whether your rate card does</div>' +
       '</div></div>' +
       floorsMarkup(f) +

@@ -17,9 +17,8 @@
   const loginView = document.getElementById('login-view');
   const appView = document.getElementById('app-view');
   const main = document.getElementById('main');
-  const signOutBtn = document.getElementById('nav-sign-out');
-  const hdrRight = document.getElementById('hdr-right');
-  const menuBtn = document.getElementById('nav-menu-btn');
+  // True while a sign-out request is in flight, so a second press waits.
+  let signingOut = false;
 
   /* Where #/ and an unknown address land: Home, the production calendar
      (D27, task 12). */
@@ -46,7 +45,7 @@
 
   function showReset(token) {
     showLogin(null, { token });
-    document.title = 'Reset Password — LSC Billing';
+    document.title = 'Reset Password — Scope & Sales';
   }
 
   function showLogin(initialError, extra) {
@@ -54,13 +53,12 @@
     // the banner can — it distinguishes a bad password from a throttle.
     ConnectionBanner.disable();
     Toast.hide();
-    // The panel lives inside #app-view, so hiding that takes it off the screen
-    // but leaves .open set — and the login screen has no toggle to close it.
-    closeMenu(false);
+    // The account menu's list may be open in <body>, outside #app-view.
+    LSCMenu.close(false);
     LSCRouter.stop(false);
     appView.hidden = true;
     loginView.hidden = false;
-    document.title = 'Sign In — LSC Billing';
+    document.title = 'Sign In — Scope & Sales';
     LoginView.mount(loginView, Object.assign({
       onSuccess: (session) => showApp(session),
       initialError: initialError || null,
@@ -94,20 +92,19 @@
   }
 
   function setUser(session) {
-    const username = session && session.username;
-    signOutBtn.title = username ? 'Signed in as ' + username : '';
+    LSCShell.setUser(session);
   }
 
   /* Only the server can end the session: the cookie is httpOnly, so the page
      can't clear it. If the request fails the user is still signed in, and
      saying otherwise would be the one lie a sign-out button can tell. */
   async function signOut() {
-    if (signOutBtn.disabled) return;
-    signOutBtn.disabled = true;
+    if (signingOut) return;
+    signingOut = true;
     try {
       await LSCApi.post('/api/logout');
     } catch (err) {
-      signOutBtn.disabled = false;
+      signingOut = false;
       if (!(err instanceof LSCApi.ApiError)) throw err;
       Toast.error(
         err.kind === 'network'
@@ -116,7 +113,7 @@
       );
       return;
     }
-    signOutBtn.disabled = false;
+    signingOut = false;
 
     // A deliberate sign-out keeps nothing: no screen to resume, no client data
     // left in the DOM behind the login card, no cached rate card.
@@ -150,7 +147,7 @@
     loginView.hidden = true;
     loginView.innerHTML = '';
     appView.hidden = false;
-    document.title = 'LSC Billing';
+    document.title = LSCShell.title();
     ConnectionBanner.enable();
 
     /* The kept screen comes back as it was — unless the address moved while
@@ -183,6 +180,8 @@
        alone lands on the Dashboard. */
     const openProject = (project) => {
       const path = ProjectCard.pathOf(project);
+      // The card knows the stage, so the route lights the right tab at once.
+      if (path) LSCShell.notePlace(project.id, ProjectCard.placeOf(project));
       if (path) LSCRouter.go(path);
       else Toast.error('That project can’t be opened.');
     };
@@ -207,6 +206,7 @@
     InvoiceView.init(main, { onAuthLost });
     HomeView.init(main, { onAuthLost });
     SetupView.init(main, { onAuthLost });
+    HubImportView.init(main, { onAuthLost });
     ClientsView.init(main, { onAuthLost, onOpenProject: openProject });
     SettingsView.init(main, { onAuthLost });
     // Whatever the address says, even if it is the screen that was there before
@@ -220,53 +220,69 @@
      and answers false for a shape it doesn't have. Nothing here checks the
      unsaved guard — the router has, before calling this. */
   function renderRoute(route, state) {
-    closeMenu(false);
-    // A screen that names itself (the project folder) sets its own once drawn.
-    document.title = 'LSC Billing';
+    LSCMenu.close(false);
     const [area, ...rest] = route.segments;
+    // The header's Needs you count follows every screen; the Dashboard asks for itself.
+    if (area !== undefined && area !== 'home') LSCNeeds.refresh(onAuthLost);
     if (area === undefined) {
       LSCRouter.go(LANDING, { replace: true, skipGuard: true });
       return;
     }
     let shown = false;
     if (area === 'home') {
-      setNav('home');
+      setNav('sales', 'home');
       shown = HomeView.show(rest, state);
+    } else if (area === 'pipeline') {
+      // Draft, sent and declined work (L3). The old `#/projects?stage=` links
+      // for those stages arrive here from Live projects' redirect.
+      setNav('sales', 'pipeline');
+      shown = ProjectsView.show(route, 'pipeline');
     } else if (area === 'projects') {
-      /* The list; `new`, a new project's editor (IA flow 1: the project is
-         made on its first save); a project's folder (task 18); its
-         estimate's editor and read-only view under it; and each of its
-         invoices (task 20). */
-      setNav('projects');
+      /* Live projects; `new`, a new project's editor (IA flow 1: the project
+         is made on its first save); a project's folder (task 18), in tabs once
+         it's accepted (R3); its estimate's editor and read-only view under it; and each of its
+         invoices (task 20). A project lights the tab its record's state says,
+         which its screens report once loaded (LSCShell.placeProject); until
+         then the last one placed for it, else Scope & Sales. */
       const [id, sub, ...more] = rest;
-      if (id === undefined) shown = ProjectsView.show(route);
+      const at = id === undefined ? { area: 'clients', page: 'live' }
+        : id === 'new' ? { area: 'sales', page: 'pipeline' }
+          : LSCShell.projectPlace(id);
+      setNav(at.area, at.page);
+      if (id === undefined) shown = ProjectsView.show(route, 'live');
       else if (id === 'new') shown = sub === undefined && EstimatesView.showNew();
-      else if (sub === undefined) shown = ProjectFolder.show(id);
+      else if (sub === undefined || ProjectFolder.TABS.some(([key]) => key === sub)) shown = ProjectFolder.show(id, sub, more);
       else if (sub === 'estimate') shown = EstimatesView.showInProject(id, more, state, route.query);
       else if (sub === 'invoices') shown = InvoiceView.show(id, more, state);
     } else if (area === 'estimates') {
       /* The addresses before the folder: #/estimates was the list (D58), and
          #/estimates/<id>[/edit] an estimate. An old bookmark lands where that
          is now. */
-      setNav('projects');
+      setNav('sales', null);
       if (!rest.length) {
-        LSCRouter.go('/projects', { replace: true, skipGuard: true });
+        LSCRouter.go('/pipeline', { replace: true, skipGuard: true });
         return;
       }
       shown = EstimatesView.showOld(rest);
     } else if (area === 'clients') {
-      setNav('clients');
-      shown = ClientsView.show(rest, state);
+      setNav('clients', rest.length ? null : 'clients');
+      shown = ClientsView.show(route, state);
     } else if (area === 'setup') {
-      // The UPID fix-up (task 16) is reached from the Projects list.
-      setNav('projects');
-      shown = SetupView.show(rest, state);
+      // The UPID fix-up (task 16) is reached from the Projects list; the old
+      // hub's import (R4) from Settings, so it sits under the account menu.
+      if (rest[0] === 'hub-import') {
+        setNav(null, 'settings');
+        shown = HubImportView.show(rest);
+      } else {
+        setNav('sales', null);
+        shown = SetupView.show(rest, state);
+      }
     } else if (area === 'settings') {
       // #/settings, or one of its sections (task 21, D65).
-      setNav('settings');
+      setNav(null, 'settings');
       shown = SettingsView.show(rest, state, route.query);
     } else if (area === 'finance' && rest.length <= 1) {
-      setNav('finance');
+      setNav('sales', 'finance');
       shown = FinanceView.show(main, rest[0], state, {
         onAuthLost,
         onNavigate: (tab, opts) => LSCRouter.go('/finance/' + tab, { state: opts }),
@@ -278,92 +294,27 @@
     }
   }
 
-  function setNav(active) {
-    document.getElementById('logo-btn').classList.toggle('active', active === 'home');
-    document.getElementById('nav-projects').classList.toggle('active', active === 'projects');
-    document.getElementById('nav-clients').classList.toggle('active', active === 'clients');
-    document.getElementById('nav-finance').classList.toggle('active', active === 'finance');
-    document.getElementById('nav-settings').classList.toggle('active', active === 'settings');
-  }
-
-  /* ── The compact nav (below 768px) ──────────────────────────────────────
-   *
-   * There is no second set of nav markup: below 768px css/responsive.css takes
-   * #hdr-right out of flow and parks it under the header as a panel, and this
-   * opens and closes it. The six buttons are the same elements with the same
-   * handlers at every width, so nothing here can drift out of step with the
-   * desktop header — including the unsaved-edit guards those handlers run.
-   *
-   * The panel is display:none while closed, so its buttons leave the tab order
-   * and the accessibility tree with it; above 768px the toggle itself is
-   * display:none and none of this can be reached.
-   */
-  function closeMenu(returnFocus) {
-    if (menuBtn.getAttribute('aria-expanded') !== 'true') return;
-    hdrRight.classList.remove('open');
-    menuBtn.setAttribute('aria-expanded', 'false');
-    if (returnFocus) menuBtn.focus();
-  }
-
-  function bindCompactNav() {
-    menuBtn.addEventListener('click', () => {
-      const open = menuBtn.getAttribute('aria-expanded') === 'true';
-      if (open) return closeMenu(false);
-      hdrRight.classList.add('open');
-      menuBtn.setAttribute('aria-expanded', 'true');
-    });
-
-    /* Any nav choice closes the panel, including one the unsaved-edit prompt
-       then declines: the menu has been answered either way, and leaving it open
-       over the screen the user chose to stay on would be the odd outcome. This
-       listens on the panel rather than wrapping each handler so a nav item added
-       later is covered without being told about the menu. */
-    hdrRight.addEventListener('click', (event) => {
-      if (event.target.closest('.nav-link')) closeMenu(false);
-    });
-
-    document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') closeMenu(true);
-    });
-
-    /* A tap anywhere else dismisses it. Capture phase, because a screen may
-       stop propagation on its own clicks — a menu that only sometimes closes is
-       worse than one that never does. */
-    document.addEventListener(
-      'click',
-      (event) => {
-        if (event.target.closest('#hdr-right') || event.target.closest('#nav-menu-btn')) return;
-        closeMenu(false);
-      },
-      true
-    );
-
-    /* Leaving the band hides the toggle, which would strand the panel open with
-       no way to close it — and .open would then be waiting the next time the
-       window narrowed. */
-    window.addEventListener('resize', () => {
-      if (window.matchMedia('(min-width: 768px)').matches) closeMenu(false);
-    });
+  /* Where the screen belongs in the shell, and its default title (the area
+     alone). A screen that names itself sets its own once drawn, through
+     LSCShell.title(). */
+  function setNav(areaId, pageId) {
+    LSCShell.set(areaId, pageId);
+    document.title = LSCShell.title(LSCShell.pageLabel());
   }
 
   function bindNav() {
-    /* Every nav item replaces what is on #main, so each one is a route: the
-       router asks first if the screen it is about to overwrite has unsaved
-       edits in it, because the screen being left doesn't know it is being
-       left. The router is stopped while the login screen is up, so these do
-       nothing then. */
-    const to = (path) => () => LSCRouter.go(path);
-    document.getElementById('logo-btn').addEventListener('click', to('/home'));
-    document.getElementById('nav-projects').addEventListener('click', to('/projects'));
-    document.getElementById('nav-clients').addEventListener('click', to('/clients'));
-    document.getElementById('nav-finance').addEventListener('click', to('/finance'));
-    document.getElementById('nav-settings').addEventListener('click', to('/settings'));
-    signOutBtn.addEventListener('click', () => {
-      if (appView.hidden) return;
-      // A sign-out empties #main, so it discards unsaved work exactly as nav
-      // does — and unlike nav, there is no going back to the screen afterwards.
-      if (!LSCUnsaved.confirmLeave('Signing out')) return;
-      signOut();
+    /* Every way off the screen is a route: the router asks first if the
+       screen it is about to overwrite has unsaved edits, because the screen
+       being left doesn't know it is being left. The router is stopped while
+       the login screen is up, so these do nothing then. */
+    LSCShell.bind({
+      onSignOut: () => {
+        if (appView.hidden) return;
+        // A sign-out empties #main, so it discards unsaved work exactly as nav
+        // does — and unlike nav, there is no going back to the screen afterwards.
+        if (!LSCUnsaved.confirmLeave('Signing out')) return;
+        signOut();
+      },
     });
   }
 
@@ -373,7 +324,6 @@
     LSCUnsaved.init();
     LSCRouter.init(renderRoute);
     bindNav();
-    bindCompactNav();
     // A reset link pasted into a tab already on the login card arrives as a
     // hashchange (the router is stopped there, so nothing else answers it).
     window.addEventListener('hashchange', () => {

@@ -362,6 +362,13 @@ const LSCRouter = (() => {
     /* The address on show, parsed, as render() was given it. */
     current: () => (rendered === null ? null : parse(rendered)),
 
+    /* The path (no query) of the entry one Back away, or null: where leaveTo()
+       would go with history.back(), so a Back link can name it. */
+    behindPath() {
+      const behind = trail.get(index - 1);
+      return behind === undefined ? null : parse(behind).path;
+    },
+
     /* An async screen captures one of these before it awaits and checks it
        after, so a slow fetch can't mount over the screen the user moved on
        to. */

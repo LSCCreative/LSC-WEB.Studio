@@ -70,7 +70,7 @@
 .dash {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: 'cal' 'lists' 'up' 'act';
+  grid-template-areas: 'needs' 'cal' 'lists' 'up' 'act';
   gap: var(--space-6);
 }
 .dash-main,
@@ -82,6 +82,7 @@
   min-width: 0;
 }
 .dash-lists { grid-area: lists; }
+#dash-needs { grid-area: needs; }
 #dash-up { grid-area: up; }
 #dash-act { grid-area: act; }
 
@@ -119,6 +120,7 @@
     grid-area: side;
   }
   .dash-lists,
+  #dash-needs,
   #dash-up,
   #dash-act {
     grid-area: auto;
@@ -741,7 +743,7 @@
   color: var(--text);
 }
 .wk-ltoday {
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   color: var(--accent-text);
 }
 .wk-lday .cal-empty {
@@ -869,7 +871,7 @@
 .wk-rbar-t {
   display: block;
   padding: 0 6px;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   line-height: 14px;
   font-weight: 400;
   letter-spacing: 0.02em;
@@ -918,7 +920,7 @@
   position: absolute;
   top: calc(var(--h) * var(--wk-hour) + 2px);
   right: 6px;
-  font-size: 9px;
+  font-size: var(--font-size-xs);
   line-height: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
@@ -934,7 +936,7 @@
   background: var(--cal-confirmed);
   color: var(--cal-ink);
   border: none;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   line-height: 13px;
   text-align: left;
   overflow: hidden;
@@ -964,7 +966,7 @@
   text-overflow: ellipsis;
 }
 .wk-tile-time {
-  font-size: 9px;
+  font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
 }
 .wk-tile-upid {
@@ -1163,4 +1165,10 @@
   .dash-row:hover .dash-row-go {
     transform: none;
   }
+}
+
+/* Needs you (R5): the card that leads the Dashboard. It reuses the list rows;
+   only a failed refresh's line needs its own colour. */
+.dash-needs .home-empty.is-alert {
+  color: var(--color-status-error-text);
 }

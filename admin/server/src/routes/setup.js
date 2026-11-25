@@ -1,7 +1,9 @@
 'use strict';
 
 const { nowIso } = require('../db');
-const { normUpid, upidTakenBy, upidTakenReply } = require('../projects');
+const {
+  normUpid, upidTakenBy, upidTakenReply, clientDataHeld, clientDataRefusal,
+} = require('../projects');
 
 /**
  * The UPID fix-up (production-booking task 16; D60, D61, IA flow 7).
@@ -157,6 +159,15 @@ function keepTogether(db, rows, res) {
   const others = [...new Set(rows.map((r) => r.project_id))].filter((id) => id !== target);
   const taken = upidTakenBy(db, upid, [target, ...others]);
   if (taken) return refuse(res, 409, upidTakenReply(db, upid, taken).body);
+
+  // Keeping them together deletes the others; what the client holds on one of them can't follow.
+  for (const id of others) {
+    const held = clientDataHeld(db, id);
+    if (held) {
+      return refuse(res, 409, clientDataRefusal(held, 'One of these projects', 'merged',
+        'Keep them as separate projects, or give them different UPIDs.'));
+    }
+  }
 
   const projects = [target, ...others].map((id) => db.prepare('SELECT * FROM projects WHERE id = ?').get(id));
   const first = (field) => {

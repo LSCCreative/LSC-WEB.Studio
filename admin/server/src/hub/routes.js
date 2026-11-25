@@ -13,32 +13,66 @@
 
 const { basename, extname, posix } = require('path');
 const express = require('express');
+const cookie = require('cookie');
 const { createBackup } = require('../backup');
 const { sha256Hex, randomToken } = require('./tokens');
-const { createUrlSigner } = require('./url-signing');
 const { createHubCors } = require('./cors');
-const { createAdminAuth } = require('./admin-auth');
+const { createPortalAccess, CODE_FORMAT, SESSION_DAYS } = require('../portal-access');
+const { normEmail } = require('../clients');
+const { clientView, projectCard, projectView, noteView, itemStatus } = require('./views');
+const { newId, nowIso } = require('../db');
 const { createBunny, missingBunnySettings, statusFromVideo } = require('./bunny');
-const { createDeliverables, streamFile, MAX_PHOTOS_PER_FOLDER } = require('./deliverables');
+const { createDeliverables, streamFile, VIDEO_EXTENSIONS } = require('./deliverables');
 const { createAttemptThrottle } = require('./throttle');
-
-const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.webm', '.m4v']);
+const { invoiceView, sydneyDay } = require('../public');
 
 /* How long a publish may wait for Bunny to list the fetched video before it is
    reported as failed. Without it a lost fetch job stays "processing" forever. */
 const UNLISTED_VIDEO_LIMIT_MS = 30 * 60 * 1000;
 const VIDEO_LOOKUP_ATTEMPTS = 3;
 
-/* Client sign-in is an email and a 4-digit code, so it is limited twice: per
+/* Client sign-in is an email and a short code, so it is limited twice: per
    address (billing's rate limit), and per email however many addresses try,
-   so a spread-out guess at one client's code stops after a few wrong ones. */
+   so a spread-out guess at one client's code stops after a few wrong ones.
+   Invites count with sign-ins; a signed-in client's reads have their own count,
+   and so does their media: a video asks again for each seek, and a photo library
+   for each image, so it has room the reads don't need. */
 const LIMITS = {
   auth: { max: 20, windowMs: 10 * 60 * 1000 },
-  sign: { max: 10, windowMs: 10 * 60 * 1000 },
-  records: { max: 120, windowMs: 10 * 60 * 1000 },
+  read: { max: 300, windowMs: 10 * 60 * 1000 },
+  media: { max: 3000, windowMs: 10 * 60 * 1000 },
+  note: { max: 300, windowMs: 10 * 60 * 1000 },
 };
+/* A note's length cap: a long paragraph, not a document (the table holds 4000). */
+const NOTE_MAX = 4000;
+/* Unsent notes one client can hold on one item: far past any real review, short of
+   a reply that buries the page. */
+const UNSENT_MAX = 200;
+/* How long the media route trusts what it last read of a client's projects and a
+   photo folder (see ownsProject). */
+const MEDIA_MEMORY_MS = 10 * 1000;
+/* The rate as the signed agreement wrote it: "hourly rate of AUD $63.00" in the
+   contract's Revisions clause (documents.js, {hourly_rate}), or "hourly rate is $63.00".
+   Only an amount straight after those words: any other amount nearby (a travel rate, a
+   deposit) is never taken for it, and a clause worded otherwise gives none. */
+const RATE_IN_AGREEMENT = /hourly rate(?:\s+(?:of|is))?(?:\s+AUD)?\s*(\$\s?\d[\d,]*(?:\.\d{1,2})?)/i;
+function rateIn(text) {
+  const m = RATE_IN_AGREEMENT.exec(String(text || ''));
+  return m ? m[1].replace(/\s+/g, '') : null;
+}
 const CODE_FAILURE_LIMIT = 10;
 const CODE_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+
+/* The client's session cookie (C1). Host-only on hub-api, so no other host is
+   sent it; `/hub` only, so billing's routes never see it; Lax, which a fetch from
+   lsccreative.studio still carries (the same site), and a cross-site form post
+   doesn't. HttpOnly: the portal's script never holds the token. */
+const SESSION_COOKIE = 'lsc_portal';
+/* View as client (C8): the studio's preview, a cookie of its own beside the client's,
+   so opening one never ends or replaces a real sign-in on that browser. */
+const PREVIEW_COOKIE = 'lsc_portal_preview';
+/* What a preview may do: read. Anything else under `signedIn` is refused (C8). */
+const READ_METHODS = new Set(['GET', 'HEAD']);
 
 /* Same file, same key: "a/../b/c.mp4" and "b/c.mp4" must not publish twice. */
 function normalizeDeliverablePath(value) {
@@ -52,7 +86,7 @@ function publishTag(seed) {
 
 /**
  * opts (config.hub, see config.js; its defaults live there, not here):
- *   signingSecret, adminEmail, adminPinHash  required; the router won't build without the secrets
+ *   signingSecret   required; the router won't build without the secret
  *   publicBaseUrl   required: this API's public address, used in the links it hands out
  *   deliverablesDir required: the read-only NAS deliverables folder
  *   backupDir       required: where the copy before each write goes (billing's backups)
@@ -60,51 +94,75 @@ function publishTag(seed) {
  *   bunny           Bunny settings; with any missing, publishing answers 503
  *   rateLimit       required: billing's per-address limiter (routes/public.js)
  *   clientIp        required: billing's client address (routes/public.js), so the
- *                   PIN throttle and the agreement's evidence read what billing's do
+ *                   agreement's evidence reads what billing's does
+ *   requireAdmin    required: billing's login check (auth.js requireAuth). The studio's
+ *                   routes here are the Bunny publish pair, until Slice 2 moves them to /api
+ *   cookieSecure    the session cookie's Secure flag (config.cookieSecure); on unless false
+ *   appUrl          where the client's quote and invoice pages are (config.appUrl, with
+ *                   its trailing slash): the portal links to `${appUrl}c/#e|i/<token>`
  *   limits          overrides LIMITS, for tests
  * Tests only: bunnyFetch swaps fetch for Bunny calls, videoLookupGapMs the wait
  * between looking for a fetched video.
  */
 function createHubRouter(db, opts = {}) {
+  if (!opts.signingSecret) throw new Error('The hub router needs signingSecret (HUB_SIGNING_SECRET); config.hub carries it.');
   for (const [key, name] of [['publicBaseUrl', 'HUB_PUBLIC_BASE_URL'], ['deliverablesDir', 'DELIVERABLES_DIR'], ['backupDir', 'the backups folder']]) {
     if (!opts[key]) throw new Error(`The hub router needs ${key} (${name}); config.hub carries it.`);
   }
-  for (const key of ['rateLimit', 'clientIp']) {
-    if (typeof opts[key] !== 'function') throw new Error(`The hub router needs ${key}, from billing's routes/public.js; app.js passes it.`);
+  for (const key of ['rateLimit', 'clientIp', 'requireAdmin']) {
+    if (typeof opts[key] !== 'function') throw new Error(`The hub router needs ${key}, from billing's code; app.js passes it.`);
   }
-  const { publicBaseUrl, backupDir, clientIp } = opts;
+  const { publicBaseUrl, backupDir, clientIp, requireAdmin } = opts;
   const limits = { ...LIMITS, ...(opts.limits || {}) };
   const limit = (name) => opts.rateLimit(limits[name]);
   const codeFailures = createAttemptThrottle({ limit: CODE_FAILURE_LIMIT, windowMs: CODE_FAILURE_WINDOW_MS });
   const lookupGapMs = opts.videoLookupGapMs ?? 1000;
-  const signer = createUrlSigner(opts.signingSecret);
   const { credentialedCors, openCors } = createHubCors(opts.corsOrigins || []);
-  const auth = createAdminAuth(db, { adminEmail: opts.adminEmail, adminPinHash: opts.adminPinHash });
+  const allowedOrigins = new Set(opts.corsOrigins || []);
   const deliverables = createDeliverables(opts.deliverablesDir);
   const bunnyMissing = missingBunnySettings(opts.bunny);
   const bunny = bunnyMissing.length ? null : createBunny(opts.bunny, { fetchImpl: opts.bunnyFetch });
-  const { requireAdmin } = auth;
+  const access = createPortalAccess(db, { secret: opts.signingSecret });
+  const cookieSecure = opts.cookieSecure !== false;
+  // Loaded here, not with the module: billing's project code reads its settings as it loads.
+  const { readProjectRows, localToday } = require('../routes/projects');
+  const { readChecklist, ROUNDS_INCLUDED } = require('../delivery');
+  const { logActivity } = require('../routes/projects');
 
-  const upsertRecord = db.prepare(`
-    INSERT INTO records (project_id, data, updated_at)
-    VALUES (@project_id, @data, @updated_at)
-    ON CONFLICT(project_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at
+  const getClient = db.prepare('SELECT * FROM clients WHERE id = ?');
+  /* The invoices a client has actually been sent (C3): sent or paid, of a kind with
+     a page. Scheduled ones haven't gone yet; a void one was taken back. */
+  const sentInvoices = db.prepare(`
+    SELECT * FROM invoices WHERE project_id = ? AND status IN ('sent', 'paid') AND kind IN ('deposit', 'final', 'single')
+     ORDER BY COALESCE(issued_at, created_at), created_at, id
   `);
-  const upsertPrivateAuth = db.prepare(`
-    INSERT INTO private_auth (project_id, client_email, email_hash, code_hash, invite_token, delivered, updated_at)
-    VALUES (@project_id, @client_email, @email_hash, @code_hash, @invite_token, @delivered, @updated_at)
-    ON CONFLICT(project_id) DO UPDATE SET
-      client_email = excluded.client_email,
-      email_hash   = excluded.email_hash,
-      code_hash    = excluded.code_hash,
-      invite_token = excluded.invite_token,
-      delivered    = excluded.delivered,
-      updated_at   = excluded.updated_at
+  /* The project's signed quote: its page still offers the signed agreement once
+     accepted (IA Defaults 10, checked in web/c/c.js). Accepted in the app, it has none. */
+  const signedQuote = db.prepare(`
+    SELECT e.public_token, s.signed_at FROM signatures s
+      JOIN estimate_versions v ON v.id = s.version_id
+      JOIN estimates e ON e.id = v.estimate_id
+     WHERE e.project_id = ? AND e.status = 'accepted' AND e.public_token IS NOT NULL
+       -- The page offers the signed agreement only for its newest version (publicEstimate's \`signed\`).
+       AND v.n = (SELECT MAX(n) FROM estimate_versions WHERE estimate_id = e.id)
+     ORDER BY s.signed_at DESC LIMIT 1
   `);
-  const getRecord = db.prepare('SELECT data FROM records WHERE project_id = ?');
-  const getAgreementEvidence = db.prepare('SELECT * FROM agreement_evidence WHERE project_id = ?');
-  const findByEmailHash = db.prepare('SELECT * FROM private_auth WHERE email_hash = ?');
-  const findByInviteToken = db.prepare('SELECT * FROM private_auth WHERE invite_token = ?');
+  const appUrl = opts.appUrl || '';
+  /* What the project's signed agreement says the hourly rate is (C5): the rounds-used
+     notice quotes it, never Settings' rate today (brief, Revision rounds). The newest
+     signature on the project's accepted quote; none when it was Mark accepted. */
+  const signedAgreement = db.prepare(`
+    SELECT s.agreement_text FROM signatures s
+      JOIN estimate_versions v ON v.id = s.version_id
+      JOIN estimates e ON e.id = v.estimate_id
+     WHERE e.project_id = ? AND e.status = 'accepted'
+     ORDER BY s.signed_at DESC LIMIT 1
+  `);
+  /* A version the client has been given: published, on an item still needed. */
+  const getPublishedVersion = db.prepare(`
+    SELECT v.* FROM deliverable_versions v JOIN deliverables d ON d.id = v.deliverable_id
+     WHERE v.id = ? AND v.project_id = ? AND v.published_at IS NOT NULL AND d.not_needed_at IS NULL
+  `);
 
   const insertDeliverableToken = db.prepare(`
     INSERT INTO deliverable_tokens (token, relative_path, downloadable, created_at)
@@ -114,25 +172,6 @@ function createHubRouter(db, opts = {}) {
   const findDeliverableTokenByPath = db.prepare('SELECT token FROM deliverable_tokens WHERE relative_path = ? AND downloadable = ?');
   const findDeliverablePathByToken = db.prepare('SELECT relative_path, downloadable FROM deliverable_tokens WHERE token = ?');
 
-  const upsertAgreementEvidence = db.prepare(`
-    INSERT INTO agreement_evidence (
-      project_id, signer_name, signed_at, signature_data_url, consent_text,
-      consent_checked, user_agent, verification_token, ip_address, received_at
-    ) VALUES (
-      @project_id, @signer_name, @signed_at, @signature_data_url, @consent_text,
-      @consent_checked, @user_agent, @verification_token, @ip_address, @received_at
-    )
-    ON CONFLICT(project_id) DO UPDATE SET
-      signer_name        = excluded.signer_name,
-      signed_at          = excluded.signed_at,
-      signature_data_url = excluded.signature_data_url,
-      consent_text       = excluded.consent_text,
-      consent_checked    = excluded.consent_checked,
-      user_agent         = excluded.user_agent,
-      verification_token = excluded.verification_token,
-      ip_address         = excluded.ip_address,
-      received_at        = excluded.received_at
-  `);
 
   const getBunnyAsset = db.prepare('SELECT * FROM bunny_assets WHERE relative_path = ? AND kind = ?');
   const upsertBunnyAsset = db.prepare(`
@@ -306,176 +345,451 @@ function createHubRouter(db, opts = {}) {
   // the exact bytes for their signature check (merge safeguard S20).
   router.use('/hub', express.json({ limit: '2mb' }));
 
-  // ── POST /hub/admin-auth: email + PIN → HttpOnly session cookie
-  router.use('/hub/admin-auth', credentialedCors);
-  router.post('/hub/admin-auth', (req, res) => {
-    const ip = clientIp(req);
-    if (auth.isRateLimited(ip)) return res.status(429).json({ error: 'too many attempts' });
-    auth.recordAttempt(ip);
-    const { email, pin } = req.body || {};
-    if (!auth.verifyAdminPin(email, pin)) return res.status(401).json({ error: 'invalid credentials' });
-    auth.setAdminSessionCookie(res, auth.createAdminSession());
-    res.json({ ok: true });
-  });
+  /* ── The client's side (C1) ──────────────────────────────────────────────
+     Every route that reads or writes a client's work goes through `signedIn`,
+     which checks the session cookie against client_sessions. A project is found
+     through the signed-in client, so another client's project, and one that
+     doesn't exist, are the same "not found". */
 
-  // ── POST /hub/publish (admin): { record, priv }
-  router.use('/hub/publish', credentialedCors);
-  router.post('/hub/publish', requireAdmin, async (req, res) => {
-    const { record, priv } = req.body || {};
-    if (!record || !record.id || !priv) return res.status(400).json({ error: 'bad payload' });
-    await backupBeforeWrite();
-
-    const now = new Date().toISOString();
-    const clientEmail = String(priv.clientEmail || '').trim();
-    db.transaction(() => {
-      upsertRecord.run({ project_id: record.id, data: JSON.stringify(record), updated_at: now });
-      upsertPrivateAuth.run({
-        project_id: record.id,
-        client_email: clientEmail,
-        email_hash: clientEmail ? sha256Hex(clientEmail.toLowerCase()) : null,
-        code_hash: priv.codeHash || null,
-        invite_token: priv.inviteToken || null,
-        delivered: priv.delivered ? 1 : 0,
-        updated_at: now,
-      });
-    })();
-    res.json({ ok: true, publishedAt: now });
-  });
-
-  // ── POST /hub/auth: { email, code } or { invite }. Credentialed CORS because
-  // the portal sends credentials on every call, though this route reads no cookie.
-  router.use('/hub/auth', credentialedCors);
-  router.post('/hub/auth', limit('auth'), (req, res) => {
-    const body = req.body || {};
-
-    if (body.invite) {
-      const row = findByInviteToken.get(String(body.invite));
-      if (!row) return res.status(404).json({ error: 'invalid invite' });
-      // Codes are stored hashed, so onboarding can't reveal one: the client
-      // still signs in with email + the code from their invitation.
-      return res.json({ projectId: row.project_id, clientCode: '' });
+  const readCookie = (req, name) => {
+    try {
+      return cookie.parse(req.headers.cookie || '')[name] || null;
+    } catch {
+      return null;
     }
+  };
+  const readToken = (req) => readCookie(req, SESSION_COOKIE);
+  const readPreviewToken = (req) => readCookie(req, PREVIEW_COOKIE);
+  const cookieFor = (name) => (value, maxAge) => cookie.serialize(name, value, {
+    httpOnly: true, secure: cookieSecure, sameSite: 'lax', path: '/hub', maxAge,
+  });
+  const sessionCookie = cookieFor(SESSION_COOKIE);
+  const previewCookie = cookieFor(PREVIEW_COOKIE);
 
-    const email = String(body.email || '').trim().toLowerCase();
-    const code = String(body.code || '');
-    if (!email || !/^\d{4}$/.test(code)) return res.status(400).json({ error: 'bad request' });
+  /* A write from a browser names its page. One that names another site is
+     refused before anything is read; tools that send no Origin are left to the
+     cookie and the code, as billing's own routes are. */
+  function fromThePortal(req, res, next) {
+    const origin = req.headers.origin;
+    if (origin && !allowedOrigins.has(origin)) return res.status(403).json({ error: 'forbidden' });
+    return next();
+  }
+
+  /* One count per kind across its routes: guessing invites uses up sign-ins, and
+     the portal's reads share theirs. */
+  const authLimit = limit('auth');
+  const readLimit = limit('read');
+  const mediaLimit = limit('media');
+  const noteLimit = limit('note');
+
+  /* A preview (C8) applies only to a request that says it comes from the preview's
+     page (`?preview=1`, which that page adds to every call and the server to every
+     review link it gives it). It reads as its client does, through the same routes,
+     and every write is refused here, before any route's own checks, so a write route
+     added later is refused too. A marked request with no live preview is told so
+     (`preview_ended`), never answered as whoever else is signed in on the browser;
+     an unmarked one, such as a client's own tab beside it, ignores the preview cookie.
+     Nothing is touched by reading one: no session row, no "last seen". */
+  function signedIn(req, res, next) {
+    if (req.query.preview === '1') {
+      const preview = access.readPreview(readPreviewToken(req));
+      if (!preview) return res.status(401).json({ error: 'preview_ended' });
+      if (!READ_METHODS.has(req.method)) return res.status(403).json({ error: 'preview' });
+      const client = getClient.get(preview.clientId);
+      if (!client) return res.status(401).json({ error: 'preview_ended' });
+      req.portal = { session: null, client, preview };
+      return next();
+    }
+    const session = access.readSession(readToken(req));
+    const client = session && getClient.get(session.clientId);
+    if (!client) return res.status(401).json({ error: 'signed_out' });
+    req.portal = { session, client, preview: null };
+    return next();
+  }
+  const previewView = (preview) => (preview ? { projectId: preview.projectId, expiresAt: preview.expiresAt } : null);
+
+  /* The signed-in client's own projects, as the lists read them: accepted work
+     only (a quote still being decided isn't the portal's), current and past. */
+  function projectsOf(clientId) {
+    return readProjectRows(db, { today: localToday(), clientId })
+      .map((row) => row.project)
+      .filter((p) => p.delivery.group !== 'pipeline');
+  }
+
+  /* The media route is asked once per seek and once per photo, so it doesn't
+     rebuild the client's projects or re-read the NAS folder each time. A short
+     memory of each answers what it has seen; anything it hasn't is looked up
+     fresh, so new work and new photos appear at once, and what is withdrawn
+     goes within MEDIA_MEMORY_MS. */
+  const ownedMemory = new Map();   // clientId → { at, ids: Set }
+  const folderMemory = new Map();  // source path → { at, byKey: Map(key → name) }
+  const remembered = (memory, key, fresh, has) => {
+    const hit = memory.get(key);
+    if (hit && Date.now() - hit.at < MEDIA_MEMORY_MS && has(hit)) return hit;
+    if (memory.size > 500) memory.clear();
+    const value = { at: Date.now(), ...fresh() };
+    memory.set(key, value);
+    return value;
+  };
+  const ownsProject = (clientId, projectId) => remembered(ownedMemory, clientId,
+    () => ({ ids: new Set(projectsOf(clientId).map((p) => p.id)) }), (m) => m.ids.has(projectId)).ids.has(projectId);
+  /* A photo's key: a short hash of its file name, so a link keeps pointing at the
+     same image when the folder changes, and the name itself is never sent. */
+  const photoKey = (name) => sha256Hex(`photo\n${name}`).slice(0, 16);
+  const photosIn = (sourcePath, key) => remembered(folderMemory, sourcePath, () => ({
+    byKey: new Map((deliverables.listDeliverableFolderImages(sourcePath) || []).map((name) => [photoKey(name), name])),
+  }), (m) => key === undefined || m.byKey.has(key)).byKey;
+
+  /* A version's review copy, played from the NAS through the route below, until
+     Bunny's takes over (Slice 4). Addressed by ids, never by path or file name;
+     a photo library's images by their key, in the folder's sorted order. */
+  function reviewOf(projectId, v, preview) {
+    if (!v.sourcePath) return null;
+    const url = `${publicBaseUrl}/hub/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(v.id)}/review`;
+    // A preview's <video> and <img> can't add the marker themselves, so their links carry it (photo= stays last).
+    const mark = preview ? 'preview=1' : '';
+    if (v.kind !== 'photos') return { type: 'file', url: mark ? `${url}?${mark}` : url };
+    folderMemory.delete(v.sourcePath); // the project page reads the folder as it is now
+    return { type: 'photos', urls: [...photosIn(v.sourcePath).keys()].map((key) => `${url}?${mark ? mark + '&' : ''}photo=${key}`) };
+  }
+
+  // ── POST /hub/auth: { email, code } → the session cookie and who signed in.
+  router.use('/hub/auth', credentialedCors);
+  router.post('/hub/auth', authLimit, fromThePortal, (req, res) => {
+    const body = req.body || {};
+    const email = normEmail(body.email);
+    const code = String(body.code == null ? '' : body.code).trim();
+    if (!email || email.length > 254 || !CODE_FORMAT.test(code)) return res.status(400).json({ error: 'bad_request' });
 
     const emailHash = sha256Hex(email);
-    if (codeFailures.isLimited(emailHash)) return res.status(429).json({ error: 'too many attempts' });
-    const codeHash = sha256Hex(code);
-    const projectIds = [];
-    const records = {};
-    for (const row of findByEmailHash.all(emailHash)) {
-      if (row.code_hash === codeHash) {
-        projectIds.push(row.project_id);
-        records[row.project_id] = signer.signedUrl(publicBaseUrl, `/hub/records/${row.project_id}`, 900);
-      }
-    }
-    if (!projectIds.length) {
+    if (codeFailures.isLimited(emailHash)) return res.status(429).json({ error: 'too_many_attempts' });
+    const who = access.signIn(email, code);
+    if (!who) {
       codeFailures.record(emailHash);
-      return res.json({ token: null, projectIds: [] });
+      return res.status(401).json({ error: 'wrong_code' });
     }
     codeFailures.clear(emailHash);
-    const token = sha256Hex(codeHash + emailHash + Date.now());
-    res.json({ token, projectIds, records });
+    const { token } = access.startSession(who.clientId, who.via, {
+      userAgent: req.headers['user-agent'] || '', ip: clientIp(req),
+    });
+    res.setHeader('Set-Cookie', sessionCookie(token, SESSION_DAYS * 24 * 60 * 60));
+    return res.json({ ok: true, client: clientView(getClient.get(who.clientId)) });
   });
 
-  // ── POST /hub/agreement (client): the signed deliverables agreement and its
-  // evidence, kept private. The address is read here, never taken from the client.
-  router.use('/hub/agreement', credentialedCors);
-  router.post('/hub/agreement', limit('sign'), async (req, res) => {
-    const body = req.body || {};
-    const projectId = String(body.projectId || '').trim();
-    const signerName = String(body.signerName || '').trim();
-    const signedAt = String(body.signedAt || '').trim();
-    const signatureDataUrl = String(body.signatureDataUrl || '').trim();
-    const consentText = String(body.consentText || '').trim();
+  // ── POST /hub/invite: { token } from `#/invite/<token>` → whose sign-in it is
+  // and where it lands. It signs nobody in. The token travels in the body, never
+  // a URL, so it reaches no log.
+  router.use('/hub/invite', credentialedCors);
+  router.post('/hub/invite', authLimit, fromThePortal, (req, res) => {
+    const invite = access.inviteFor((req.body || {}).token);
+    if (!invite) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true, email: invite.email, projectId: invite.projectId });
+  });
 
-    if (!projectId || !signerName || !signedAt || !signatureDataUrl || !consentText) {
-      return res.status(400).json({ error: 'bad payload' });
-    }
-    if (body.consentChecked !== true) return res.status(400).json({ error: 'consent required' });
-    if (!getRecord.get(projectId)) return res.status(404).json({ error: 'not found' });
+  // ── GET /hub/session: who is signed in, or 401.
+  router.use('/hub/session', credentialedCors);
+  router.get('/hub/session', readLimit, signedIn, (req, res) => {
+    res.json({ ok: true, client: clientView(req.portal.client), preview: previewView(req.portal.preview) });
+  });
 
-    await backupBeforeWrite();
-    upsertAgreementEvidence.run({
-      project_id: projectId,
-      signer_name: signerName,
-      signed_at: signedAt,
-      signature_data_url: signatureDataUrl,
-      consent_text: consentText,
-      consent_checked: 1,
-      user_agent: String(body.userAgent || ''),
-      verification_token: String(body.verificationToken || ''),
-      ip_address: clientIp(req),
-      received_at: new Date().toISOString(),
-    });
+  // ── POST /hub/sign-out: ends this session, signed in or not, and any preview on this browser.
+  router.use('/hub/sign-out', credentialedCors);
+  router.post('/hub/sign-out', fromThePortal, (req, res) => {
+    access.endSession(readToken(req));
+    access.endPreview(readPreviewToken(req));
+    res.setHeader('Set-Cookie', [sessionCookie('', 0), previewCookie('', 0)]);
     res.json({ ok: true });
   });
 
-  // ── GET /hub/agreement/:projectId (admin): the evidence bundle; 404 if never signed
-  router.get('/hub/agreement/:projectId', requireAdmin, (req, res) => {
-    const row = getAgreementEvidence.get(req.params.projectId);
-    if (!row) return res.status(404).json({ error: 'not found' });
-    res.json({
-      signerName: row.signer_name,
-      signedAt: row.signed_at,
-      signatureDataUrl: row.signature_data_url,
-      consentText: row.consent_text,
-      consentChecked: Boolean(row.consent_checked),
-      userAgent: row.user_agent,
-      verificationToken: row.verification_token,
-      ipAddress: row.ip_address,
-      receivedAt: row.received_at,
+  // ── POST /hub/preview: { token } from `#/preview/<token>` (C8) → the preview's
+  // cookie, whose client it is, and the project it opens on. The link works once.
+  // The token travels in the body, never a URL, so it reaches no log. It doesn't
+  // touch the client's own session cookie.
+  router.use('/hub/preview', credentialedCors);
+  router.post('/hub/preview', authLimit, fromThePortal, (req, res) => {
+    const opened = access.openPreview((req.body || {}).token);
+    const client = opened && getClient.get(opened.clientId);
+    if (!client) return res.status(404).json({ error: 'not_found' });
+    res.setHeader('Set-Cookie', previewCookie(opened.token, Math.floor((Date.parse(opened.expiresAt) - Date.now()) / 1000)));
+    return res.json({ ok: true, client: clientView(client), preview: previewView(opened) });
+  });
+
+  // ── POST /hub/preview/end: ends the preview on this browser, if any. The client's own sign-in stays.
+  router.post('/hub/preview/end', fromThePortal, (req, res) => {
+    access.endPreview(readPreviewToken(req));
+    res.setHeader('Set-Cookie', previewCookie('', 0));
+    res.json({ ok: true });
+  });
+
+  // ── GET /hub/projects and /hub/projects/:id: the signed-in client's work.
+  router.use('/hub/projects', credentialedCors);
+  router.get('/hub/projects', readLimit, signedIn, (req, res) => {
+    res.json({ ok: true, projects: projectsOf(req.portal.client.id).map(projectCard) });
+  });
+  router.get('/hub/projects/:id', readLimit, signedIn, (req, res) => {
+    const project = projectsOf(req.portal.client.id).find((p) => p.id === req.params.id);
+    if (!project) return res.status(404).json({ error: 'not_found' });
+    const today = localToday();
+    const invoices = sentInvoices.all(project.id).map((row) => {
+      // The client's own invoice page's figures. One invoice that can't be read is
+      // left out (and logged), rather than costing the client the whole page.
+      let view;
+      try {
+        view = invoiceView(db, row, today);
+      } catch (err) {
+        console.error('[hub] an invoice couldn’t be shown on the portal:', row.id, err.message);
+        return null;
+      }
+      // An invoice in Hnry is the one Hnry sent: billing's page for it would show
+      // billing's number and bank details, so the client gets no link to it, and
+      // its number is Hnry's. Billing's own is Hnry's PO field, which the client
+      // never sees, so until Hnry's arrives it has none.
+      const inHnry = Boolean(row.hnry_invoice_id || row.hnry_number || row.hnry_pushed_at);
+      return {
+        id: row.id,
+        kind: row.kind,
+        number: inHnry ? (row.hnry_number || '') : view.number,
+        state: view.state,
+        issuedOn: view.issuedOn,
+        dueOn: view.dueOn,
+        paidOn: view.paidOn,
+        amount: view.totals.due.total,
+        url: !inHnry && row.public_token && appUrl ? `${appUrl}c/#i/${row.public_token}` : null,
+      };
+    }).filter(Boolean);
+    const signed = appUrl ? signedQuote.get(project.id) : null;
+    return res.json({
+      ok: true,
+      project: projectView(project, readChecklist(db, project.id), {
+        reviewOf: (v) => reviewOf(project.id, v, Boolean(req.portal.preview)),
+        clientId: req.portal.client.id,
+        invoices,
+        agreement: signed ? { url: `${appUrl}c/#e/${signed.public_token}`, signedOn: sydneyDay(signed.signed_at) } : null,
+        hourlyRate: rateIn((signedAgreement.get(project.id) || {}).agreement_text),
+      }),
     });
   });
 
-  // ── GET /hub/records/:projectId?token=&expires=: a signed, short-lived read,
-  // reached only through the URLs /hub/auth hands out.
-  router.use('/hub/records', openCors);
-  router.get('/hub/records/:projectId', limit('records'), (req, res) => {
-    const { projectId } = req.params;
-    if (!signer.verifyPath(`/hub/records/${projectId}`, req.query.token, req.query.expires)) {
-      return res.status(403).json({ error: 'forbidden' });
-    }
-    const row = getRecord.get(projectId);
-    if (!row) return res.status(404).json({ error: 'not found' });
-    res.type('application/json').send(row.data);
-  });
+  /* ── The client's feedback (C4): notes saved as they're added, removed while
+     unsent, and sent as one set per version. Client-written, so in tables of their
+     own (S10), with no backup per write (S16: the nightly one covers them, see
+     WORKING_NOTES). The server sets every date and checks every field (S8). A
+     project, item or note that isn't this client's is the same not found. */
 
-  // ── POST /hub/deliverable-url (admin): { path, downloadable? } → { url }.
-  // A stable link for a file already in the deliverables folder. Asking again
-  // for the same file returns the same link.
-  router.use('/hub/deliverable-url', credentialedCors);
-  router.post('/hub/deliverable-url', requireAdmin, async (req, res) => {
-    const path = String(req.body?.path || '').trim();
-    const downloadable = req.body?.downloadable ? 1 : 0;
-    if (!deliverables.resolveDeliverablePath(path)) return res.status(404).json({ error: 'file not found' });
-    await backupBeforeWrite();
-    res.json({ url: `${publicBaseUrl}/hub/files/${tokenFor(path, downloadable)}` });
+  const getOwnProject = db.prepare('SELECT * FROM projects WHERE id = ? AND client_id = ?');
+  const getItem = db.prepare('SELECT * FROM deliverables WHERE id = ? AND project_id = ?');
+  const newestPublishedOf = db.prepare(`
+    SELECT * FROM deliverable_versions WHERE deliverable_id = ? AND published_at IS NOT NULL ORDER BY n DESC LIMIT 1
+  `);
+  const submissionOf = db.prepare('SELECT * FROM client_submissions WHERE version_id = ?');
+  const approvalOn = db.prepare('SELECT * FROM client_approvals WHERE version_id = ?');
+  const finalRounds = db.prepare("SELECT COUNT(*) AS n FROM client_submissions WHERE deliverable_id = ? AND stage = 'final'");
+  /* Every unsent note this client has on the item, whichever version it was written on:
+     notes left unsent when the studio published the next version go with the next set,
+     so none is stranded (brief: a note is never silently dropped). */
+  const unsentOn = db.prepare('SELECT id FROM client_notes WHERE deliverable_id = ? AND client_id = ? AND submission_id IS NULL');
+  const noteByKey = db.prepare('SELECT * FROM client_notes WHERE client_id = ? AND client_key = ?');
+  const insertNote = db.prepare(`
+    INSERT INTO client_notes (id, project_id, deliverable_id, version_id, client_id, text, seconds, photo_key, photo_name, created_at, client_key)
+    VALUES (@id, @project_id, @deliverable_id, @version_id, @client_id, @text, @seconds, @photo_key, @photo_name, @created_at, @client_key)
+  `);
+  const sentAtOf = (submissionId) => (submissionId ? (db.prepare('SELECT submitted_at FROM client_submissions WHERE id = ?').get(submissionId) || {}).submitted_at || null : null);
+  const savedNote = (n) => noteView({
+    id: n.id, versionId: n.version_id, text: n.text, seconds: n.seconds, photoKey: n.photo_key, createdAt: n.created_at, submittedAt: sentAtOf(n.submission_id),
   });
+  const refuseNote = (res, status, error) => res.status(status).json({ error });
 
-  // ── POST /hub/deliverable-folder (admin): a photo library, one link pair per image
-  router.use('/hub/deliverable-folder', credentialedCors);
-  router.post('/hub/deliverable-folder', requireAdmin, async (req, res) => {
-    const path = String(req.body?.path || '').trim();
-    const names = deliverables.listDeliverableFolderImages(path);
-    if (!names) return res.status(404).json({ error: 'folder not found' });
-    if (!names.length) return res.status(422).json({ error: 'no images in folder' });
-    if (names.length > MAX_PHOTOS_PER_FOLDER) {
-      return res.status(422).json({
-        error: `folder has ${names.length} images (limit ${MAX_PHOTOS_PER_FOLDER}) — point at a single delivery folder`,
-      });
+  /* The item a client is writing about, on the version they can write on: this
+     client's accepted project, not archived; the item still needed; its newest
+     published version, which must be the one they were looking at; not sent yet;
+     not approved (C5: an approved version takes no more notes, and no second
+     approval). Answers and returns null when any isn't so. */
+  function writableItem(req, res, versionId) {
+    const clientId = req.portal.client.id;
+    const p = ownsProject(clientId, req.params.id) && getOwnProject.get(req.params.id, clientId);
+    const d = p && getItem.get(req.params.itemId, p.id);
+    if (!d || d.not_needed_at) return refuseNote(res, 404, 'not_found') && null;
+    if (p.archived_at) return refuseNote(res, 409, 'archived') && null;
+    const v = newestPublishedOf.get(d.id);
+    if (!v) return refuseNote(res, 404, 'not_found') && null;
+    // A newer version arrived while the page was open: the client is told, and their text stays with them.
+    if (String(versionId || '') !== v.id) return refuseNote(res, 409, 'not_current') && null;
+    if (submissionOf.get(v.id)) return refuseNote(res, 409, 'sent') && null;
+    if (d.hub_status === 'approved' || d.hub_status === 'delivered') return refuseNote(res, 409, 'approved') && null;
+    if (approvalOn.get(v.id)) return refuseNote(res, 409, 'approved') && null;
+    return { p, d, v, clientId };
+  }
+
+  // ── POST /hub/projects/:id/items/:itemId/notes: { versionId, text, seconds?, photo? } → the saved note.
+  router.post('/hub/projects/:id/items/:itemId/notes', noteLimit, fromThePortal, signedIn, (req, res) => {
+    const body = req.body || {};
+    const text = typeof body.text === 'string' ? body.text.trim() : '';
+    if (!text || text.length > NOTE_MAX) return refuseNote(res, 400, 'bad_request');
+    // The page's own id for this note: a retry after a lost reply gets back what was saved.
+    const key = body.key === undefined || body.key === null ? null : String(body.key);
+    if (key !== null && !/^[A-Za-z0-9_-]{8,64}$/.test(key)) return refuseNote(res, 400, 'bad_request');
+    if (key !== null) {
+      const already = noteByKey.get(req.portal.client.id, key);
+      if (already) {
+        return already.project_id === req.params.id && already.deliverable_id === req.params.itemId
+          ? res.json({ ok: true, note: savedNote(already) })
+          : refuseNote(res, 400, 'bad_request');
+      }
     }
-    await backupBeforeWrite();
-    const photos = names.map((name) => {
-      // `path` is checked to be inside the folder and `name` comes from
-      // readdir, never the request, so this can't escape it.
-      const relative = `${path.replace(/\/+$/, '')}/${name}`;
-      const [reviewUrl, downloadUrl] = [0, 1].map((d) => `${publicBaseUrl}/hub/files/${tokenFor(relative, d)}`);
-      return { name, reviewUrl, downloadUrl };
+    let seconds = null;
+    if (body.seconds !== undefined && body.seconds !== null) {
+      seconds = Number(body.seconds);
+      if (typeof body.seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0 || seconds > 86400) {
+        return refuseNote(res, 400, 'bad_request');
+      }
+    }
+    const at = writableItem(req, res, body.versionId);
+    if (!at) return undefined;
+    // A video's note can carry a time and no photo; a photo library's names one of its photos.
+    let photoKey = null;
+    let photoName = null;
+    if (at.v.kind === 'photos') {
+      photoKey = String(body.photo || '');
+      photoName = /^[0-9a-f]{16}$/.test(photoKey) ? photosIn(at.v.source_path, photoKey).get(photoKey) : null;
+      if (!photoName || seconds !== null) return refuseNote(res, 400, 'bad_request');
+    } else if (body.photo !== undefined && body.photo !== null) {
+      return refuseNote(res, 400, 'bad_request');
+    }
+    if (unsentOn.all(at.d.id, at.clientId).length >= UNSENT_MAX) return refuseNote(res, 409, 'too_many');
+    const row = {
+      id: newId('cn'), project_id: at.p.id, deliverable_id: at.d.id, version_id: at.v.id, client_id: at.clientId,
+      text, seconds, photo_key: photoKey, photo_name: photoName, created_at: nowIso(), client_key: key,
+    };
+    // Checked and written in one synchronous turn (no await in this route): a Send can't land in between.
+    insertNote.run(row);
+    return res.status(201).json({
+      ok: true,
+      note: noteView({ id: row.id, versionId: row.version_id, text, seconds, photoKey, createdAt: row.created_at, submittedAt: null }),
     });
-    res.json({ photos });
+  });
+
+  // ── DELETE /hub/projects/:id/notes/:noteId: a note the client hasn't sent yet.
+  router.delete('/hub/projects/:id/notes/:noteId', noteLimit, fromThePortal, signedIn, (req, res) => {
+    const clientId = req.portal.client.id;
+    const n = db.prepare('SELECT * FROM client_notes WHERE id = ? AND project_id = ? AND client_id = ?')
+      .get(req.params.noteId, req.params.id, clientId);
+    if (!n) return refuseNote(res, 404, 'not_found');
+    if (n.submission_id) return refuseNote(res, 409, 'sent');
+    db.prepare('DELETE FROM client_notes WHERE id = ? AND submission_id IS NULL').run(n.id);
+    return res.json({ ok: true });
+  });
+
+  // ── POST /hub/projects/:id/items/:itemId/submit: { versionId } → sends every unsent note on it as one set.
+  router.post('/hub/projects/:id/items/:itemId/submit', noteLimit, fromThePortal, signedIn, (req, res) => {
+    const at = writableItem(req, res, (req.body || {}).versionId);
+    if (!at) return undefined;
+    const id = newId('cs');
+    const submittedAt = nowIso();
+    let count = 0;
+    try {
+      db.transaction(() => {
+        const notes = unsentOn.all(at.d.id, at.clientId);
+        count = notes.length;
+        if (!count) return;
+        db.prepare(`
+          INSERT INTO client_submissions (id, project_id, deliverable_id, version_id, client_id, stage, note_count, submitted_at, ip, user_agent)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(id, at.p.id, at.d.id, at.v.id, at.clientId, at.v.stage, count, submittedAt,
+          clientIp(req), String(req.headers['user-agent'] || '').slice(0, 255));
+        db.prepare('UPDATE client_notes SET submission_id = ? WHERE deliverable_id = ? AND client_id = ? AND submission_id IS NULL')
+          .run(id, at.d.id, at.clientId);
+      })();
+    } catch (err) {
+      // Two sends at once: the version's one submission is already there.
+      if (/UNIQUE/.test(err.message)) return refuseNote(res, 409, 'sent');
+      throw err;
+    }
+    if (!count) return refuseNote(res, 409, 'no_notes');
+    // The studio hears of it by email (C6). After the save, off the reply, and it can't fail it.
+    if (typeof opts.onNotesSubmitted === 'function') {
+      Promise.resolve().then(() => opts.onNotesSubmitted({ submissionId: id })).catch(() => {});
+    }
+    // A set on a Final is a revision round (C5); the page says how many are left.
+    return res.json({ ok: true, submittedAt, noteCount: count, rounds: { included: ROUNDS_INCLUDED, used: finalRounds.get(at.d.id).n } });
+  });
+
+  /* ── POST /hub/projects/:id/items/:itemId/approve: { versionId } → CONFIRM APPROVAL (C5).
+     The record (S12): who (the client, and the email and name they had then), when
+     (the server's clock), from where (the address the tunnel saw, and the browser's
+     user agent) and exactly what (the version, its number, stage and file). First
+     write wins: an approval already on the version is the answer, unchanged, so a
+     double click or a second tab can't move its time. Refused while notes on the item
+     are unsent (brief: they'd be lost), and after notes were sent on the version (it
+     waits for the studio's next one). A client write: no backup per write (S16). */
+  /* With the item's status as the server now reads it (views.js itemStatus), so the page
+     never decides on its own that the item is signed off: a newer file the studio added,
+     even unpublished, means the item isn't, whatever this version's approval says. */
+  const approvalReply = (a) => {
+    const item = readChecklist(db, a.project_id).find((d) => d.id === a.deliverable_id);
+    return {
+      ok: true,
+      approval: { versionId: a.version_id, approvedAt: a.approved_at, deemed: a.kind === 'deemed' },
+      itemStatus: item ? itemStatus(item) : null,
+    };
+  };
+  router.post('/hub/projects/:id/items/:itemId/approve', noteLimit, fromThePortal, signedIn, (req, res) => {
+    const versionId = String((req.body || {}).versionId || '');
+    const clientId = req.portal.client.id;
+    const already = versionId && ownsProject(clientId, req.params.id) && approvalOn.get(versionId);
+    if (already && already.project_id === req.params.id && already.deliverable_id === req.params.itemId) {
+      return res.json(approvalReply(already));
+    }
+    const at = writableItem(req, res, versionId);
+    if (!at) return undefined;
+    if (unsentOn.all(at.d.id, clientId).length) return refuseNote(res, 409, 'unsent_notes');
+    const client = req.portal.client;
+    const row = {
+      id: newId('ca'), project_id: at.p.id, deliverable_id: at.d.id, version_id: at.v.id, client_id: clientId,
+      email: String(client.email || ''), name: String(client.contact_name || client.business_name || ''),
+      stage: at.v.stage, version_n: at.v.n, file_name: String(at.v.file_name || ''), approved_at: nowIso(),
+      ip: clientIp(req), user_agent: String(req.headers['user-agent'] || '').slice(0, 255),
+    };
+    try {
+      db.transaction(() => {
+        db.prepare(`
+          INSERT INTO client_approvals (id, project_id, deliverable_id, version_id, kind, client_id, email, name, stage, version_n,
+                                        file_name, approved_at, ip, user_agent)
+          VALUES (@id, @project_id, @deliverable_id, @version_id, 'client', @client_id, @email, @name, @stage, @version_n,
+                  @file_name, @approved_at, @ip, @user_agent)
+        `).run(row);
+        logActivity(db, at.p.id, 'client_approved', { title: at.d.title, n: at.v.n, stage: at.v.stage }, row.approved_at);
+      })();
+    } catch (err) {
+      // Two at once: the first one's record is the approval.
+      if (/UNIQUE/.test(err.message)) return res.json(approvalReply(approvalOn.get(at.v.id)));
+      throw err;
+    }
+    return res.status(201).json(approvalReply(row));
+  });
+
+  /* ── GET /hub/projects/:id/versions/:versionId/review[?photo=<key>]: the review
+     copy itself, from the NAS, with Range so a video seeks. Only a version the
+     signed-in client has been given; anything else, theirs or not, is the same not
+     found. Always inline: nothing here is a download (C2), and nothing is left in
+     the browser's cache once they sign out. The <video> and <img> on the portal
+     send the cookie because hub-api and the portal are the same site. */
+  router.get('/hub/projects/:id/versions/:versionId/review', mediaLimit, signedIn, (req, res) => {
+    const notFound = () => res.status(404).json({ error: 'not_found' });
+    const owned = ownsProject(req.portal.client.id, req.params.id);
+    const v = owned && getPublishedVersion.get(req.params.versionId, req.params.id);
+    if (!v || !v.source_path) return notFound();
+    let relative = v.source_path;
+    if (v.kind === 'photos') {
+      const key = String(req.query.photo || '');
+      const name = /^[0-9a-f]{16}$/.test(key) && photosIn(v.source_path, key).get(key);
+      if (!name) return notFound();
+      relative = `${v.source_path}/${name}`;
+    } else if (req.query.photo !== undefined) {
+      return notFound();
+    }
+    const file = deliverables.resolveDeliverablePath(relative);
+    if (!file) return notFound();
+    return streamFile(req, res, file.absolute, file.stat, false, { cacheControl: 'no-store' });
   });
 
   // ── GET /hub/files/:token: the stable link itself. Public by design: the
@@ -489,7 +803,7 @@ function createHubRouter(db, opts = {}) {
     streamFile(req, res, resolved.absolute, resolved.stat, Boolean(row.downloadable));
   });
 
-  // ── POST /hub/publish-asset (admin): { path, kind: 'video', force? }. Once per
+  // ── POST /hub/publish-asset (the studio): { path, kind: 'video', force? }. Once per
   // NAS path unless force:true. Bunny pulls the file from its /hub/files link.
   router.use('/hub/publish-asset', credentialedCors);
   router.post('/hub/publish-asset', requireAdmin, requireBunny, async (req, res) => {
@@ -524,7 +838,7 @@ function createHubRouter(db, opts = {}) {
     }
   });
 
-  // ── GET /hub/publish-status?path=&kind= (admin). Doesn't need the NAS file:
+  // ── GET /hub/publish-status?path=&kind= (the studio). Doesn't need the NAS file:
   // a published video can outlive it.
   router.use('/hub/publish-status', credentialedCors);
   router.get('/hub/publish-status', requireAdmin, requireBunny, async (req, res) => {
@@ -533,22 +847,6 @@ function createHubRouter(db, opts = {}) {
     if (!row) return res.status(404).json({ error: 'not published' });
     const current = await resolveVideoId(row);
     res.json(bunnyAssetResponse(current, deliverables.resolveDeliverablePath(path)?.stat));
-  });
-
-  // ── GET /hub/deliverables-health (admin): whether the NAS folder can be read.
-  // Off the public /health, which says nothing about the data.
-  router.use('/hub/deliverables-health', credentialedCors);
-  router.get('/hub/deliverables-health', requireAdmin, async (_req, res) => {
-    res.json(await deliverables.health());
-  });
-
-  // ── POST /hub/notify (admin): invitation, reset and delivery emails. Not
-  // sent yet: it logs the request, as on the hub.
-  router.use('/hub/notify', credentialedCors);
-  router.post('/hub/notify', requireAdmin, (req, res) => {
-    const payload = req.body || {};
-    console.log('[hub/notify]', JSON.stringify(payload));
-    res.json({ ok: true, dispatched: payload.kind || 'unknown' });
   });
 
   /* The hub's server answered everything in JSON, and the portal reads every

@@ -817,8 +817,8 @@ test('the v9 steps leave their inputs alone', () => {
   assert.equal(neg.notes.length, 1);
 });
 
-test('the schema knows it is at v21', () => {
-  assert.equal(LATEST_VERSION, 21);
+test('the schema knows it is at v31', () => {
+  assert.equal(LATEST_VERSION, 31);
 });
 
 /**
@@ -1634,12 +1634,68 @@ test('v21 adds the hub tables empty and changes no row of any table', () => {
     'agreement_evidence', 'bunny_assets', 'bunny_collections'];
   for (const t of hubTables) assert.ok(!tables.includes(t), `v20 has no ${t}`);
 
-  const result = migrate(db);
+  const result = migrate(db, { to: 21 });
   assert.deepEqual([result.from, result.to, result.applied], [20, 21, 1]);
   for (const t of tables) assert.deepEqual(dump(db, t), before[t], t);
   for (const t of hubTables) assert.deepEqual(dump(db, t), [], `${t} starts empty`);
   assert.equal(everyTableBut(db, []).includes('meta'), false);
   assert.deepEqual(db.pragma('foreign_key_check'), []);
+  db.close();
+});
+
+/**
+ * MIGRATION v22 — project checklists (merged-admin R1). Two new tables and
+ * three project columns; the only row it writes is the one-time mark on
+ * projects already fully paid, which the IA classes Complete with no
+ * checklist. Every other row of every table reads as it did.
+ */
+test('v22 adds the checklist tables, and marks only fully paid projects as needing no checklist', () => {
+  const db = v18WithTypes();
+  migrate(db, { to: 21 });
+  const at = '2026-11-01T00:00:00.000Z';
+  const project = (id, extra = '') => db.prepare(`INSERT INTO projects (id, upid, created_at, updated_at${extra ? ', declined_at' : ''})
+    VALUES (?, ?, ?, ?${extra ? ', ?' : ''})`).run(...[id, id.toUpperCase(), at, at, ...(extra ? [extra] : [])]);
+  const invoice = (id, projectId, kind, status) => db.prepare(`INSERT INTO invoices
+    (id, project_id, kind, number, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, projectId, kind, 'INV-' + id, status, at, at);
+  project('p_paid'); invoice('i1', 'p_paid', 'deposit', 'paid'); invoice('i2', 'p_paid', 'final', 'paid');
+  project('p_voidpaid'); invoice('i3', 'p_voidpaid', 'single', 'paid'); invoice('i4', 'p_voidpaid', 'deposit', 'void');
+  project('p_part'); invoice('i5', 'p_part', 'deposit', 'paid'); invoice('i6', 'p_part', 'final', 'sent');
+  project('p_void'); invoice('i7', 'p_void', 'single', 'void');
+  project('p_none');
+  project('p_declined', '2026-10-01'); invoice('i8', 'p_declined', 'legacy', 'paid');
+
+  const tables = everyTableBut(db, ['schema_version']);
+  const before = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+  const result = migrate(db, { to: 22 });
+  assert.deepEqual([result.from, result.to, result.applied], [21, 22, 1]);
+
+  for (const t of tables.filter((x) => x !== 'projects')) assert.deepEqual(dump(db, t), before[t], t);
+  for (const t of ['deliverables', 'deliverable_versions']) assert.deepEqual(dump(db, t), [], `${t} starts empty`);
+  const rows = db.prepare('SELECT id, archived_at, no_deliverables_at, payment_required FROM projects ORDER BY id').all();
+  const marked = rows.filter((r) => r.no_deliverables_at).map((r) => r.id);
+  assert.deepEqual(marked.filter((id) => id.startsWith('p_')), ['p_paid', 'p_voidpaid'],
+    'paid: some invoice that isn\'t void, and all of those paid');
+  // The fixture's own projects (made by v13 from its estimates) follow the same rule.
+  const { projectStage } = require('../src/projects');
+  for (const r of rows.filter((x) => !x.id.startsWith('p_'))) {
+    const p = db.prepare('SELECT * FROM projects WHERE id = ?').get(r.id);
+    const bills = db.prepare('SELECT * FROM invoices WHERE project_id = ?').all(r.id);
+    const ests = db.prepare('SELECT status FROM estimates WHERE project_id = ?').all(r.id);
+    assert.equal(Boolean(r.no_deliverables_at), projectStage(p, ests, bills).stage === 'paid', r.id);
+  }
+  assert.ok(marked.length > 2, 'the fixture has paid projects of its own');
+  assert.ok(rows.every((r) => r.archived_at === null && r.payment_required === 0));
+  // The rest of each project row is untouched.
+  const strip = (r) => { const { archived_at, no_deliverables_at, payment_required, ...rest } = r; return rest; };
+  assert.deepEqual(dump(db, 'projects').map(strip), before.projects);
+  assert.deepEqual(db.pragma('foreign_key_check'), []);
+
+  // Twice is once: the mark only fills an empty column.
+  db.prepare('DELETE FROM schema_version WHERE version = 22').run();
+  const first = db.prepare("SELECT no_deliverables_at FROM projects WHERE id = 'p_paid'").get().no_deliverables_at;
+  migrate(db);
+  assert.equal(db.prepare("SELECT no_deliverables_at FROM projects WHERE id = 'p_paid'").get().no_deliverables_at, first);
   db.close();
 });
 
@@ -1662,4 +1718,22 @@ test('a fresh database has the Hnry columns, and invoiceJson reads them (null fo
   assert.deepEqual([pushed.hnryInvoiceId, pushed.hnryNumber, pushed.hnryPushedAt, pushed.hnryLinesDone, pushed.hnryError], ['gid64', 'INV-10670074', now, 3, 'timeout']);
   assert.equal(pushed.number, 'INV-UP-1-F', 'the app\'s own number is kept beside Hnry\'s');
   db.close();
+});
+
+test('v26 stamps every project accepted before it as already opened, and leaves drafts alone', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lsc-v26-'));
+  const file = path.join(dir, 'old.db');
+  const old = openDatabase(file, { backupDir: false });
+  const at = '2026-11-01T00:00:00.000Z';
+  old.prepare('INSERT INTO projects (id, accepted_at, created_at, updated_at) VALUES (?, ?, ?, ?)').run('prj_acc', at, at, at);
+  old.prepare('INSERT INTO projects (id, created_at, updated_at) VALUES (?, ?, ?)').run('prj_draft', at, at);
+  old.prepare('UPDATE projects SET opened_at = NULL').run();
+  old.prepare('DELETE FROM schema_version WHERE version >= 26').run();
+  old.close();
+  const again = openDatabase(file, { backupDir: false });
+  const opened = (id) => again.prepare('SELECT opened_at FROM projects WHERE id = ?').get(id).opened_at;
+  assert.ok(opened('prj_acc'));
+  assert.equal(opened('prj_draft'), null);
+  again.close();
+  fs.rmSync(dir, { recursive: true, force: true });
 });

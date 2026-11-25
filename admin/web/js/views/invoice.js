@@ -527,6 +527,7 @@ const InvoiceView = (() => {
     const totals = totalsNow();
     const body = inv.kind === 'deposit' ? depositMarkup(inv, totals) : inv.kind === 'legacy' ? legacyMarkup(inv) : billMarkup(inv, totals);
     LSCMenu.close(false);
+    LSCShell.placeProject(project.id, ProjectCard.placeOf(project));
     root.innerHTML =
       '<div id="invoice-screen" class="inv-screen">' +
       '<button class="back-btn" id="js-back">← ' + esc([project.upid, project.name].filter(Boolean).join(' · ') || 'Project') + '</button>' +
@@ -537,7 +538,7 @@ const InvoiceView = (() => {
       '<div class="inv-main">' + body.main + '</div>' +
       (body.side ? '<div class="inv-side">' + body.side + '</div>' : '') +
       '</div></div>';
-    document.title = (inv.number || 'Invoice') + ' · ' + (project.name || 'Project') + ' — LSC Billing';
+    document.title = LSCShell.title((inv.number || 'Invoice') + ' · ' + (project.name || 'Project'));
     bind();
     paintSave();
     clearTimeout(following);
@@ -546,7 +547,8 @@ const InvoiceView = (() => {
   }
 
   function bind() {
-    $('js-back').addEventListener('click', () => LSCRouter.leaveTo(folderPath(data.project.id)));
+    // Invoices are the Payments tab's (R3).
+    $('js-back').addEventListener('click', () => LSCRouter.leaveTo(ProjectCard.folderBack(data.project.id, folderPath(data.project.id) + '/payments')));
     // Buttons and closed menus' items alike: menu.js clicks a chosen item in place.
     root.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => runAction(b.dataset.act, b)));
     root.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () =>

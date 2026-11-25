@@ -144,6 +144,59 @@ function applyProjectWrite(db, plan, clientId, now) {
   return p.id;
 }
 
+/**
+ * S11: what the client side holds for a project. Deleting the project would
+ * orphan it (these tables have no foreign key to projects), so every delete
+ * path asks first. Add a table here when a task starts keeping project data in
+ * one (approvals and client notes; the Bunny rows). Their `project_id` is
+ * billing's `projects.id`. The old hub's rows are the exception: they keep the
+ * hub's id, and `hub_imports` is what holds a project linked to them (R4). A
+ * hub record linked to no project yet has no project to delete.
+ */
+const IN_USE = 'The client still uses it.';
+const CLIENT_DATA = [
+  // Made the moment a quote is accepted, before the client sees anything.
+  ['deliverables', 'a deliverables checklist', 'Accepted work stays on record with what it owes.'],
+  ['records', 'a published portal record', IN_USE],
+  ['private_auth', 'portal access for the client', IN_USE],
+  ['agreement_evidence', 'a client sign-off', IN_USE],
+  // Linked to the old hub's records, which keep the hub's id (R4).
+  ['hub_imports', 'work brought over from the old hub', IN_USE],
+];
+
+// One set of prepared lookups per database, made on first use.
+const clientDataLookups = new WeakMap();
+
+/** The first thing the client side holds for this project, as { what, why }, or null. */
+function clientDataHeld(db, projectId) {
+  let lookups = clientDataLookups.get(db);
+  if (!lookups) {
+    lookups = CLIENT_DATA.map(([table, what, why]) =>
+      [db.prepare(`SELECT 1 FROM ${table} WHERE project_id = ? LIMIT 1`), { what, why }]);
+    clientDataLookups.set(db, lookups);
+  }
+  for (const [stmt, held] of lookups) {
+    if (stmt.get(projectId)) return held;
+  }
+  return null;
+}
+
+/**
+ * The 409 body for a project the client side holds: what holds it (`held`,
+ * from clientDataHeld) and why that stays. `subject` opens the sentence ("This project"),
+ * `verb` is what can't happen to it, `advice` an optional last sentence.
+ */
+function clientDataRefusal(held, subject, verb = 'deleted', advice = '') {
+  return {
+    error: 'has_client_data',
+    message: `${subject} has ${held.what}, so it can’t be ${verb}. ${held.why}` +
+      (advice ? ' ' + advice : ''),
+  };
+}
+
+/* What to do instead of deleting accepted work (brief S11: "Archive is the way out"). */
+const ARCHIVE_ADVICE = 'Once it’s Complete you can archive it from its client’s page.';
+
 /** After an estimate is deleted: a project with no estimate left goes too. */
 function dropEmptyProject(db, projectId) {
   if (!projectId) return;
@@ -246,5 +299,6 @@ function settledAt(project, invoices, stage) {
 
 module.exports = {
   normUpid, upidTakenBy, upidTakenReply, upidLocked, planProjectWrite, applyProjectWrite, dropEmptyProject,
+  clientDataHeld, clientDataRefusal, ARCHIVE_ADVICE,
   STAGES, projectStage, settledAt,
 };

@@ -125,7 +125,7 @@
    so the table still reads as prices first. */
 .pricing-row-meta {
   margin-top: 4px;
-  font-size: 10.5px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
   display: flex;
   align-items: center;
@@ -139,7 +139,7 @@
   border: 1px solid var(--input-border);
   color: var(--text);
   font-family: var(--font-family-body);
-  font-size: 10.5px;
+  font-size: var(--font-size-xs);
   padding: 2px 4px;
   outline: none;
   cursor: pointer;
@@ -161,7 +161,7 @@
    between parts, never inside one, so a figure is never split from its words. */
 .pricing-floor {
   margin-top: 4px;
-  font-size: 10.5px;
+  font-size: var(--font-size-xs);
   color: var(--muted);
   line-height: 1.6;
 }

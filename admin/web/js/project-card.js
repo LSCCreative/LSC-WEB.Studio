@@ -20,18 +20,93 @@ const ProjectCard = (() => {
   const { fmt, esc } = LSCUtil;
   const C = LSCCalendar;
 
-  // The filter chips, in the order a job moves through them. `active` leaves
-  // out paid and declined projects settled more than 90 days ago (IA, Content
-  // Growth Plan); each stage's own chip still has them.
-  const CHIPS = [
-    ['active', 'Active'],
+  /* The two lists' filter chips, in the order a job moves through them
+     (merged-admin L3, R2; IA "Pipeline", "Live projects"). Each list's first chip
+     is its default (the server's `pipeline` and `live`); the others narrow it.
+     Pipeline's Open leaves declined projects a filter away. Live's chips are the
+     server's named lists: delivery badges, and Payment due, which is anything
+     with a sent invoice unpaid. Complete projects belong to their client, so no
+     chip finds them: they are under Clients. */
+  const PIPELINE_CHIPS = [
+    ['pipeline', 'Open'],
     ['draft', 'Draft'],
     ['sent', 'Sent'],
-    ['accepted', 'Accepted'],
-    ['invoiced', 'Invoiced'],
-    ['paid', 'Paid'],
     ['declined', 'Declined'],
   ];
+  const LIVE_CHIPS = [
+    ['live', 'All'],
+    ['in-production', 'In production'],
+    ['in-review', 'In review'],
+    ['revisions', 'Revisions'],
+    ['payment-due', 'Payment due'],
+  ];
+
+  /* Where a project belongs in the admin, from its stage, not from how you
+     arrived (IA "Navigation Model"). Before acceptance: Scope & Sales, with
+     the breadcrumb "Pipeline / Project". After it: Clients, "Clients / Client
+     / Project". `area` and `page` are LSCShell's ids (no page lit once the
+     project is a level below the row); `path` is where the Back link goes and
+     `crumb` what it says. A project with no client record has nowhere under
+     Clients to go yet, so it falls back to the list that holds it. */
+  const clientPath = (id) => '/clients/' + encodeURIComponent(id) + '/projects';
+
+  function placeOf(project) {
+    const stage = project && project.stage;
+    if (stage === 'accepted' || stage === 'invoiced' || stage === 'paid') {
+      const client = (project && project.client) || {};
+      const name = client.businessName || client.contactName || '';
+      if (client.id) {
+        return { area: 'clients', page: null, path: clientPath(client.id), crumb: 'Clients / ' + (name || 'Client') };
+      }
+      return stage === 'paid'
+        ? { area: 'clients', page: null, path: '/clients', crumb: 'Clients' }
+        : { area: 'clients', page: 'live', path: '/projects', crumb: 'Live projects' };
+    }
+    return { area: 'sales', page: 'pipeline', path: '/pipeline', crumb: 'Pipeline' };
+  }
+
+  /* A project screen's Back link: the list or client page it was opened from
+     when that is one Back away, so the chip and search it showed come back;
+     else where the project belongs (placeOf). `project` may be null (a
+     project that couldn't be loaded). { path, crumb }. */
+  const LIST_CRUMBS = { '/pipeline': 'Pipeline', '/projects': 'Live projects', '/clients': 'Clients' };
+  function backOf(project) {
+    const place = placeOf(project);
+    const behind = LSCRouter.behindPath();
+    if (!behind || behind === place.path) return { path: place.path, crumb: place.crumb };
+    if (LIST_CRUMBS[behind]) return { path: behind, crumb: LIST_CRUMBS[behind] };
+    if (/^\/clients\/[^/]+\/(projects|invoices)$/.test(behind)) {
+      const client = (project && project.client) || {};
+      const own = client.id && behind.startsWith('/clients/' + encodeURIComponent(client.id) + '/');
+      return { path: behind, crumb: own ? 'Clients / ' + (client.businessName || client.contactName || 'Client') : 'Back' };
+    }
+    return { path: place.path, crumb: place.crumb };
+  }
+
+  /* An accepted project's tabs, each an address (IA "Project"). */
+  const PROJECT_TABS = [['deliverables', 'Deliverables'], ['production', 'Production'], ['payments', 'Payments'], ['documents', 'Documents']];
+
+  /* Where a screen under a project goes back to: the tab it was opened from when
+     that is one Back away, else `fallback`, else the project (which opens on its
+     default tab once it's accepted). Only a tab, or a deliverable under one: the
+     project's other screens (its estimate, an invoice) aren't where Back ends. */
+  function folderBack(projectId, fallback) {
+    const home = '/projects/' + encodeURIComponent(projectId);
+    const behind = LSCRouter.behindPath();
+    const rest = behind && behind.startsWith(home + '/') ? behind.slice(home.length + 1).split('/') : [];
+    const isTab = PROJECT_TABS.some(([key]) => key === rest[0]) && (rest.length === 1 || (rest.length === 2 && rest[0] === 'deliverables'));
+    return isTab ? behind : fallback || home;
+  }
+
+  /* An old address's `?stage=` (from before the Pipeline had its own screen)
+     as the screen that now holds those projects, or null when the stage is
+     one the lists still use: '/pipeline?stage=sent', '/projects', '/clients'. */
+  function redirectForStage(stage) {
+    if (stage === 'draft' || stage === 'sent' || stage === 'declined') return '/pipeline?stage=' + stage;
+    if (stage === 'accepted' || stage === 'invoiced') return '/projects';
+    if (stage === 'paid') return '/clients';
+    return null;
+  }
 
   /* A date as YYYY-MM-DD. A timestamp (accepted_at, declined_at, a send) is
      UTC, so it is read on this browser's clock: an evening here is the next
@@ -107,6 +182,15 @@ const ProjectCard = (() => {
     }
   }
 
+  /* Where the job stands, from the server's one state model (delivery.js
+     deliveryState): words on every list after acceptance, tinted by what it asks
+     of the studio. Nothing while it's a quote: the stage line says that. */
+  function badgeMarkup(project) {
+    const d = project.delivery;
+    if (!d || d.group === 'pipeline' || !/^[a-z_]+$/.test(d.badge || '')) return '';
+    return '<span class="delivery-badge is-' + d.badge + '">' + esc(d.label) + '</span>';
+  }
+
   /* The line as markup. The square before it is the stage's mark; the word
      beside it says the same thing, so colour is never the only sign. */
   function stageMarkup(project, today) {
@@ -154,6 +238,25 @@ const ProjectCard = (() => {
       case 'invoices_created': return 'Invoices created' + invoicesText(d);
       case 'declined': return 'Declined';
       case 'reopened': return 'Reopened';
+      case 'deliverable_added': return 'Added “' + (d.title || 'a deliverable') + '” to the checklist';
+      case 'deliverable_removed': return 'Removed “' + (d.title || 'a deliverable') + '” from the checklist';
+      case 'deliverable_not_needed': return 'Marked “' + (d.title || 'a deliverable') + '” not needed';
+      case 'deliverable_needed': return 'Put “' + (d.title || 'a deliverable') + '” back on the checklist';
+      case 'deliverable_stage': return '“' + (d.title || 'A deliverable') + '” is now a ' + (d.stage === 'final' ? 'Final' : 'Draft Cut');
+      case 'version_added': return 'Added v' + d.n + ' of “' + (d.title || 'a deliverable') + '”' + (d.file ? ': ' + d.file : '');
+      case 'version_removed': return 'Removed v' + d.n + ' of “' + (d.title || 'a deliverable') + '”';
+      case 'version_published': return 'Published v' + d.n + ' of “' + (d.title || 'a deliverable') + '” as a ' + (d.stage === 'final' ? 'Final' : 'Draft Cut');
+      case 'portal_invite_sent': return 'Portal invite emailed to ' + (d.to || 'the client');
+      case 'portal_invite_failed': return 'The portal invite email to ' + (d.to || 'the client') + ' didn’t go' + (d.error ? ': ' + d.error : '');
+      case 'client_approved': return 'Client approved v' + d.n + ' of “' + (d.title || 'a deliverable') + '”' +
+        (d.stage === 'final' ? ', the Final' : ', a Draft Cut');
+      case 'deemed_approved': return 'Marked v' + d.n + ' of “' + (d.title || 'a deliverable') + '” as deemed approved (no reply in 14 business days)';
+      case 'deemed_reminder_sent': return 'Reminder emailed to ' + (d.to || 'the client') + ' about v' + d.n + ' of “' + (d.title || 'a deliverable') + '”';
+      case 'deemed_reminder_failed': return 'The reminder email to ' + (d.to || 'the client') + ' about v' + d.n + ' didn’t go' + (d.error ? ': ' + d.error : '');
+      case 'no_deliverables': return 'Said no deliverables are expected';
+      case 'deliverables_expected': return 'Said deliverables are expected after all';
+      case 'archived': return 'Archived';
+      case 'unarchived': return 'Unarchived, back in Complete';
       case 'invoice_sent': return (d.by === 'hnry' ? (d.hnryNumber || d.number || 'Invoice') : (d.number || 'Invoice')) +
         (d.by === 'email' ? ' emailed' + (d.late ? ' late' : '') : d.by === 'link' ? ' sent by link' : d.by === 'hnry' ? ' sent from Hnry' : ' marked sent') +
         (C.isDate(d.dueAt) ? ', due ' + dayMonth(d.dueAt, today) : '');
@@ -208,16 +311,24 @@ const ProjectCard = (() => {
     );
   }
 
-  function cardMarkup(project, today) {
+  /* `opts.hideClient`: the list is one client's. `opts.action`: { act, label,
+     says }, a button of the screen's own on the card, which the card's click
+     leaves alone (the screen delegates on data-act). */
+  function cardMarkup(project, today, opts) {
     const client = project.client || {};
+    const { hideClient, action } = opts || {};
     return (
       '<div class="proj-card project-card" data-id="' + esc(project.id) + '" role="listitem">' +
       upidMarkup(project) +
       '<h2 class="card-name"><button type="button" class="card-open">' + esc(project.name || 'Untitled') + '</button></h2>' +
-      '<div class="card-client">' + esc(client.businessName || '—') + '</div>' +
+      (hideClient ? '' : '<div class="card-client">' + esc(client.businessName || '—') + '</div>') +
       '<div class="card-gross-label">Total (inc GST)</div>' +
       '<div class="card-gross">' + fmt(project.totalIncGst) + '</div>' +
-      '<div class="card-foot project-foot">' + stageMarkup(project, today) + nextDayMarkup(project, today) + '</div>' +
+      '<div class="card-foot project-foot">' + badgeMarkup(project) + stageMarkup(project, today) + nextDayMarkup(project, today) + '</div>' +
+      (action
+        ? '<div class="card-actions"><button type="button" class="btn btn-sm" data-write data-act="' + esc(action.act) + '"' +
+          ' data-id="' + esc(project.id) + '" aria-label="' + esc(action.says) + '">' + esc(action.label) + '</button></div>'
+        : '') +
       '</div>'
     );
   }
@@ -229,9 +340,13 @@ const ProjectCard = (() => {
   function bind(container, projects, onOpen) {
     container.querySelectorAll('.project-card').forEach((card) => {
       const project = projects.find((p) => p.id === card.dataset.id);
-      if (project) card.addEventListener('click', () => onOpen(project));
+      if (project) {
+        card.addEventListener('click', (e) => {
+          if (!e.target.closest('.card-actions')) onOpen(project);
+        });
+      }
     });
   }
 
-  return { CHIPS, stageLine, stageMarkup, cardMarkup, bind, pathOf, dayMonth, localDate, activityText };
+  return { PIPELINE_CHIPS, LIVE_CHIPS, PROJECT_TABS, placeOf, backOf, folderBack, redirectForStage, stageLine, stageMarkup, badgeMarkup, cardMarkup, bind, pathOf, dayMonth, localDate, activityText };
 })();

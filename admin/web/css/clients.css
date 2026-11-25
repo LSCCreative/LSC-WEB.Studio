@@ -105,3 +105,213 @@
 .client-projects-grid {
   padding: 16px;
 }
+
+/* ── Client list ──────────────────────────────────────────────────────────── */
+
+/* A long address on one line would push the live count off the card. */
+.client-card .card-foot {
+  gap: var(--space-4);
+}
+.client-card-email {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.client-card-email.is-missing,
+.client-no-email {
+  color: var(--color-status-warning-text);
+}
+.client-card-live {
+  flex: 0 0 auto;
+}
+
+/* Why a search found this client: the projects that matched. */
+.client-matches {
+  margin: calc(var(--space-2) * -1) 0 var(--space-4);
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.client-matches li {
+  overflow-wrap: anywhere;
+}
+.client-match-upid {
+  font-family: var(--font-figures);
+  font-size: var(--font-size-xs);
+  color: var(--color-accent-text);
+}
+.client-match-note,
+.client-match-more {
+  color: var(--muted);
+}
+
+/* ── Client: Projects ─────────────────────────────────────────────────────── */
+
+.client-group {
+  margin-bottom: 34px;
+}
+.client-group-title {
+  margin: 0 0 var(--space-5);
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-lg);
+  line-height: var(--line-height-tight);
+  color: var(--color-text-primary);
+}
+.client-group-count {
+  margin-left: var(--space-1);
+  font-family: var(--font-figures);
+  font-weight: var(--font-weight-normal);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.client-group-empty,
+.client-group-note {
+  margin: 0 0 var(--space-5);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+/* The way to what isn't on this page: quiet, under the groups. */
+.client-links {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.client-links:empty {
+  display: none;
+}
+.client-link {
+  min-height: var(--touch-min);
+  padding: 0;
+  background: none;
+  border: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  text-decoration: underline;
+  text-decoration-color: var(--color-border-strong);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.client-link:hover {
+  text-decoration-color: var(--color-accent-mark);
+}
+
+/* Sits over the card's stretched title button, so it is its own target. */
+.card-actions {
+  position: relative;
+  z-index: 1;
+  margin-top: var(--space-4);
+}
+
+/* ── Delivery badge (project-card.js) ─────────────────────────────────────── */
+
+.delivery-badge {
+  display: inline-block;
+  padding: var(--chip-pad);
+  border: 1px solid var(--color-border-hairline);
+  border-radius: var(--chip-radius);
+  font: var(--chip-font);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--color-status-neutral-text);
+}
+.delivery-badge.is-in_review {
+  border-color: var(--color-status-info);
+  color: var(--color-status-info-text);
+}
+.delivery-badge.is-revisions,
+.delivery-badge.is-send_invoice,
+.delivery-badge.is-payment_due,
+.delivery-badge.is-payment_claimed {
+  border-color: var(--color-status-warning);
+  color: var(--color-status-warning-text);
+}
+.delivery-badge.is-downloads_locked {
+  border-color: var(--color-status-error);
+  color: var(--color-status-error-text);
+}
+.delivery-badge.is-complete {
+  border-color: var(--color-status-success);
+  color: var(--color-status-success-text);
+}
+
+/* ── Client details ───────────────────────────────────────────────────────── */
+
+.client-field-hint {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-normal, 1.4);
+  color: var(--color-text-secondary);
+}
+.client-field-hint.is-warn {
+  color: var(--color-status-warning-text);
+}
+
+/* ── Invoice index ────────────────────────────────────────────────────────── */
+
+.client-invoice-sums {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-8, 32px);
+  margin: 0 0 var(--space-6);
+}
+.client-invoice-sums dt {
+  margin-bottom: var(--space-2);
+  font: var(--eyebrow-font);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+.client-invoice-sums dd {
+  margin: 0;
+  font-family: var(--font-figures);
+  font-size: var(--font-size-lg);
+  color: var(--color-text-primary);
+}
+.client-invoice-link {
+  color: var(--color-text-primary);
+  font-family: var(--font-figures);
+  text-decoration: underline;
+  text-decoration-color: var(--color-border-strong);
+  text-underline-offset: 3px;
+}
+.client-invoice-link:hover {
+  text-decoration-color: var(--color-accent-mark);
+}
+.client-invoice-kind,
+.client-invoice-upid,
+.client-invoice-paid {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+.client-invoice-status.is-alert {
+  color: var(--color-status-error-text);
+}
+.client-invoice-status.is-paid {
+  color: var(--color-status-success-text);
+}
+.client-invoice-status.is-sent,
+.client-invoice-status.is-scheduled {
+  color: var(--color-status-info-text);
+}
+.client-invoices tr.is-void td {
+  color: var(--muted);
+}
+
+/* On a client's page the card has no client line, whose margin spaced the total. */
+.card-name + .card-gross-label {
+  margin-top: var(--space-6);
+}
+
+/* Focused only by script, when what had focus was redrawn. */
+#client-panel:focus {
+  outline: none;
+}
+
+/* A long address wraps rather than running off a phone. */
+#client-sub {
+  overflow-wrap: anywhere;
+}

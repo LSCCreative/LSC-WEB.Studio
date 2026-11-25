@@ -7,8 +7,9 @@
    wins ties on equal specificity.
 
    One rule is a min-width query rather than a max-width one — it hides
-   #nav-menu-btn, which is markup no desktop layout has. It is explained where
-   it sits, at the head of the mobile band.
+   phone-only markup. It is explained where it sits, at the head of the mobile
+   band. The header is not here: css/shell.css owns it at every width
+   (merged-admin L2).
 
    The three tables that stack below 768px (the editor's line-item grids, the
    read-only estimate's tables, the rate card) do it by printing a data-label
@@ -205,33 +206,11 @@
     padding: 10px 24px;
   }
 
-  /* The header nav.
-
-     #hdr-right needs 690px and the wordmark beside it takes 123px, so below
-     ~865px the flex items start shrinking. .nav-link has no flex-shrink of its
-     own, so they shrink to min-content and the labels break across two lines —
-     "Invoice / Settings", "Sign / Out" — inside a header fixed at 52px. It is
-     not clipped, but it is a mess, and it starts well inside the tablet band.
-
-     Fixed here by taking the space back rather than by collapsing the nav: the
-     <768px task owns the compact nav, and a real one (a menu button) is a
-     bigger change than this band needs. nowrap is the actual fix — the rest is
-     what makes nowrap fit.
-
-     The home button is the cheapest 95px available: #logo-btn and
-     #nav-estimates are both wired to toEstimates in js/app.js, so its label is
-     a duplicate of the Estimates item two places to its right. The house icon
-     stays, and the button keeps its name through the aria-label added in
-     index.html for exactly this reason. */
-  #hdr-right {
-    gap: 12px;
-  }
+  /* The rails' items (Finance, Overhead's inner tabs) keep one line each and
+     a narrower inset in this band. */
   .nav-link {
     white-space: nowrap;
     padding: 6px 8px;
-  }
-  #logo-btn .nav-label {
-    display: none;
   }
 
   /* The summary bar.
@@ -275,18 +254,10 @@
    both TASKS.md and DESIGN_BRIEF.md, and claiming it for both would put two
    layouts on one width.
 
-   The one rule in this section that is NOT a max-width query is the next one.
-   #nav-menu-btn is new markup — no desktop layout contains it — so hiding it
-   above the band is the same kind of rule as estimates.css's
-   `.btn .spinner{flex-shrink:0}`: global in form, but it can only reach
-   something the desktop app never had. It is here rather than in a screen's
-   stylesheet because the compact nav is a feature of this band and splitting it
-   across two files would hide half of it from whoever reads this one. */
+   The one rule in this section that is NOT a max-width query is the next one:
+   it hides phone-only markup above the band. */
 @media (min-width: 768px) {
-  #nav-menu-btn {
-    display: none;
-  }
-  /* The Dashboard comparison's "Show all N services" toggle, the same kind of
+  /* The Overview comparison's "Show all N services" toggle, the same kind of
      rule: phone-only markup (finance-dashboard.js, showAllRows). Above this
      band every row always shows, so the button has nothing to do. */
   .dash-show-all-row {
@@ -405,68 +376,7 @@
   #update-banner {
     padding: 10px 16px;
   }
-  #app-header {
-    padding: 0 8px 0 16px;
-  }
 
-  /* ── The compact nav ─────────────────────────────────────────────────────
-     #hdr-right needs 515px and there are ~236px beside the wordmark at 375px,
-     so the header overflowed the viewport by 250px. That is worse than a
-     cosmetic overflow: with content wider than the layout viewport, the phone
-     zooms the whole page out to fit it (measured: window.innerWidth 625 against
-     a documentElement.clientWidth of 375). Every screen in the app was being
-     rendered shrunken because of the header alone.
-
-     The panel is #hdr-right itself, taken out of flow and parked under the
-     header — not a second copy of the nav. The buttons are the same elements
-     with the same handlers at every width, so the mobile menu cannot drift out
-     of step with the desktop header, and it inherits the unsaved-edit guards in
-     js/app.js for free. display:none while closed takes the six buttons out of
-     the tab order and the accessibility tree with it.
-
-     No z-index: #app-header already carries z-index:100, so the panel paints
-     above the connection banner (99) and below the modal overlay (9000), which
-     is the order those three want. */
-  #nav-menu-btn {
-    display: inline-flex;
-    min-height: 44px;
-    padding: 6px 10px;
-  }
-  #hdr-right {
-    display: none;
-    position: fixed;
-    top: 52px;
-    left: 0;
-    right: 0;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0;
-    padding: 6px 8px 10px;
-    background: var(--bg);
-    border-bottom: 1px solid var(--border);
-    max-height: calc(100vh - 52px);
-    overflow-y: auto;
-  }
-  #hdr-right.open {
-    display: flex;
-  }
-  /* A menu row is a touch target, not a header item: 48px tall, full width,
-     text from the left. The 2px transparent bottom border app.css gives
-     .nav-link is left alone, so .active still marks the current screen —
-     as a full-width underline here rather than a tab. */
-  #hdr-right .nav-link {
-    justify-content: flex-start;
-    min-height: 48px;
-    padding: 12px 14px;
-    font-size: 12px;
-  }
-  /* #logo-btn and #nav-estimates both call toEstimates. Side by side in the
-     header that redundancy is invisible; as two rows of a six-row menu it is
-     just a duplicate, and the wordmark beside the toggle already says whose app
-     this is. The Estimates row is the one that keeps the destination. */
-  #hdr-right #logo-btn {
-    display: none;
-  }
 
   /* ── One column, everywhere it was two ───────────────────────────────────
      minmax(0,1fr) rather than 1fr throughout: 1fr's minimum is auto, which is

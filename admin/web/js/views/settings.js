@@ -91,6 +91,7 @@ const SettingsView = (() => {
     ['calendar', 'Google Calendar'],
     ['hnry', 'Hnry'],
     ['account', 'Account'],
+    ['old-hub', 'Old hub'],
   ];
   const MESSAGE_LABELS = { estimate: 'Estimate', deposit: 'Deposit invoice', final: 'Final invoice', single: 'Single invoice' };
   /* The agreement header's details that come from Business, each shown in
@@ -592,6 +593,15 @@ const SettingsView = (() => {
   /* Account (account-recovery). A <form> of its own so Enter saves it and a
      password manager sees a username beside a new-password field. Filled by
      AccountPanel once GET /api/account answers. */
+  /* The old hub's projects onto these records (merged-admin R4). A link, not a
+     form: nothing here saves with Save settings. */
+  function oldHubMarkup() {
+    return section('old-hub', 'Old hub',
+      'Projects the old Client Hub kept, in its server and in the browser you edited them in. Each comes over ' +
+      'once, as a project here with its deliverables and sign-off. Clients’ links and logins carry on as they are.',
+      '<a class="btn" href="#/setup/hub-import">Bring over the old hub</a>');
+  }
+
   function accountMarkup() {
     return section('account', 'Account',
       'How you sign in, and where a “Forgot password?” link is emailed. These save on their own with the ' +
@@ -639,6 +649,7 @@ const SettingsView = (() => {
         calendarMarkup() +
         hnryMarkup() +
         accountMarkup() +
+        oldHubMarkup() +
         '<div id="settings-error" role="alert"></div>' +
         '<div class="pricing-save-bar set-save-bar">' +
           '<p id="set-save-state" aria-live="polite">No unsaved changes.</p>' +
@@ -2321,9 +2332,8 @@ const SettingsView = (() => {
       account = { username: reply.username, email: reply.email };
       setBusy(false);
       fill();
-      // The header's "Signed in as …" names the login.
-      const out = document.getElementById('nav-sign-out');
-      if (out) out.title = 'Signed in as ' + reply.username;
+      // The account menu names the login.
+      LSCShell.setUser({ username: reply.username });
       const others = reply.signedOutOthers;
       const said = reply.passwordChanged
         ? 'Account updated, password changed' + (others ? '; ' + others + (others === 1 ? ' other browser was' : ' other browsers were') + ' signed out.' : '.')
@@ -2398,7 +2408,7 @@ const SettingsView = (() => {
     if (rest.length > 1) return false;
     const sectionId = rest[0];
     if (sectionId !== undefined && !SECTIONS.some(([id]) => id === sectionId)) return false;
-    document.title = 'Settings — LSC Billing';
+    document.title = LSCShell.title('Settings');
     if (state && state.jump && onScreen() && form) {
       jumpTo(sectionId || SECTIONS[0][0], true);
       return true;

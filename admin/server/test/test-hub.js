@@ -24,12 +24,15 @@ const { openDatabase, migrate, LATEST_VERSION } = require('../src/db');
 const { createHubRouter, normalizeDeliverablePath } = require('../src/hub/routes');
 const { createBunny, missingBunnySettings, statusFromVideo } = require('../src/hub/bunny');
 const { createUrlSigner } = require('../src/hub/url-signing');
-const { createAdminAuth } = require('../src/hub/admin-auth');
+const { createAttemptThrottle } = require('../src/hub/throttle');
 const { rateLimit, clientIp } = require('../src/routes/public');
+const { createPortalAccess } = require('../src/portal-access');
 
-const PIN = '4821';
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
-const ADMIN = 'owner@lsc.example';
+/* Stands in for billing's login, which app.js passes (test-portal-mount.js runs the real one). */
+const STUDIO_COOKIE = 'billing=signed-in';
+const requireAdmin = (req, res, next) => (String(req.headers.cookie || '').split('; ').includes(STUDIO_COOKIE)
+  ? next() : res.status(401).json({ error: 'unauthorized' }));
 const PORTAL = 'https://lsccreative.studio';
 const BASE = 'https://hub.example';
 const BUNNY = {
@@ -47,7 +50,7 @@ const tableNames = (db) => db.prepare("SELECT name FROM sqlite_master WHERE type
 test('loading the hub code opens no database and reads no secret', () => {
   // The hub's own modules opened ./data/client-hub.db and threw on a missing
   // secret as they loaded. Requiring them here, with no secrets set, did neither.
-  for (const name of ['HUB_SIGNING_SECRET', 'HUB_ADMIN_PIN_HASH', 'SIGNING_SECRET', 'ADMIN_PIN_HASH']) {
+  for (const name of ['HUB_SIGNING_SECRET', 'SIGNING_SECRET']) {
     assert.equal(process.env[name], undefined, `${name} leaked into the test`);
   }
   assert.equal(fs.existsSync(path.join(process.cwd(), 'data', 'client-hub.db')), false);
@@ -56,15 +59,15 @@ test('loading the hub code opens no database and reads no secret', () => {
 
 test('the router won’t build without its secrets and settings, and says which', () => {
   const db = openDatabase(path.join(TMP, 'secrets.db'));
-  const base = { publicBaseUrl: BASE, deliverablesDir: TMP, backupDir: path.join(TMP, 'secrets-backups'), rateLimit, clientIp };
-  assert.throws(() => createHubRouter(db, { ...base, adminPinHash: sha(PIN) }), /HUB_SIGNING_SECRET/);
-  assert.throws(() => createHubRouter(db, { ...base, signingSecret: 's' }), /HUB_ADMIN_PIN_HASH/);
-  const secrets = { signingSecret: 's', adminPinHash: sha(PIN) };
+  const base = { publicBaseUrl: BASE, deliverablesDir: TMP, backupDir: path.join(TMP, 'secrets-backups'), rateLimit, clientIp, requireAdmin };
+  assert.throws(() => createHubRouter(db, base), /HUB_SIGNING_SECRET/);
+  const secrets = { signingSecret: 's' };
   assert.throws(() => createHubRouter(db, { ...secrets, ...base, publicBaseUrl: '' }), /HUB_PUBLIC_BASE_URL/);
   assert.throws(() => createHubRouter(db, { ...secrets, ...base, deliverablesDir: '' }), /DELIVERABLES_DIR/);
   assert.throws(() => createHubRouter(db, { ...secrets, ...base, backupDir: undefined }), /backupDir/);
   assert.throws(() => createHubRouter(db, { ...secrets, ...base, rateLimit: undefined }), /rateLimit/);
   assert.throws(() => createHubRouter(db, { ...secrets, ...base, clientIp: undefined }), /clientIp/);
+  assert.throws(() => createHubRouter(db, { ...secrets, ...base, requireAdmin: undefined }), /requireAdmin/);
   db.close();
 });
 
@@ -231,12 +234,14 @@ function fakeBunny() {
 
 async function startHub(overrides = {}, { trustProxy = 1 } = {}) {
   const db = openDatabase(path.join(TMP, `hub-${crypto.randomBytes(4).toString('hex')}.db`));
+  // Portal rows are billing projects (S11), so the ids these tests seed exist.
+  const addProject = db.prepare("INSERT INTO projects (id, created_at, updated_at) VALUES (?, 'x', 'x')");
+  for (const id of ['p_pub', 'p_sign', 'p_guess', 'p_clear', 'p_cf', 'p_ip', 'p_w']) addProject.run(id);
   const backupDir = path.join(TMP, `hub-backups-${crypto.randomBytes(4).toString('hex')}`);
   const bunny = fakeBunny();
   const router = createHubRouter(db, {
     signingSecret: 'test-signing-secret',
-    adminEmail: ADMIN,
-    adminPinHash: sha(PIN),
+    requireAdmin,
     corsOrigins: [PORTAL],
     publicBaseUrl: BASE,
     deliverablesDir: DELIVERABLES,
@@ -267,117 +272,119 @@ async function startHub(overrides = {}, { trustProxy = 1 } = {}) {
     try { json = JSON.parse(text); } catch (_) { /* a file */ }
     return { status: res.status, headers: res.headers, body: json, text };
   };
-  const signIn = async () => {
-    const r = await call('/hub/admin-auth', { method: 'POST', body: { email: ADMIN, pin: PIN } });
-    assert.equal(r.status, 200);
-    return r.headers.get('set-cookie').split(';')[0];
+  /* A published record and its login, as C1 and C3's routes will write them: nothing
+     writes them over HTTP since the hub's editor retired (R3). */
+  const seedRecord = (record, priv = {}) => {
+    const now = new Date().toISOString();
+    const email = priv.clientEmail || '';
+    db.prepare('INSERT INTO records (project_id, data, updated_at) VALUES (?, ?, ?)').run(record.id, JSON.stringify(record), now);
+    db.prepare(`
+      INSERT INTO private_auth (project_id, client_email, email_hash, code_hash, invite_token, delivered, updated_at)
+      VALUES (?, ?, ?, ?, ?, 0, ?)
+    `).run(record.id, email, email ? sha(email.toLowerCase()) : null, priv.codeHash || null, priv.inviteToken || null, now);
+  };
+  /* A client holding the given projects, issued a Client code as the studio does (C1). */
+  const access = createPortalAccess(db, { secret: 'test-signing-secret' });
+  const seedClient = (email, projectIds = [], { code = true } = {}) => {
+    const id = `cl_${crypto.randomBytes(4).toString('hex')}`;
+    db.prepare(`INSERT INTO clients (id, business_name, contact_name, email, phone, abn, address, notes, created_at, updated_at)
+                VALUES (?, ?, '', ?, '', '', '', '', 'x', 'x')`).run(id, `Biz ${id}`, email);
+    for (const p of projectIds) db.prepare('UPDATE projects SET client_id = ? WHERE id = ?').run(id, p);
+    return { id, ...(code ? access.issue(id) : {}) };
+  };
+  /* Signs in: the reply, and the cookie to send back. */
+  const signIn = async (email, code, headers = {}) => {
+    const r = await call('/hub/auth', { method: 'POST', body: { email, code }, headers });
+    const set = r.headers.get('set-cookie') || '';
+    return { ...r, session: set ? set.split(';')[0] : null, setCookie: set };
+  };
+  /* A stable /hub/files link, as publishing mints one. */
+  const seedToken = (relativePath, downloadable = 0) => {
+    const token = crypto.randomBytes(16).toString('hex');
+    db.prepare('INSERT INTO deliverable_tokens (token, relative_path, downloadable, created_at) VALUES (?, ?, ?, ?)')
+      .run(token, relativePath, downloadable, new Date().toISOString());
+    return token;
   };
   const prewrites = () => (fs.existsSync(backupDir) ? fs.readdirSync(backupDir).filter((f) => f.startsWith('prewrite-')).length : 0);
-  return { db, bunny, router, url, call, signIn, prewrites, close: () => new Promise((r) => server.close(r)) };
+  return {
+    db, bunny, router, url, call, seedRecord, seedToken, seedClient, signIn, access, prewrites,
+    close: () => new Promise((r) => server.close(r)),
+  };
 }
 
 let hub;
-let cookie;
+const cookie = STUDIO_COOKIE;
 test.before(async () => {
   hub = await startHub();
-  cookie = await hub.signIn();
 });
 test.after(async () => {
   await hub.close();
   hub.db.close();
 });
 
-test('editor sign-in: right email and PIN only, as an HttpOnly cookie', async () => {
-  const fresh = await startHub();
-  try {
-    const set = (await fresh.call('/hub/admin-auth', { method: 'POST', body: { email: ` ${ADMIN.toUpperCase()} `, pin: PIN } })).headers.get('set-cookie');
-    assert.match(set, /^hub_admin_session=[0-9a-f]{64}; HttpOnly; Secure; SameSite=None; Path=\/$/);
-    for (const body of [{ email: ADMIN, pin: '0000' }, { email: 'someone@else.example', pin: PIN }, { email: ADMIN, pin: 4821.0 + 'x' }, {}]) {
-      assert.equal((await fresh.call('/hub/admin-auth', { method: 'POST', body })).status, 401, JSON.stringify(body));
-    }
-  } finally { await fresh.close(); fresh.db.close(); }
-});
-
-test('editor sign-in is throttled after 5 tries, right or wrong', async () => {
-  const fresh = await startHub();
-  try {
-    for (let i = 0; i < 5; i += 1) await fresh.call('/hub/admin-auth', { method: 'POST', body: { email: ADMIN, pin: '0000' } });
-    assert.equal((await fresh.call('/hub/admin-auth', { method: 'POST', body: { email: ADMIN, pin: PIN } })).status, 429);
-  } finally { await fresh.close(); fresh.db.close(); }
-});
-
-test('editor routes need the session, and an expired one doesn’t count', async () => {
-  for (const [p, method] of [['/hub/publish', 'POST'], ['/hub/agreement/p1', 'GET'], ['/hub/deliverable-url', 'POST'],
-    ['/hub/deliverable-folder', 'POST'], ['/hub/publish-asset', 'POST'], ['/hub/publish-status?path=x', 'GET'], ['/hub/notify', 'POST']]) {
+test('the studio’s routes need billing’s login, and the hub editor’s and sign-off are gone (R3, C5)', async () => {
+  for (const [p, method] of [['/hub/publish-asset', 'POST'], ['/hub/publish-status?path=x', 'GET']]) {
     assert.equal((await hub.call(p, { method, body: method === 'POST' ? {} : undefined })).status, 401, p);
-    assert.equal((await hub.call(p, { method, body: method === 'POST' ? {} : undefined, cookie: 'hub_admin_session=nope' })).status, 401, p);
   }
-  const stale = await hub.signIn();
-  hub.db.prepare("UPDATE admin_sessions SET expires_at = '2000-01-01T00:00:00.000Z' WHERE token = ?").run(stale.split('=')[1]);
-  assert.equal((await hub.call('/hub/notify', { method: 'POST', body: {}, cookie: stale })).status, 401);
-});
-
-test('publish, then the client signs in with email and code and reads the record', async () => {
-  const record = { id: 'p_pub', name: 'Harbour', deliverables: [{ title: 'Hero' }] };
-  assert.equal((await hub.call('/hub/publish', { method: 'POST', cookie, body: { record } })).status, 400);
-  const pub = await hub.call('/hub/publish', { method: 'POST', cookie, body: {
-    record, priv: { clientEmail: ' Priya@Salt.example ', codeHash: sha('1234'), inviteToken: 'inv-abc', delivered: true },
-  } });
-  assert.equal(pub.status, 200);
-  const priv = hub.db.prepare('SELECT * FROM private_auth WHERE project_id = ?').get('p_pub');
-  assert.deepEqual([priv.client_email, priv.email_hash, priv.delivered], ['Priya@Salt.example', sha('priya@salt.example'), 1]);
-
-  const wrong = await hub.call('/hub/auth', { method: 'POST', body: { email: 'priya@salt.example', code: '9999' } });
-  assert.deepEqual(wrong.body, { token: null, projectIds: [] });
-  assert.equal((await hub.call('/hub/auth', { method: 'POST', body: { email: 'priya@salt.example', code: '12' } })).status, 400);
-
-  const ok = await hub.call('/hub/auth', { method: 'POST', body: { email: 'PRIYA@salt.example', code: '1234' } });
-  assert.deepEqual(ok.body.projectIds, ['p_pub']);
-  const link = new URL(ok.body.records.p_pub);
-  assert.equal(link.origin, BASE, 'links name the public address');
-  const read = await hub.call(link.pathname + link.search);
-  assert.equal(read.status, 200);
-  assert.deepEqual(read.body, record);
-  assert.equal(read.headers.get('access-control-allow-origin'), '*');
-
-  link.searchParams.set('token', 'f'.repeat(64));
-  assert.equal((await hub.call(link.pathname + link.search)).status, 403);
-  const other = new URL(ok.body.records.p_pub);
-  assert.equal((await hub.call(`/hub/records/p_other${other.search}`)).status, 403, 'a link opens only its own project');
-
-  const invite = await hub.call('/hub/auth', { method: 'POST', body: { invite: 'inv-abc' } });
-  assert.deepEqual(invite.body, { projectId: 'p_pub', clientCode: '' });
-  assert.equal((await hub.call('/hub/auth', { method: 'POST', body: { invite: 'nope' } })).status, 404);
-});
-
-test('the signed agreement is stored privately, with the address the server saw', async () => {
-  await hub.call('/hub/publish', { method: 'POST', cookie, body: { record: { id: 'p_sign' }, priv: {} } });
-  const sign = { projectId: 'p_sign', signerName: 'Priya Nair', signedAt: '2026-11-06T01:00:00Z',
-    signatureDataUrl: 'data:image/png;base64,AAAA', consentText: 'I agree', consentChecked: true,
-    userAgent: 'Test', verificationToken: 'vt', ipAddress: '6.6.6.6' };
-  assert.equal((await hub.call('/hub/agreement', { method: 'POST', body: { ...sign, consentChecked: 'true' } })).status, 400);
-  assert.equal((await hub.call('/hub/agreement', { method: 'POST', body: { ...sign, signerName: ' ' } })).status, 400);
-  assert.equal((await hub.call('/hub/agreement', { method: 'POST', body: { ...sign, projectId: 'p_none' } })).status, 404);
-  assert.equal((await hub.call('/hub/agreement', { method: 'POST', body: sign })).status, 200);
-
-  const got = await hub.call('/hub/agreement/p_sign', { cookie });
-  assert.equal(got.body.signerName, 'Priya Nair');
-  assert.notEqual(got.body.ipAddress, '6.6.6.6', 'the client can’t supply its own address');
-  assert.match(got.body.ipAddress, /127\.0\.0\.1/);
-  assert.equal((await hub.call('/hub/agreement/p_none', { cookie })).status, 404);
-});
-
-test('deliverable links: stable, inside the folder only, and Range-aware', async () => {
-  const one = await hub.call('/hub/deliverable-url', { method: 'POST', cookie, body: { path: 'Acme/Hero.mp4' } });
-  const again = await hub.call('/hub/deliverable-url', { method: 'POST', cookie, body: { path: 'Acme/Hero.mp4' } });
-  const dl = await hub.call('/hub/deliverable-url', { method: 'POST', cookie, body: { path: 'Acme/Hero.mp4', downloadable: true } });
-  assert.equal(one.body.url, again.body.url, 'the same link every time');
-  assert.notEqual(one.body.url, dl.body.url, 'download is its own link');
-  for (const p of ['Acme/Nope.mp4', '../outside.mp4', '/etc/passwd', 'Acme/../../outside.mp4', 'Acme/Stills', 'a\0b']) {
-    assert.equal((await hub.call('/hub/deliverable-url', { method: 'POST', cookie, body: { path: p } })).status, 404, p);
+  for (const [p, method] of [['/hub/admin-auth', 'POST'], ['/hub/publish', 'POST'], ['/hub/agreement/p1', 'GET'], ['/hub/agreement', 'POST'], ['/hub/deliverable-url', 'POST'],
+    ['/hub/deliverable-folder', 'POST'], ['/hub/notify', 'POST'], ['/hub/deliverables-health', 'GET']]) {
+    assert.equal((await hub.call(p, { method, cookie, body: method === 'POST' ? {} : undefined })).status, 404, p);
   }
+});
 
-  const play = new URL(one.body.url).pathname;
+test('the client signs in with email and Client code, and the server checks the session it sets (C1)', async () => {
+  const priya = hub.seedClient('priya@salt.example', ['p_pub']);
+  assert.match(priya.code, /^\d{6}$/);
+
+  const wrong = await hub.signIn('priya@salt.example', priya.code === '000000' ? '000001' : '000000');
+  assert.deepEqual([wrong.status, wrong.body, wrong.session], [401, { error: 'wrong_code' }, null]);
+  assert.equal((await hub.signIn('priya@salt.example', '12')).status, 400);
+  assert.equal((await hub.signIn('', priya.code)).status, 400);
+
+  const ok = await hub.signIn('  PRIYA@salt.example ', priya.code);
+  assert.equal(ok.status, 200);
+  assert.deepEqual(Object.keys(ok.body).sort(), ['client', 'ok']);
+  assert.match(ok.setCookie, /^lsc_portal=[\w-]{43}; Max-Age=2592000; Path=\/hub; HttpOnly; Secure; SameSite=Lax$/);
+  assert.ok(!ok.text.includes(ok.session.split('=')[1]), 'the token is in the cookie only, never the reply');
+  const stored = hub.db.prepare('SELECT id, via FROM client_sessions WHERE client_id = ?').get(priya.id);
+  assert.equal(stored.via, 'code');
+  assert.notEqual(stored.id, ok.session.split('=')[1], 'only its HMAC is kept');
+
+  const me = await hub.call('/hub/session', { cookie: ok.session });
+  assert.deepEqual([me.status, me.body.client.businessName], [200, `Biz ${priya.id}`]);
+  assert.equal((await hub.call('/hub/session')).status, 401, 'no cookie');
+  assert.equal((await hub.call('/hub/session', { cookie: `lsc_portal=${'x'.repeat(43)}` })).status, 401, 'a made-up one');
+
+  // An expired session is refused and goes.
+  const later = await hub.signIn('priya@salt.example', priya.code);
+  hub.db.prepare("UPDATE client_sessions SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id <> ?").run(stored.id);
+  assert.equal((await hub.call('/hub/session', { cookie: later.session })).status, 401);
+  assert.equal(hub.db.prepare('SELECT COUNT(*) FROM client_sessions WHERE client_id = ?').pluck().get(priya.id), 1);
+
+  // Signing out ends it on the server, not just in the browser.
+  const out = await hub.call('/hub/sign-out', { method: 'POST', cookie: ok.session });
+  assert.equal(out.status, 200);
+  assert.match(out.headers.get('set-cookie'), /^lsc_portal=; Max-Age=0; Path=\/hub/);
+  assert.equal((await hub.call('/hub/session', { cookie: ok.session })).status, 401);
+});
+
+test('an invite says whose sign-in it is and where it lands, and signs nobody in (C1)', async () => {
+  const addProject = hub.db.prepare("INSERT INTO projects (id, created_at, updated_at) VALUES (?, 'x', 'x')");
+  addProject.run('p_inv');
+  const sam = hub.seedClient('sam@salt.example', ['p_inv'], { code: false });
+  const { invite } = hub.access.issue(sam.id, { projectId: 'p_inv' });
+  const r = await hub.call('/hub/invite', { method: 'POST', body: { token: invite } });
+  assert.deepEqual([r.status, r.body], [200, { ok: true, email: 'sam@salt.example', projectId: 'p_inv' }]);
+  assert.equal(r.headers.get('set-cookie'), null);
+  assert.equal((await hub.call('/hub/invite', { method: 'POST', body: { token: 'nope' } })).status, 404);
+  assert.equal((await hub.call('/hub/invite', { method: 'POST', body: {} })).status, 404);
+  // A reset replaces it.
+  hub.access.issue(sam.id);
+  assert.equal((await hub.call('/hub/invite', { method: 'POST', body: { token: invite } })).status, 404);
+});
+
+test('a file link stays inside the folder, and is Range-aware', async () => {
+  const play = `/hub/files/${hub.seedToken('Acme/Hero.mp4')}`;
   const full = await hub.call(play);
   assert.deepEqual([full.status, full.text, full.headers.get('content-type'), full.headers.get('content-disposition')],
     [200, '0123456789', 'video/mp4', 'inline']);
@@ -388,22 +395,12 @@ test('deliverable links: stable, inside the folder only, and Range-aware', async
   for (const range of ['bytes=5-2', 'bytes=0-10', 'bytes=-', 'items=0-1']) {
     assert.equal((await hub.call(play, { headers: { range } })).status, 416, range);
   }
-  const save = await hub.call(new URL(dl.body.url).pathname);
+  const save = await hub.call(`/hub/files/${hub.seedToken('Acme/Hero.mp4', 1)}`);
   assert.equal(save.headers.get('content-disposition'), 'attachment; filename="Hero.mp4"');
   assert.equal((await hub.call('/hub/files/nope')).status, 404);
-});
-
-test('a photo folder gives a link pair per image, skipping everything else', async () => {
-  const r = await hub.call('/hub/deliverable-folder', { method: 'POST', cookie, body: { path: 'Acme/Stills/' } });
-  assert.equal(r.status, 200);
-  assert.deepEqual(r.body.photos.map((p) => p.name), ['b2.JPG', 'b10.jpg', 'c.png']);
-  assert.ok(r.body.photos.every((p) => p.reviewUrl !== p.downloadUrl && p.reviewUrl.startsWith(`${BASE}/hub/files/`)));
-  const again = await hub.call('/hub/deliverable-folder', { method: 'POST', cookie, body: { path: 'Acme/Stills' } });
-  assert.deepEqual(again.body.photos, r.body.photos, 'the same links again');
-  assert.equal((await hub.call('/hub/deliverable-folder', { method: 'POST', cookie, body: { path: 'Acme/Stills/raw/../../../..' } })).status, 404, 'outside the folder');
-  assert.equal((await hub.call('/hub/deliverable-folder', { method: 'POST', cookie, body: { path: 'Acme/Hero.mp4' } })).status, 404);
-  fs.mkdirSync(path.join(DELIVERABLES, 'Empty'), { recursive: true });
-  assert.equal((await hub.call('/hub/deliverable-folder', { method: 'POST', cookie, body: { path: 'Empty' } })).status, 422);
+  for (const p of ['Acme/Nope.mp4', '../outside.mp4', '/etc/passwd', 'Acme/../../outside.mp4', 'Acme/Stills']) {
+    assert.equal((await hub.call(`/hub/files/${hub.seedToken(p)}`)).status, 404, p);
+  }
 });
 
 test('publishing a video to Bunny: once per file, found by its tag, ready to play', async () => {
@@ -443,11 +440,10 @@ test('publishing a video to Bunny: once per file, found by its tag, ready to pla
 test('without Bunny set up, publishing says so and the rest still works', async () => {
   const noBunny = await startHub({ bunny: { ...BUNNY, streamApiKey: '' } });
   try {
-    const c = await noBunny.signIn();
+    const c = cookie;
     const r = await noBunny.call('/hub/publish-asset', { method: 'POST', cookie: c, body: { path: 'Acme/Hero.mp4' } });
     assert.deepEqual([r.status, r.body], [503, { error: 'bunny not set up' }]);
     assert.equal((await noBunny.call('/hub/publish-status?path=Acme/Hero.mp4', { cookie: c })).status, 503);
-    assert.equal((await noBunny.call('/hub/deliverable-url', { method: 'POST', cookie: c, body: { path: 'Acme/Hero.mp4' } })).status, 200);
     assert.equal(noBunny.bunny.calls.length, 0);
   } finally { await noBunny.close(); noBunny.db.close(); }
 });
@@ -464,13 +460,8 @@ test('CORS: credentials for the portal’s origin only; open reads for anyone', 
   assert.equal(fromPortal.headers.get('cache-control'), 'no-store');
 });
 
-test('notify logs and answers, as on the hub; health reads the deliverables folder', async () => {
-  const r = await hub.call('/hub/notify', { method: 'POST', cookie, body: { kind: 'invite' } });
-  assert.deepEqual(r.body, { ok: true, dispatched: 'invite' });
-  const health = await hub.call('/hub/deliverables-health', { cookie });
-  assert.equal(health.body.ok, true);
-  assert.ok(health.body.projects >= 2);
-  assert.equal((await hub.call('/hub/deliverables-health')).status, 401, 'the editor only');
+test('the start-up log can read whether the deliverables folder is there', async () => {
+  assert.equal((await hub.router.deliverablesHealth()).ok, true);
   const missing = await startHub({ deliverablesDir: path.join(TMP, 'no-such-folder') });
   try {
     assert.deepEqual(await missing.router.deliverablesHealth(), { ok: false, error: 'ENOENT' });
@@ -487,12 +478,14 @@ test('client sign-in is limited per address', async () => {
     const from = (ip) => ({ 'cf-connecting-ip': ip });
     for (let i = 0; i < 3; i += 1) {
       const r = await fresh.call('/hub/auth', { method: 'POST', headers: from('198.51.100.1'), body: { email: `x${i}@b.example`, code: '1234' } });
-      assert.equal(r.status, 200);
+      assert.equal(r.status, 401);
     }
     const over = await fresh.call('/hub/auth', { method: 'POST', headers: from('198.51.100.1'), body: { email: 'y@b.example', code: '1234' } });
     assert.equal(over.status, 429);
+    const viaInvite = await fresh.call('/hub/invite', { method: 'POST', headers: from('198.51.100.1'), body: { token: 'guess' } });
+    assert.equal(viaInvite.status, 429, 'guessing invites counts with sign-ins');
     const other = await fresh.call('/hub/auth', { method: 'POST', headers: from('198.51.100.2'), body: { email: 'y@b.example', code: '1234' } });
-    assert.equal(other.status, 200, 'another address has its own count');
+    assert.equal(other.status, 401, 'another address has its own count');
     assert.equal((await fresh.call('/hub/auth', { method: 'OPTIONS', headers: { origin: PORTAL, ...from('198.51.100.1') } })).status, 204,
       'a preflight isn’t counted or refused');
   } finally { await fresh.close(); fresh.db.close(); }
@@ -501,63 +494,43 @@ test('client sign-in is limited per address', async () => {
 test('one client’s code stops after 10 wrong tries, however many addresses guess', async () => {
   const fresh = await startHub();
   try {
-    const c = await fresh.signIn();
-    await fresh.call('/hub/publish', { method: 'POST', cookie: c, body: {
-      record: { id: 'p_guess' }, priv: { clientEmail: 'priya@salt.example', codeHash: sha('7319') } } });
+    const priya = fresh.seedClient('priya@salt.example', ['p_guess']);
+    const wrongCode = (i) => String((Number(priya.code) + 1 + i) % 1000000).padStart(6, '0');
     const guess = (code, i) => fresh.call('/hub/auth', { method: 'POST',
       headers: { 'cf-connecting-ip': `198.51.100.${i}` }, body: { email: 'Priya@salt.example', code } });
-    for (let i = 0; i < 10; i += 1) assert.deepEqual((await guess(String(1000 + i), i)).body.projectIds, []);
-    const locked = await guess('7319', 50);
-    assert.deepEqual([locked.status, locked.body], [429, { error: 'too many attempts' }], 'even the right code, for now');
+    for (let i = 0; i < 10; i += 1) assert.equal((await guess(wrongCode(i), i)).status, 401);
+    const locked = await guess(priya.code, 50);
+    assert.deepEqual([locked.status, locked.body], [429, { error: 'too_many_attempts' }], 'even the right code, for now');
     const someoneElse = await fresh.call('/hub/auth', { method: 'POST', body: { email: 'other@salt.example', code: '1111' } });
-    assert.equal(someoneElse.status, 200, 'other clients aren’t affected');
+    assert.equal(someoneElse.status, 401, 'other clients aren’t affected');
   } finally { await fresh.close(); fresh.db.close(); }
 });
 
 test('a right code clears the count of wrong ones', async () => {
   const fresh = await startHub();
   try {
-    const c = await fresh.signIn();
-    await fresh.call('/hub/publish', { method: 'POST', cookie: c, body: {
-      record: { id: 'p_clear' }, priv: { clientEmail: 'sam@salt.example', codeHash: sha('2468') } } });
+    const sam = fresh.seedClient('sam@salt.example', ['p_clear']);
+    const wrong = sam.code === '000000' ? '000001' : '000000';
     const tryCode = (code) => fresh.call('/hub/auth', { method: 'POST', body: { email: 'sam@salt.example', code } });
-    for (let i = 0; i < 9; i += 1) await tryCode('0000');
-    assert.deepEqual((await tryCode('2468')).body.projectIds, ['p_clear']);
-    for (let i = 0; i < 9; i += 1) await tryCode('0000');
-    assert.deepEqual((await tryCode('2468')).body.projectIds, ['p_clear'], 'a fresh nine, not eighteen');
+    for (let i = 0; i < 9; i += 1) await tryCode(wrong);
+    assert.equal((await tryCode(sam.code)).status, 200);
+    for (let i = 0; i < 9; i += 1) await tryCode(wrong);
+    assert.equal((await tryCode(sam.code)).status, 200, 'a fresh nine, not eighteen');
   } finally { await fresh.close(); fresh.db.close(); }
 });
 
-test('an agreement records Cloudflare’s client address, as billing’s signatures do', async () => {
-  const fresh = await startHub();
-  try {
-    const c = await fresh.signIn();
-    await fresh.call('/hub/publish', { method: 'POST', cookie: c, body: { record: { id: 'p_cf' }, priv: {} } });
-    await fresh.call('/hub/agreement', { method: 'POST', headers: { 'cf-connecting-ip': '198.51.100.77', 'x-forwarded-for': '6.6.6.6' }, body: {
-      projectId: 'p_cf', signerName: 'P', signedAt: 'x', signatureDataUrl: 'data:,', consentText: 'ok', consentChecked: true,
-    } });
-    assert.equal((await fresh.call('/hub/agreement/p_cf', { cookie: c })).body.ipAddress, '198.51.100.77');
-  } finally { await fresh.close(); fresh.db.close(); }
-});
-
-test('a forged forwarding address can’t change the address recorded or dodge the throttle', async () => {
+/* The address an approval records, Cloudflare's or the tunnel's hop and never one the
+   client wrote, is tested on the approve route (test-portal-approvals.js): the old
+   hub's agreement route that recorded one is gone (C5). */
+test('a forged forwarding address can’t dodge the sign-in throttle', async () => {
   const fresh = await startHub();
   try {
     // The tunnel appends the address it saw; a client can only add entries before it.
     const hop = (forged) => ({ 'x-forwarded-for': `${forged}, 203.0.113.9` });
-    for (let i = 0; i < 5; i += 1) {
-      await fresh.call('/hub/admin-auth', { method: 'POST', body: { email: ADMIN, pin: '0000' }, headers: hop(`10.0.0.${i}`) });
-    }
-    const r = await fresh.call('/hub/admin-auth', { method: 'POST', body: { email: ADMIN, pin: PIN }, headers: hop('10.0.0.99') });
-    assert.equal(r.status, 429, 'a new forged address is still the same visitor');
-
-    const c = startHubSignIn(fresh);
-    await fresh.call('/hub/publish', { method: 'POST', cookie: c, body: { record: { id: 'p_ip' }, priv: {} } });
-    await fresh.call('/hub/agreement', { method: 'POST', headers: hop('6.6.6.6'), body: {
-      projectId: 'p_ip', signerName: 'P', signedAt: 'x', signatureDataUrl: 'data:,', consentText: 'ok', consentChecked: true,
-    } });
-    const got = await fresh.call('/hub/agreement/p_ip', { cookie: c });
-    assert.equal(got.body.ipAddress, '203.0.113.9');
+    // Client sign-in is limited per address, so a new forged address is still the same visitor.
+    const signInAs = (forged) => fresh.call('/hub/auth', { method: 'POST', headers: hop(forged), body: { email: 'a@b.example', code: '1234' } });
+    for (let i = 0; i < 20; i += 1) await signInAs(`10.0.0.${i}`);
+    assert.equal((await signInAs('10.0.0.99')).status, 429);
   } finally { await fresh.close(); fresh.db.close(); }
 });
 
@@ -571,59 +544,39 @@ function startHubSignIn(h) {
 test('the hub’s writes take a copy first; refused requests and reads don’t', async () => {
   const fresh = await startHub();
   try {
-    const c = await fresh.signIn();
-    assert.equal(fresh.prewrites(), 0, 'signing in takes no copy');
-    assert.equal((await fresh.call('/hub/publish', { method: 'POST', cookie: c, body: { record: {} } })).status, 400);
-    assert.equal((await fresh.call('/hub/publish', { method: 'POST', body: { record: { id: 'p' }, priv: {} } })).status, 401);
-    assert.equal((await fresh.call('/hub/agreement', { method: 'POST', body: { projectId: 'nope' } })).status, 400);
+    const c = cookie;
+    assert.equal((await fresh.call('/hub/publish-asset', { method: 'POST', body: { path: 'Acme/Hero.mp4' } })).status, 401);
     assert.equal(fresh.prewrites(), 0, 'nothing refused took a copy');
 
-    await fresh.call('/hub/publish', { method: 'POST', cookie: c, body: { record: { id: 'p_w' }, priv: {} } });
-    assert.equal(fresh.prewrites(), 1, 'publishing');
-    await fresh.call('/hub/agreement', { method: 'POST', body: {
-      projectId: 'p_w', signerName: 'P', signedAt: 'x', signatureDataUrl: 'data:,', consentText: 'ok', consentChecked: true,
-    } });
-    assert.equal(fresh.prewrites(), 2, 'the agreement');
-    await fresh.call('/hub/deliverable-url', { method: 'POST', cookie: c, body: { path: 'Acme/Hero.mp4' } });
-    await fresh.call('/hub/deliverable-folder', { method: 'POST', cookie: c, body: { path: 'Acme/Stills' } });
     await fresh.call('/hub/publish-asset', { method: 'POST', cookie: c, body: { path: 'Acme/Hero.mp4' } });
-    assert.equal(fresh.prewrites(), 5, 'a link, a folder and a video publish');
+    assert.equal(fresh.prewrites(), 1, 'a video publish');
     await fresh.call('/hub/auth', { method: 'POST', body: { email: 'a@b.example', code: '1234' } });
     await fresh.call('/hub/publish-status?path=Acme/Hero.mp4', { cookie: c });
-    assert.equal(fresh.prewrites(), 5, 'a client signing in and a status read take none');
+    assert.equal(fresh.prewrites(), 1, 'a client signing in and a status read take none');
   } finally { await fresh.close(); fresh.db.close(); }
 });
 
 test('unknown /hub paths and bad bodies answer in JSON, as the hub’s server did', async () => {
   const missing = await hub.call('/hub/no-such-route');
   assert.deepEqual([missing.status, missing.body], [404, { error: 'not found' }]);
-  assert.equal((await hub.call('/hub/publish')).status, 404, 'a GET to a POST route');
+  assert.equal((await hub.call('/hub/auth')).status, 404, 'a GET to a POST route');
   const res = await fetch(`${hub.url}/hub/auth`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{not json' });
   assert.deepEqual([res.status, await res.json()], [400, { error: 'bad request' }]);
 });
 
-test('a malformed cookie from another site is a 401, not a server error', async () => {
-  const r = await hub.call('/hub/notify', { method: 'POST', body: {}, cookie: 'other=%E0%A4%A; hub_admin_session=nope' });
-  assert.equal(r.status, 401);
-  const ok = await hub.call('/hub/notify', { method: 'POST', body: {}, cookie: `other=%E0%A4%A; ${cookie}` });
-  assert.equal(ok.status, 200, 'the real session still reads past it');
-});
-
-test('the throttle lets go of addresses that have stopped trying', () => {
-  const db = openDatabase(path.join(TMP, 'throttle.db'));
+test('the throttle lets go of keys that have stopped trying', () => {
   let t = 1_000_000_000_000;
-  const auth = createAdminAuth(db, { adminEmail: ADMIN, adminPinHash: sha(PIN), now: () => t });
-  for (let i = 0; i < 600; i += 1) auth.recordAttempt(`10.1.${i >> 8}.${i & 255}`);
-  assert.equal(auth.trackedAddresses(), 600);
+  const throttle = createAttemptThrottle({ limit: 5, windowMs: 15 * 60 * 1000, now: () => t });
+  for (let i = 0; i < 600; i += 1) throttle.record(`someone-${i}`);
+  assert.equal(throttle.size(), 600);
   t += 16 * 60 * 1000;
-  auth.recordAttempt('10.9.9.9');
-  assert.equal(auth.trackedAddresses(), 1, 'the stale ones are swept on the next attempt');
-  for (let i = 0; i < 5; i += 1) auth.recordAttempt('10.9.9.9');
-  assert.equal(auth.isRateLimited('10.9.9.9'), true, 'sweeping never frees a live address');
+  throttle.record('still-here');
+  assert.equal(throttle.size(), 1, 'the stale ones are swept on the next attempt');
+  for (let i = 0; i < 5; i += 1) throttle.record('still-here');
+  assert.equal(throttle.isLimited('still-here'), true, 'sweeping never frees a live key');
   t += 16 * 60 * 1000;
-  assert.equal(auth.isRateLimited('10.9.9.9'), false);
-  assert.equal(auth.trackedAddresses(), 0);
-  db.close();
+  assert.equal(throttle.isLimited('still-here'), false);
+  assert.equal(throttle.size(), 0);
 });
 
 test('the real data folder was never touched', () => {

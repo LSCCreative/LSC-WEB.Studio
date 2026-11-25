@@ -1,43 +1,40 @@
 /* ─────────────────────────────────────────────────────────────────────────────
-   LSC Billing: design tokens (ui-clarity track, Project build archive/tracks/ui-clarity/).
+   LSC design tokens: Scope & Sales and the Client Portal. One file, two products.
 
-   Philosophy: functionalist, LSC-warm (U17). Dieter Rams discipline inside
-   LSC's warm dark: one accent, a 4px spacing base, one type scale, layers
-   rather than lines. References: Linear, Stripe Dashboard, Frame.io (U18).
+   Philosophy: Swiss / International Typographic in a dark cinematic register,
+   the Client Hub's colours and type on billing's structure. Decisions and
+   reasoning: .design/merged-admin/DESIGN_TOKENS.md.
 
    Loaded FIRST, before app.css. Every later stylesheet reads these; nothing
    below should need a raw colour, size or font name again.
 
    THEMES
-   The app is dark (U6), so dark is the :root default. The light palette below
-   is the client pages' and emails' (lsccreative.studio's own tokens). It is
-   defined for reference and future use but NOT switched on by
-   prefers-color-scheme: the app stays dark on a light-mode Mac. A screen opts
-   in only with [data-theme="light"].
+   The admin and the portal are dark, so dark is the :root default. The light
+   palette below belongs to the client pages (web/c/) and is switched on only by
+   [data-theme="light"]. It pins every value it must not inherit from :root, so
+   a change to the dark theme can't reach a quote or an invoice page.
 
    CONTRAST (WCAG 2.1, sRGB relative luminance), dark theme:
-     text-1  #F0EDE8   16.2 page · 15.0 panel · 13.7 inset · 12.7 float
-     text-2  #B8B0A6    8.8 page ·  8.2 panel ·  7.5 inset ·  6.9 float
-     text-3  #958D84    5.8 page ·  5.4 panel ·  4.9 inset ·  4.5 float
-     accent-text #E08B68  7.2 page · 6.7 panel · 6.2 inset · 5.7 float
+     text-1  #F0EDE8   16.5 page · 14.1 panel · 12.5 inset · 11.4 float
+     text-2  #B8B0A6    9.0 page ·  7.7 panel ·  6.8 inset ·  6.2 float
+     text-3  #9E968E    6.6 page ·  5.7 panel ·  5.0 inset ·  4.55 float
+     accent-text #E08B68  7.4 page · 6.3 panel · 5.6 inset · 5.1 float
      white on accent #B4532F   4.98 (button text, 4.5 needed)
-     accent #B4532F vs page    3.79 (non-text, 3 needed)
-     border-strong #736A62     3.3 panel · 3.0 inset (form-field edges, 1.4.11)
-   Status text colours all clear 6:1 on every surface.
+     border-strong #7F7973     3.8 panel · 3.4 inset · 3.1 float (1.4.11, 3 needed)
+     sage #8FA89B   5.2 float | amber #D9A441   5.9 float | error text  5.5 float
+     info text  5.8 float | neutral text  5.8 float
+     ink #0E0E0E on status fills   4.8–8.6
    ───────────────────────────────────────────────────────────────────────────── */
 
-/* ── Fonts (U19) ─────────────────────────────────────────────────────────────
-   Metro Sans: reading text, form fields, buttons. Free licence, web embedding
-   and redistribution allowed (Visual Design/Metro-Sans---Full-Family/Metro
-   Sans License.pdf). 400 Regular, 500 Medium, 600 Semi Bold; a 700 request
-   resolves to 600 (bold is Delight's). It has no ▾ ⋯ arrows ✓ ±, which fall
-   through to the system face. The face is named 'LSC Metro
-   Sans', not 'Metro Sans': when a web font's file is missing, Chrome falls
-   back to an INSTALLED font of the same family name, and a Fontspring demo
-   copy (glyphs swapped for ±) is installed on the studio Mac. A private name
-   can only ever match these files. Metro Sans has NO tabular
-   figures, so money uses --font-figures (CS Felice Mono) in tables and rows,
-   and Delight for headline totals. */
+/* ── Fonts ─────────────────────────────────────────────────────────────
+   Funnel Sans: reading text, form fields. SIL Open Font License, self-hosted.
+   Named 'LSC Funnel Sans', not 'Funnel Sans': a page that names an installed
+   font looks right on the studio Mac and wrong everywhere else, which is how
+   the hub ran without its body font being loaded at all. A private name can
+   only ever match these files.
+   Metro Sans stays for the client pages only (web/c/). Money uses --font-figures
+   (CS Felice Mono) in tables and rows, and Delight for headline totals. */
+@font-face{font-family:'LSC Funnel Sans';src:url('../fonts/FunnelSans-Variable.woff2') format('woff2');font-weight:300 800;font-style:normal;font-display:swap}
 @font-face{font-family:'LSC Metro Sans';src:url('../fonts/MetroSans-400.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap}
 @font-face{font-family:'LSC Metro Sans';src:url('../fonts/MetroSans-500.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap}
 @font-face{font-family:'LSC Metro Sans';src:url('../fonts/MetroSans-600.woff2') format('woff2');font-weight:600;font-style:normal;font-display:swap}
@@ -46,56 +43,57 @@
 :root {
   color-scheme: dark;
 
-  /* ── Colour: surfaces, three levels plus floating (U2) ───────────────────
-     Warm near-black, nudged from the site's --lsc-black #0E0E0E. Each step
-     is ~+9 in lightness: visible as a layer, never as a box. */
-  --color-bg-page:      #121110;  /* level 0: the page itself */
-  --color-bg-panel:     #1B1917;  /* level 1: a section panel */
-  --color-bg-inset:     #24211E;  /* level 2: inputs, wells, a hovered row, panel heads when distinct */
-  --color-bg-float:     #2B2724;  /* menus, sheets, dialogs, the sticky bar */
+  /* ── Colour: surfaces, three levels plus floating ────────────────────────
+     The hub's near-black and blue-grey surfaces. Float is the one new value:
+     as light as it can go while text-3 still clears 4.5:1 on it. */
+  --color-bg-page:      #0E0E0E;  /* level 0: the page itself */
+  --color-bg-panel:     #1C1F24;  /* level 1: a section panel */
+  --color-bg-inset:     #252930;  /* level 2: inputs, wells, a hovered row, panel heads when distinct */
+  --color-bg-float:     #2C3037;  /* menus, sheets, dialogs, the sticky bar */
   --color-bg-inverse:   #F0EDE8;
   --color-bg-hover:     rgba(240, 237, 232, 0.04);
   --color-bg-selected:  rgba(224, 139, 104, 0.10);  /* a chosen menu item, a drop target */
-  --color-surface-overlay: rgba(8, 7, 6, 0.72);     /* behind dialogs and sheets */
+  --color-surface-overlay: rgba(14, 14, 14, 0.72);     /* behind dialogs and sheets */
 
   /* ── Colour: text ─────────────────────────────────────────────────────── */
   --color-text-primary:   #F0EDE8;  /* --lsc-white */
   --color-text-secondary: #B8B0A6;  /* meta lines, labels, table heads */
-  --color-text-tertiary:  #958D84;  /* placeholders, disabled, "None" */
-  --color-text-inverse:   #121110;
+  --color-text-tertiary:  #9E968E;  /* placeholders, disabled, "None" */
+  --color-text-inverse:   #0E0E0E;
   --color-text-link:      #E08B68;
   --color-text-on-accent: #FFFFFF;
 
   /* ── Colour: lines. Hairlines separate; borders contain (sparingly) ───── */
   --color-border-hairline: rgba(240, 237, 232, 0.07);  /* rows inside a panel */
-  --color-border-subtle:   rgba(240, 237, 232, 0.11);  /* a panel's edge, a panel head's rule */
-  --color-border-strong:   #736A62;                    /* form fields: must hold 3:1 */
+  --color-border-subtle:   rgba(240, 237, 232, 0.12);  /* a panel's edge, a panel head's rule */
+  --color-border-strong:   #7F7973;                    /* form fields: must hold 3:1 */
   --color-border-focus:    #E08B68;
 
-  /* ── Colour: the one accent (U17: terracotta marks the next action only) ─ */
+  /* ── Colour: the one accent: terracotta marks the next action only ─────── */
   --color-accent-primary:        #B4532F;  /* button fill: white text 4.98:1 */
   --color-accent-primary-hover:  #9E4A2C;
   --color-accent-primary-active: #8C4832;  /* --lsc-terra-dk */
   --color-accent-mark:           #C0603C;  /* --lsc-terra: rules, nav underline, drag line (non-text) */
   --color-accent-text:           #E08B68;  /* terracotta as text on any dark surface */
-  --color-accent-secondary:      #2B2724;  /* a secondary button: a raised fill, no colour */
+  --color-accent-secondary:      transparent;  /* a secondary button: a rule, no fill */
+  --color-accent-confirm:        #8FA89B;  /* --lsc-sage: Approve and Confirm only, as an outline */
 
   /* ── Colour: status. Each pairs with a shape somewhere (DR15) ─────────── */
-  --color-status-success:      #5F9A6D;  /* confirmed day, paid */
-  --color-status-success-text: #8DC49A;
-  --color-status-warning:      #C9A443;  /* pencilled, due soon */
-  --color-status-warning-text: #D9B45A;
+  --color-status-success:      #6A8E82;  /* confirmed day, paid */
+  --color-status-success-text: #8FA89B;
+  --color-status-warning:      #D9A441;  /* pencilled, due soon */
+  --color-status-warning-text: #D9A441;
   --color-status-error:        #D2584A;  /* overdue, clash, danger fill */
   --color-status-error-text:   #F08A7E;
   --color-status-info:         #6E93C4;  /* sent, gear rental */
   --color-status-info-text:    #93ADD0;
   --color-status-neutral:      #9A938B;  /* proposed, draft: warm grey (task 13; was a blue-grey) */
   --color-status-neutral-text: #B2ABA3;
-  --color-on-status:           #121110;  /* ink on a filled chip: 5.7–8.0:1 on all four */
+  --color-on-status:           #0E0E0E;  /* ink on a filled chip: 4.8–8.6:1 on all five */
 
-  /* ── Typography (U19) ──────────────────────────────────────────────────── */
+  /* ── Typography ──────────────────────────────────────────────────── */
   --font-family-display: 'Delight', Georgia, 'Times New Roman', serif;
-  --font-family-body:    'LSC Metro Sans', ui-sans-serif, -apple-system, 'Segoe UI', sans-serif;
+  --font-family-body:    'LSC Funnel Sans', ui-sans-serif, -apple-system, 'Segoe UI', sans-serif;
   --font-family-mono:    'CS Felice Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --font-figures:        var(--font-family-mono);  /* money in tables and rows: digits align */
 
@@ -122,7 +120,8 @@
 
   --letter-spacing-tight:  -0.01em;  /* Delight titles */
   --letter-spacing-normal: 0;
-  --letter-spacing-wide:   0.08em;   /* mono caps: eyebrows, chips, nav (U4) */
+  --letter-spacing-wide:   0.08em;   /* mono caps: eyebrows, chips, nav, buttons */
+  --letter-spacing-widest: 0.2em;    /* the wordmark only */
 
   /* ── Spacing: 4px base, 8px rhythm ─────────────────────────────────────── */
   --space-0:  0;
@@ -156,9 +155,9 @@
   --max-width-page:    calc(var(--max-width-wide) + var(--rail-width) + var(--space-8));  /* editor with its rail: the panels keep 1000 */
   --rail-width:        184px;
 
-  --radius-sm:   4px;     /* chips, inputs, small buttons */
-  --radius-md:   8px;     /* buttons, panels, cards (the site's 8) */
-  --radius-lg:   16px;    /* bottom sheets, dialogs (the site's 16) */
+  --radius-sm:   4px;     /* small marks */
+  --radius-md:   8px;     /* buttons, inputs, menus */
+  --radius-lg:   12px;    /* panels, cards, dialogs, sheets (the hub's card) */
   --radius-full: 999px;
 
   /* Dark-mode shadows: deep and soft, only on things that float. Panels have none. */
@@ -191,16 +190,18 @@
   /* ── Component tokens ──────────────────────────────────────────────────── */
   --panel-bg:        var(--color-bg-panel);
   --panel-border:    var(--color-border-subtle);
-  --panel-radius:    var(--radius-md);
+  --panel-radius:    var(--radius-lg);
   --panel-head-gap:  var(--space-5);
 
   --btn-radius:      var(--radius-md);
   --btn-pad-x:       var(--space-6);
-  --btn-font:        var(--font-weight-medium) var(--font-size-base)/var(--line-height-snug) var(--font-family-body);
+  --btn-font:        var(--font-weight-normal) var(--font-size-sm)/var(--line-height-snug) var(--font-family-mono);
+  --btn-transform:   uppercase;
+  --btn-tracking:    var(--letter-spacing-wide);
 
   --input-bg:        var(--color-bg-inset);
   --input-border:    var(--color-border-strong);
-  --input-radius:    var(--radius-sm);
+  --input-radius:    var(--radius-md);
 
   --menu-bg:         var(--color-bg-float);
   --menu-radius:     var(--radius-md);
@@ -208,11 +209,11 @@
   --menu-shadow:     var(--shadow-md);
 
   --chip-font:       var(--font-weight-normal) var(--font-size-xs)/1 var(--font-family-mono);
-  --chip-radius:     var(--radius-sm);
+  --chip-radius:     var(--radius-full);
   --chip-pad:        var(--space-1) var(--space-3);
 
   --eyebrow-font:    var(--font-weight-normal) var(--font-size-xs)/1.2 var(--font-family-mono);
-  --eyebrow-color:   var(--color-accent-text);
+  --eyebrow-color:   var(--color-text-secondary);
 
   --clause-num-font: var(--font-weight-normal) var(--font-size-sm)/1 var(--font-family-mono);
 }
@@ -236,9 +237,11 @@
 }
 
 /* ── Light palette: the client pages' and emails' (lsccreative.studio) ───────
-   Opt-in only. Not tied to prefers-color-scheme (U6). Contrast on paper:
+   Opt-in only. Not tied to prefers-color-scheme. Contrast on paper:
    ink 16.5, secondary #625C58 5.6, tertiary #655F5A 5.3 (4.8 on inset),
-   accent-text #8C4832 5.8; white on the button #8C4832 6.8. Status texts 5.1–5.6. */
+   accent-text #8C4832 5.8; white on the button #8C4832 6.8. Status texts 5.1–5.6.
+   Everything at the end of this block pins a value the dark theme changed, so
+   these pages keep the look they have today. */
 [data-theme="light"] {
   color-scheme: light;
   --color-bg-page:      #F0EDE8;  /* --lsc-white, "paper" */
@@ -278,6 +281,21 @@
   --shadow-md: 0 8px 24px rgba(14, 14, 14, 0.12), 0 0 0 1px var(--color-border-subtle);
   --shadow-lg: 0 18px 48px rgba(14, 14, 14, 0.16), 0 0 0 1px var(--color-border-subtle);
   --shadow-focus: 0 0 0 2px var(--color-bg-page), 0 0 0 4px var(--color-border-focus);
+
+  --font-family-body:     'LSC Metro Sans', ui-sans-serif, -apple-system, 'Segoe UI', sans-serif;
+  --color-status-success: #5F9A6D;
+  --color-status-warning: #C9A443;
+  --color-on-status:      #121110;
+  --radius-sm:            4px;
+  --radius-md:            8px;
+  --radius-lg:            16px;
+  --panel-radius:         8px;
+  --chip-radius:          4px;
+  --input-radius:         4px;
+  --btn-font:             var(--font-weight-medium) var(--font-size-base)/var(--line-height-snug) var(--font-family-body);
+  --btn-transform:        none;
+  --btn-tracking:         var(--letter-spacing-normal);
+  --eyebrow-color:        var(--color-accent-text);
 }
 
 /* ── Reduced motion: no slides, no settles ─────────────────────────────── */

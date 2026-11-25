@@ -1,0 +1,531 @@
+/* A project's Deliverables tab (js/views/project-deliverables.js), and the header
+   and panels the project's tabs add to the Project page (project-folder.css).
+   Reuses .panel, .pf-chip, .pf-notice, .pf-empty, .form-grid, .field, .btn and the
+   menu button.
+
+   Phone first: one column; a checklist row stacks its name, state and actions.
+   768 and up, a row is one line across. 1100 and up, an item's page has a side
+   column. */
+
+/* ── The project's header ─────────────────────────────────────────────────── */
+
+.pf-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-4) 0;
+}
+/* View as client (C8): last in the badge row, quiet, so it never reads as the next step. */
+.pf-as-client {
+  margin-left: var(--space-2);
+  gap: var(--space-2);
+}
+.pf-as-client-arrow {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+}
+.pf-as-client:not(:disabled):hover .pf-as-client-arrow {
+  color: var(--color-accent-mark);
+}
+.pf-client a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--color-border-strong);
+  text-underline-offset: 3px;
+}
+.pf-client a:hover {
+  text-decoration-color: var(--color-accent-mark);
+}
+
+/* A tab's panels, stacked. */
+.pf-tab-stack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--panel-gap);
+}
+#pf-panel:focus {
+  outline: none;
+}
+
+/* A panel's line of words, in Payments and Documents. */
+.pf-words {
+  margin: 0;
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+  color: var(--color-text-primary);
+}
+.pf-evidence {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  margin: var(--space-5) 0 0;
+}
+.pf-evidence dt {
+  margin-bottom: var(--space-1);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+.pf-evidence dd {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+/* A signature is ink on white, whatever the theme. */
+.pf-signature {
+  display: block;
+  max-width: 280px;
+  max-height: 96px;
+  padding: var(--space-2);
+  background: #fff;
+  border-radius: var(--radius-sm);
+}
+.pf-agreements {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pf-agreements li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border-hairline);
+  font-size: var(--font-size-sm);
+}
+.pf-agreements li:last-child {
+  border-bottom: none;
+}
+
+/* A day's link to its travel view, beside its row. */
+.pf-day-travel {
+  display: inline-block;
+  min-height: var(--touch-min);
+  padding: var(--space-3) var(--panel-pad-x);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.pf-day-travel:hover {
+  color: var(--color-text-primary);
+}
+
+/* ── The checklist ────────────────────────────────────────────────────────── */
+
+.dlv-progress {
+  margin: 0;
+  font-family: var(--font-figures);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+.dlv-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dlv-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-5) var(--panel-pad-x);
+  border-bottom: 1px solid var(--color-border-hairline);
+}
+.dlv-row:last-child {
+  border-bottom: none;
+}
+.dlv-row-title {
+  margin: 0;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-normal);
+  overflow-wrap: anywhere;
+}
+.dlv-row-title a {
+  color: var(--color-text-primary);
+  text-decoration: none;
+}
+.dlv-row-title a:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--color-accent-mark);
+  text-underline-offset: 3px;
+}
+.dlv-row-meta,
+.dlv-note {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.dlv-row-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.dlv-file,
+.dlv-rounds {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.dlv-row-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.dlv-row-acts > .btn {
+  flex: 1 1 auto;
+  min-height: var(--touch-min);
+}
+.dlv-row.is-off .dlv-row-title a {
+  color: var(--color-text-secondary);
+  text-decoration: line-through;
+}
+
+.dlv-ask p {
+  margin: 0 0 var(--space-4);
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+}
+.dlv-ask .btn {
+  min-height: var(--touch-min);
+}
+.dlv-sub {
+  margin: 0 0 var(--space-5);
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-lg);
+  color: var(--color-text-primary);
+}
+.dlv-add-panel {
+  margin-top: var(--panel-gap);
+}
+
+.dlv-error {
+  display: none;
+  margin: var(--space-4) var(--panel-pad-x);
+  padding: 10px 14px;
+  border: 1px solid var(--err-border);
+  background: var(--err-bg);
+  color: var(--err-text);
+  font-size: var(--font-size-sm);
+}
+.dlv-error.show {
+  display: block;
+}
+
+/* ── One deliverable ──────────────────────────────────────────────────────── */
+
+.dlv-item-head {
+  margin-bottom: var(--space-6);
+}
+.dlv-item-title {
+  margin: 0;
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-xl);
+  line-height: var(--line-height-tight);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+.dlv-item-title:focus {
+  outline: none;
+}
+.dlv-item-head .pf-notice {
+  margin-top: var(--space-4);
+}
+.dlv-item-grid,
+.dlv-item-main,
+.dlv-item-side {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--panel-gap);
+  align-content: start;
+}
+.dlv-item-grid + .dlv-error,
+.dlv-item-head + .dlv-error {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.dlv-file-name {
+  margin: 0;
+  font-size: var(--font-size-base);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+.dlv-path {
+  display: block;
+  margin: var(--space-2) 0 0;
+  overflow-wrap: anywhere;
+}
+.dlv-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+.dlv-acts .btn {
+  flex: 1 1 auto;
+  min-height: var(--touch-min);
+}
+.dlv-preview {
+  margin-top: var(--space-5);
+}
+.dlv-preview[hidden] {
+  display: none;
+}
+.dlv-video {
+  display: block;
+  width: 100%;
+  max-height: 60vh;
+  background: #000;
+  border-radius: var(--radius-sm);
+}
+.dlv-photos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dlv-photos img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  background: var(--color-bg-float);
+  border-radius: var(--radius-sm);
+}
+.dlv-drive {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  justify-items: start;
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border-hairline);
+}
+.dlv-drive .field {
+  width: 100%;
+}
+.dlv-drive .btn {
+  min-height: var(--touch-min);
+}
+
+.dlv-stage {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.dlv-stage legend {
+  margin-bottom: var(--space-3);
+  padding: 0;
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-lg);
+  color: var(--color-text-primary);
+}
+.dlv-stage-opts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+.dlv-stage-opt {
+  position: relative;
+  cursor: pointer;
+}
+.dlv-stage-opt input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.dlv-stage-opt span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--touch-min);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  transition: color var(--duration-fast) var(--easing-default);
+}
+.dlv-stage-opt:hover span {
+  color: var(--color-text-primary);
+}
+.dlv-stage-opt input:checked + span {
+  color: var(--color-text-primary);
+  background: rgba(240, 237, 232, 0.06);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.dlv-stage-opt input:focus-visible + span {
+  box-shadow: var(--shadow-focus);
+}
+
+.dlv-history {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dlv-history li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-4) var(--panel-pad-x);
+  border-bottom: 1px solid var(--color-border-hairline);
+}
+.dlv-history li:last-child {
+  border-bottom: none;
+}
+.dlv-history-n {
+  font-family: var(--font-figures);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+.dlv-history-file {
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+.dlv-history .dlv-note {
+  grid-column: 2;
+  margin: 0;
+}
+
+@media (min-width: 768px) {
+  .dlv-row {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) auto;
+    align-items: center;
+    gap: var(--space-5);
+  }
+  .dlv-row-acts {
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+  }
+  .dlv-row-acts > .btn {
+    flex: 0 0 auto;
+    min-height: 0;
+  }
+  .dlv-acts .btn,
+  .dlv-drive .btn,
+  .dlv-ask .btn {
+    flex: 0 0 auto;
+    min-height: 0;
+  }
+  .pf-evidence {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1100px) {
+  .dlv-item-grid {
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  }
+}
+
+/* Panels whose first thing is a field or a legend: clear of the panel's edge. */
+#dlv-add-version,
+#dlv-details,
+.dlv-add,
+.dlv-current,
+.dlv-stage {
+  padding-top: var(--space-3);
+  padding-bottom: var(--space-3);
+}
+#dlv-add-version .field + .field {
+  margin-top: var(--space-6);
+}
+.pf-words {
+  padding: var(--space-3) 0;
+}
+
+.dlv-filed {
+  margin: 0 0 var(--panel-gap);
+}
+.dlv-stage-opt input:disabled,
+.dlv-stage-opt:has(input:disabled) {
+  cursor: default;
+}
+
+/* "From the old hub" on Documents (R4): client-typed text, kept as typed. */
+.pf-hub-list {
+  list-style: none;
+  margin: 0 0 var(--space-4);
+  padding: 0;
+}
+.pf-hub-list li {
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+.pf-hub-list li:first-child {
+  border-top: 0;
+}
+.pf-hub-text {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
+/* From the client (C4): the sets of notes the client sent, newest first. */
+.dlv-client-set:first-child { padding-top: var(--space-2); }
+.dlv-client-set:last-child { padding-bottom: var(--space-6); }
+.dlv-client-set + .dlv-client-set { margin-top: var(--space-6); padding-top: var(--space-6); border-top: 1px solid var(--color-border-hairline); }
+.dlv-client-head { margin: 0 0 var(--space-4); font: var(--eyebrow-font); letter-spacing: var(--letter-spacing-wide); text-transform: uppercase; color: var(--color-text-secondary); }
+.dlv-client-notes { margin: 0; padding-left: var(--space-7); }
+.dlv-client-notes li + li { margin-top: var(--space-4); }
+.dlv-note-at { font-family: var(--font-family-mono); font-size: var(--font-size-xs); color: var(--color-accent-text); }
+.dlv-note-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Approvals (C5): the record CONFIRM APPROVAL left, as a short definition list. */
+.dlv-rounds.is-over { color: var(--color-status-warning-text); }
+.dlv-approval-rec { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-2) var(--space-5); margin: 0; font-size: var(--font-size-sm); }
+.dlv-approval-rec dt { color: var(--color-text-secondary); }
+.dlv-approval-rec dd { margin: 0; overflow-wrap: anywhere; }
+.dlv-approval-ua { font-family: var(--font-family-mono); font-size: var(--font-size-xs); color: var(--color-text-secondary); }
+.dlv-approval .dlv-note { margin-top: var(--space-4); }
+
+/* The portal invite line under the checklist (C6). */
+.dlv-invite {
+  margin: 0;
+  padding: var(--space-4) var(--space-6);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  border-top: 1px solid var(--color-border-hairline);
+}
+.dlv-invite .btn {
+  margin-left: var(--space-3);
+}
+/* A failed invite's code and link (C6), until the studio dismisses them. */
+.dlv-handover {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--color-border-hairline);
+  border-left: 3px solid var(--color-status-error);
+}
+.dlv-handover p { margin: 0; }
+.dlv-handover-h { font-weight: 600; color: var(--color-status-error-text); }
+.dlv-handover .dlv-approval-rec { justify-self: stretch; }
+.dlv-handover .fig { font-size: var(--font-size-lg); letter-spacing: 0.08em; }
+
+/* The deemed-approval clock on a Final waiting on the client (C7). */
+.dlv-deemed {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+  padding-bottom: var(--space-4);
+  margin-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-border-hairline);
+}
+.dlv-deemed p { margin: 0; }
+.dlv-deemed.is-due .dlv-client-head { color: var(--color-status-warning-text); }
+.dlv-deemed .btn { margin-top: var(--space-2); }

@@ -1044,6 +1044,94 @@ const MIGRATIONS = [
       require('./migrations/v21-hub').migrateV21(db);
     },
   },
+  {
+    version: 22,
+    name: 'project checklists: deliverables, versions, delivery status',
+    up(db) {
+      require('./migrations/v22-deliverables').migrateV22(db, nowIso());
+    },
+  },
+  {
+    version: 23,
+    name: 'one spelling for client emails',
+    up(db) {
+      // Trimmed and lower-cased, in JS as src/clients.js does: SQLite's lower()
+      // folds only ASCII. Two clients left on one address stay as they are (S13).
+      const fix = db.prepare('UPDATE clients SET email = ? WHERE id = ?');
+      db.prepare('SELECT id, email FROM clients').all().forEach((c) => {
+        const email = String(c.email == null ? '' : c.email).trim().toLowerCase();
+        if (email !== c.email) fix.run(email, c.id);
+      });
+    },
+  },
+  {
+    version: 24,
+    name: 'deliverable versions: what the file is, and its Drive backup',
+    up(db) {
+      // `kind` and the count are kept because the NAS can be away when a version
+      // is read; the Drive link is the player's fallback (player contract 5).
+      const cols = new Set(db.prepare('PRAGMA table_info(deliverable_versions)').all().map((c) => c.name));
+      if (!cols.has('kind')) {
+        db.exec("ALTER TABLE deliverable_versions ADD COLUMN kind TEXT NOT NULL DEFAULT 'video' CHECK (kind IN ('video', 'photos'))");
+      }
+      if (!cols.has('photo_count')) db.exec('ALTER TABLE deliverable_versions ADD COLUMN photo_count INTEGER NOT NULL DEFAULT 0');
+      if (!cols.has('drive_link')) db.exec("ALTER TABLE deliverable_versions ADD COLUMN drive_link TEXT NOT NULL DEFAULT ''");
+    },
+  },
+  {
+    version: 25,
+    name: 'old hub projects onto billing records, and accepted projects their clients',
+    up(db) {
+      require('./migrations/v25-hub-adoption').migrateV25(db, nowIso());
+    },
+  },
+  {
+    version: 26,
+    name: 'projects remember when they were first opened (the Needs you queue, R5)',
+    up(db) {
+      // Needs you's "New project" leaves when the project is first opened. Every
+      // project accepted before this counts as already seen, or the queue's first
+      // morning would be the whole back catalogue.
+      const cols = new Set(db.prepare('PRAGMA table_info(projects)').all().map((c) => c.name));
+      if (!cols.has('opened_at')) db.exec('ALTER TABLE projects ADD COLUMN opened_at TEXT');
+      db.prepare('UPDATE projects SET opened_at = ? WHERE accepted_at IS NOT NULL AND opened_at IS NULL').run(nowIso());
+    },
+  },
+  {
+    version: 27,
+    name: 'client portal sessions: one Client code per client, sessions the server checks (C1)',
+    up(db) {
+      require('./migrations/v27-client-sessions').migrateV27(db);
+    },
+  },
+  {
+    version: 28,
+    name: 'saved client feedback: notes as the client adds them, and the sets they send (C4)',
+    up(db) {
+      require('./migrations/v28-client-feedback').migrateV28(db);
+    },
+  },
+  {
+    version: 29,
+    name: 'approvals: the record CONFIRM APPROVAL leaves, one per version (C5)',
+    up(db) {
+      require('./migrations/v29-approvals').migrateV29(db);
+    },
+  },
+  {
+    version: 30,
+    name: 'deemed_reminders: the client\'s reminder before a deemed approval, one per version (C7)',
+    up(db) {
+      require('./migrations/v30-deemed-reminders').migrateV30(db);
+    },
+  },
+  {
+    version: 31,
+    name: 'portal_previews: View as client, a short read-only look at the portal (C8)',
+    up(db) {
+      require('./migrations/v31-portal-previews').migrateV31(db);
+    },
+  },
 ];
 
 /**

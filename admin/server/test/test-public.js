@@ -515,6 +515,9 @@ const setAgreement = (agreement, extra = {}) => api('/api/settings', {
 test('signing: the agreement is offered while open, signed as shown, and accepts the estimate (D39, D40, D18)', async () => {
   await setAgreement(AGREEMENT, { invoicing: { depositPct: 40 } });
   const est = await shoot();
+  // R1: the quote's client is found by email when an earlier test has made it, else made now.
+  const saltwater = (await (await api('/api/clients')).json()).clients
+    .some((c) => String(c.email).toLowerCase() === 'priya@salt.example');
   const { token } = await sent(est);
   // Edited after sending, not re-sent: the client signs, and is billed for, v1.
   await api(`/api/estimates/${est.id}`, { method: 'PUT', body: JSON.stringify({ ...est, name: 'Edited after', shortNotice: false }) });
@@ -573,6 +576,7 @@ test('signing: the agreement is offered while open, signed as shown, and accepts
   assert.equal(log.length, 1);
   assert.deepEqual(log[0].detail, {
     estimateId: est.id, invoicing: 'pair', depositPct: 40, invoices: [`INV-${est.upid}-D`, `INV-${est.upid}-F`], rebook: [],
+    checklist: 1, client: saltwater ? 'matched_email' : 'created', // R1: the quote's one deliverable
     version: 1, signatureId: s[0].id, signedBy: 'Priya Nair', role: 'Marketing lead',
   });
   assert.equal(f.activity.filter((a) => a.kind === 'accepted').length, 0);

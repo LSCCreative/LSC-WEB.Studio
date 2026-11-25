@@ -297,7 +297,7 @@ function billingBehind() {
   const b = openDatabase(billingFile, { backupDir: false });
   b.exec(`DROP TABLE agreement_evidence; DROP TABLE private_auth; DROP TABLE records; DROP TABLE admin_sessions;
     DROP TABLE deliverable_tokens; DROP TABLE bunny_assets; DROP TABLE bunny_collections;
-    DELETE FROM schema_version WHERE version = 21;`);
+    DELETE FROM schema_version WHERE version >= 21;`); // v22 reruns safely over what it left
   b.pragma('wal_checkpoint(TRUNCATE)');
   b.close();
   return billingFile;
