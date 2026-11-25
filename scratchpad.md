@@ -231,12 +231,14 @@ copy, no existing value changed, server boots on it. Step 3: **NAS deployed** at
 `/volume4/lsc-admin/app.prev-c9`; new image `178549010c2b`, migrated v21→v31 on boot, `m6-checks.sh` ALL PASS. The build takes
 ~10 minutes on the NAS (npm). **The NAS moved to 192.168.1.46** (same host keys as .45): use
 `ssh -o HostName=192.168.1.46 -o HostKeyAlias=192.168.1.45 lsc-nas` until the router reserves it and ~/.ssh/config is updated.
-Until step 4 the old portal page on Pages can't sign in (its routes are gone); no client is live.
+Step 4: PR LSCCreative/LSC-WEB.Studio#2 merged as `f86adae`; the Pages run succeeded (tokens copied); the live portal loads,
+reaches hub-api and shows sign-in (fonts and tokens load; only the signed-out 401 in the console).
 **Rollback:** `cd /volume4/lsc-admin && mv app app.c9 && mv app.prev-c9 app && docker tag lsc-admin:pre-c9 lsc-admin:latest`, put the
 pre-c9 db back as `data/billing.db` (container stopped), then `cd app && docker compose up -d` (no --build).
-Left: step 4 (PR merged-admin → main, which deploys Pages), step 5 (the user's real job on a phone), step 6 (docs, CORS_ORIGINS, old containers).
+Left: step 5 (the user's real job on a phone), step 6 (tick C9, docs, CORS_ORIGINS, old containers, delete the live-db copy in
+the session scratchpad).
 
-**Next within C9: step 4 | Model: Opus 5.5 | Effort: High.** Merge `merged-admin` to `main`, redeploy (NAS before Pages),
+**Next within C9: step 5, the user's real job on a phone.** Merge `merged-admin` to `main`, redeploy (NAS before Pages),
 one real job start to finish with a test client on a real phone. Payment stays off. Ask the user before any push or deploy.
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:
