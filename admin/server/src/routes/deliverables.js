@@ -27,6 +27,7 @@ const {
 const { normalizeDeliverablePath } = require('../hub/routes');
 const { inviteView, setEnv, sendInvite } = require('../portal-invite');
 const { deemedClocks } = require('../deemed');
+const { createPortalAccess } = require('../portal-access');
 
 const MAX_TITLE = 200;
 const MAX_SHORT = 100;
@@ -463,6 +464,25 @@ function registerDeliverableRoutes(app, db, opts = {}) {
     } catch (err) {
       return next(err);
     }
+  });
+
+  /* View as client (C8): a link that opens the real portal on this project, as its
+     client sees it, read-only. The link works once, within minutes; the preview it
+     opens lasts an hour (portal-access.js). An archived project still opens, as it
+     does under the client's Past projects. Nothing is logged: it isn't the client. */
+  const previews = inviteEnv.portalSecret ? createPortalAccess(db, { secret: inviteEnv.portalSecret }) : null;
+  app.post('/api/projects/:id/portal-preview', (req, res) => {
+    const p = projectFor(req, res);
+    if (!p) return undefined;
+    if (PIPELINE.includes(stageNow(db, p).stage)) {
+      return refuse(res, 409, 'not_accepted', 'The client sees a project once its quote is accepted.');
+    }
+    if (!p.client_id || !db.prepare('SELECT 1 FROM clients WHERE id = ?').get(p.client_id)) {
+      return refuse(res, 409, 'no_client', 'This project has no client record, so there’s no portal to show.');
+    }
+    if (!previews || !inviteEnv.portalUrl) return refuse(res, 409, 'no_portal', 'The Client Portal isn’t set up on this server.');
+    const { token } = previews.createPreview(p.client_id, p.id);
+    return res.status(201).json({ ok: true, url: `${inviteEnv.portalUrl}#/preview/${token}` });
   });
 }
 

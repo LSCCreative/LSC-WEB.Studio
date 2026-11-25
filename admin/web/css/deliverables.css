@@ -16,6 +16,18 @@
   gap: var(--space-2);
   margin: var(--space-4) 0;
 }
+/* View as client (C8): last in the badge row, quiet, so it never reads as the next step. */
+.pf-as-client {
+  margin-left: var(--space-2);
+  gap: var(--space-2);
+}
+.pf-as-client-arrow {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+}
+.pf-as-client:not(:disabled):hover .pf-as-client-arrow {
+  color: var(--color-accent-mark);
+}
 .pf-client a {
   color: inherit;
   text-decoration: underline;

@@ -68,6 +68,11 @@ const CODE_FAILURE_WINDOW_MS = 15 * 60 * 1000;
    lsccreative.studio still carries (the same site), and a cross-site form post
    doesn't. HttpOnly: the portal's script never holds the token. */
 const SESSION_COOKIE = 'lsc_portal';
+/* View as client (C8): the studio's preview, a cookie of its own beside the client's,
+   so opening one never ends or replaces a real sign-in on that browser. */
+const PREVIEW_COOKIE = 'lsc_portal_preview';
+/* What a preview may do: read. Anything else under `signedIn` is refused (C8). */
+const READ_METHODS = new Set(['GET', 'HEAD']);
 
 /* Same file, same key: "a/../b/c.mp4" and "b/c.mp4" must not publish twice. */
 function normalizeDeliverablePath(value) {
@@ -346,16 +351,20 @@ function createHubRouter(db, opts = {}) {
      through the signed-in client, so another client's project, and one that
      doesn't exist, are the same "not found". */
 
-  const readToken = (req) => {
+  const readCookie = (req, name) => {
     try {
-      return cookie.parse(req.headers.cookie || '')[SESSION_COOKIE] || null;
+      return cookie.parse(req.headers.cookie || '')[name] || null;
     } catch {
       return null;
     }
   };
-  const sessionCookie = (value, maxAge) => cookie.serialize(SESSION_COOKIE, value, {
+  const readToken = (req) => readCookie(req, SESSION_COOKIE);
+  const readPreviewToken = (req) => readCookie(req, PREVIEW_COOKIE);
+  const cookieFor = (name) => (value, maxAge) => cookie.serialize(name, value, {
     httpOnly: true, secure: cookieSecure, sameSite: 'lax', path: '/hub', maxAge,
   });
+  const sessionCookie = cookieFor(SESSION_COOKIE);
+  const previewCookie = cookieFor(PREVIEW_COOKIE);
 
   /* A write from a browser names its page. One that names another site is
      refused before anything is read; tools that send no Origin are left to the
@@ -373,13 +382,31 @@ function createHubRouter(db, opts = {}) {
   const mediaLimit = limit('media');
   const noteLimit = limit('note');
 
+  /* A preview (C8) applies only to a request that says it comes from the preview's
+     page (`?preview=1`, which that page adds to every call and the server to every
+     review link it gives it). It reads as its client does, through the same routes,
+     and every write is refused here, before any route's own checks, so a write route
+     added later is refused too. A marked request with no live preview is told so
+     (`preview_ended`), never answered as whoever else is signed in on the browser;
+     an unmarked one, such as a client's own tab beside it, ignores the preview cookie.
+     Nothing is touched by reading one: no session row, no "last seen". */
   function signedIn(req, res, next) {
+    if (req.query.preview === '1') {
+      const preview = access.readPreview(readPreviewToken(req));
+      if (!preview) return res.status(401).json({ error: 'preview_ended' });
+      if (!READ_METHODS.has(req.method)) return res.status(403).json({ error: 'preview' });
+      const client = getClient.get(preview.clientId);
+      if (!client) return res.status(401).json({ error: 'preview_ended' });
+      req.portal = { session: null, client, preview };
+      return next();
+    }
     const session = access.readSession(readToken(req));
     const client = session && getClient.get(session.clientId);
     if (!client) return res.status(401).json({ error: 'signed_out' });
-    req.portal = { session, client };
+    req.portal = { session, client, preview: null };
     return next();
   }
+  const previewView = (preview) => (preview ? { projectId: preview.projectId, expiresAt: preview.expiresAt } : null);
 
   /* The signed-in client's own projects, as the lists read them: accepted work
      only (a quote still being decided isn't the portal's), current and past. */
@@ -416,12 +443,14 @@ function createHubRouter(db, opts = {}) {
   /* A version's review copy, played from the NAS through the route below, until
      Bunny's takes over (Slice 4). Addressed by ids, never by path or file name;
      a photo library's images by their key, in the folder's sorted order. */
-  function reviewOf(projectId, v) {
+  function reviewOf(projectId, v, preview) {
     if (!v.sourcePath) return null;
     const url = `${publicBaseUrl}/hub/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(v.id)}/review`;
-    if (v.kind !== 'photos') return { type: 'file', url };
+    // A preview's <video> and <img> can't add the marker themselves, so their links carry it (photo= stays last).
+    const mark = preview ? 'preview=1' : '';
+    if (v.kind !== 'photos') return { type: 'file', url: mark ? `${url}?${mark}` : url };
     folderMemory.delete(v.sourcePath); // the project page reads the folder as it is now
-    return { type: 'photos', urls: [...photosIn(v.sourcePath).keys()].map((key) => `${url}?photo=${key}`) };
+    return { type: 'photos', urls: [...photosIn(v.sourcePath).keys()].map((key) => `${url}?${mark ? mark + '&' : ''}photo=${key}`) };
   }
 
   // ── POST /hub/auth: { email, code } → the session cookie and who signed in.
@@ -460,14 +489,35 @@ function createHubRouter(db, opts = {}) {
   // ── GET /hub/session: who is signed in, or 401.
   router.use('/hub/session', credentialedCors);
   router.get('/hub/session', readLimit, signedIn, (req, res) => {
-    res.json({ ok: true, client: clientView(req.portal.client) });
+    res.json({ ok: true, client: clientView(req.portal.client), preview: previewView(req.portal.preview) });
   });
 
-  // ── POST /hub/sign-out: ends this session, signed in or not.
+  // ── POST /hub/sign-out: ends this session, signed in or not, and any preview on this browser.
   router.use('/hub/sign-out', credentialedCors);
   router.post('/hub/sign-out', fromThePortal, (req, res) => {
     access.endSession(readToken(req));
-    res.setHeader('Set-Cookie', sessionCookie('', 0));
+    access.endPreview(readPreviewToken(req));
+    res.setHeader('Set-Cookie', [sessionCookie('', 0), previewCookie('', 0)]);
+    res.json({ ok: true });
+  });
+
+  // ── POST /hub/preview: { token } from `#/preview/<token>` (C8) → the preview's
+  // cookie, whose client it is, and the project it opens on. The link works once.
+  // The token travels in the body, never a URL, so it reaches no log. It doesn't
+  // touch the client's own session cookie.
+  router.use('/hub/preview', credentialedCors);
+  router.post('/hub/preview', authLimit, fromThePortal, (req, res) => {
+    const opened = access.openPreview((req.body || {}).token);
+    const client = opened && getClient.get(opened.clientId);
+    if (!client) return res.status(404).json({ error: 'not_found' });
+    res.setHeader('Set-Cookie', previewCookie(opened.token, Math.floor((Date.parse(opened.expiresAt) - Date.now()) / 1000)));
+    return res.json({ ok: true, client: clientView(client), preview: previewView(opened) });
+  });
+
+  // ── POST /hub/preview/end: ends the preview on this browser, if any. The client's own sign-in stays.
+  router.post('/hub/preview/end', fromThePortal, (req, res) => {
+    access.endPreview(readPreviewToken(req));
+    res.setHeader('Set-Cookie', previewCookie('', 0));
     res.json({ ok: true });
   });
 
@@ -511,7 +561,7 @@ function createHubRouter(db, opts = {}) {
     return res.json({
       ok: true,
       project: projectView(project, readChecklist(db, project.id), {
-        reviewOf: (v) => reviewOf(project.id, v),
+        reviewOf: (v) => reviewOf(project.id, v, Boolean(req.portal.preview)),
         clientId: req.portal.client.id,
         invoices,
         agreement: signed ? { url: `${appUrl}c/#e/${signed.public_token}`, signedOn: sydneyDay(signed.signed_at) } : null,

@@ -194,12 +194,19 @@ const ProjectFolder = (() => {
     payment_required: ['Payment required', 'is-info'],
   };
 
-  /* The badge beside the flags (IA: "Flags sit beside the badge, not instead of it"). */
+  /* The badge beside the flags (IA: "Flags sit beside the badge, not instead of it"),
+     then View as client (C8) once there is a client to see it as. */
   function badgesMarkup(project) {
     const flags = (project.delivery && project.delivery.flags) || [];
+    const asClient = project.client && project.client.id
+      ? '<button type="button" class="btn btn-ghost btn-sm pf-as-client" data-act="as-client" data-write ' +
+        'aria-label="View as client (opens the Client Portal in a new tab, read-only)">' +
+        '<span class="spinner"></span>View as client<span class="pf-as-client-arrow" aria-hidden="true">↗</span></button>'
+      : '';
     return (
       '<div class="pf-badges">' + ProjectCard.badgeMarkup(project) +
       flags.filter((f) => FLAGS[f]).map((f) => '<span class="pf-chip ' + FLAGS[f][1] + '">' + FLAGS[f][0] + '</span>').join('') +
+      asClient +
       '</div>'
     );
   }
@@ -993,6 +1000,7 @@ const ProjectFolder = (() => {
         .catch((err) => showActionError('Couldn’t unarchive: ' + failureText(err)));
     }
     if (id === 'duplicate') return duplicate(lead(), button);
+    if (id === 'as-client') return viewAsClient(button);
     if (id === 'delete') return openConfirm(button, {
       title: 'Delete this project?',
       body: 'This deletes ' + describeContents() + '. It can’t be undone.',
@@ -1000,6 +1008,43 @@ const ProjectFolder = (() => {
       danger: true,
       run: remove,
     });
+    return undefined;
+  }
+
+  /* View as client (C8): the real portal on this project, in a new tab, read-only.
+     The tab opens in the click itself, so a popup blocker rarely stops it, and is
+     sent to the portal once the server hands back the link; it is closed again if
+     that fails. A browser that blocks it anyway gets a link to click (a click of
+     the studio's own opens a tab), never this page swapped out under unsaved work.
+     The link opens once, within minutes. */
+  async function viewAsClient(button) {
+    if (busy) return;
+    const id = folder.project.id;
+    clearActionError();
+    const tab = window.open('', '_blank');
+    if (tab) tab.opener = null; // the portal never reaches back into the admin
+    setBusy(button, true);
+    try {
+      const reply = await LSCApi.post('/api/projects/' + encodeURIComponent(id) + '/portal-preview');
+      setBusy(button, false);
+      if (tab) {
+        tab.location.replace(reply.url);
+      } else {
+        const open = document.createElement('a');
+        open.href = reply.url;
+        open.target = '_blank';
+        open.rel = 'noopener';
+        open.textContent = 'Open the client’s view';
+        open.addEventListener('click', () => setTimeout(clearActionError, 0));
+        showActionError('Your browser blocked the new tab.', open);
+      }
+    } catch (err) {
+      setBusy(button, false);
+      if (tab) tab.close();
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (err.kind === 'auth') return handlers.onAuthLost({ keepScreen: true });
+      showActionError('Couldn’t open the client’s view: ' + failureText(err));
+    }
     return undefined;
   }
 

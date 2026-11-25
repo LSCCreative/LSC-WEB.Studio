@@ -206,6 +206,9 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   (S16): the nightly one (02:00) covers them.
 - Approvals (C5, S12): one `client_approvals` row per version, first write wins; an item is approved only while its newest version
   (published or not) is an approved Final (`itemApproved`). Rounds = sets sent on Finals (`ROUNDS_INCLUDED`); the rate comes from the signed text.
+- View as client (C8): a preview is never a client session (`portal_previews`, its own cookie) and applies only to calls marked
+  `?preview=1`. Its read-only rule lives in the hub's `signedIn`, so **every client write route must go through `signedIn`**;
+  `test-portal-preview.js` fails otherwise. A new review/media link built for the page must carry the marker under a preview.
 - Deemed approval (C7): `deemed.js` is the clock (14 Mon–Fri days after the Sydney publish day, `holidays` skipped); only Mark
   approved records it (`kind 'deemed'`). Reminders run hourly from `index.js` (`deemed-reminders.js`); the stub script starts them too.
 - Portal invoices (C3): sent or paid only, with the amount `invoiceView` says is due (the client's own page's figure). An invoice in

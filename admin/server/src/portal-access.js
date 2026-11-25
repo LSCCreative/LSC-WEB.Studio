@@ -33,6 +33,9 @@ const CODE_FORMAT = /^(?:\d{4}|\d{6})$/;
 const SESSION_DAYS = 30;
 const TOUCH_INTERVAL_MS = 5 * 60 * 1000;
 const MAX_TOKEN = 200;
+/* View as client (C8): the link opens within minutes, once; the preview it opens lasts an hour. */
+const PREVIEW_LINK_MS = 10 * 60 * 1000;
+const PREVIEW_MS = 60 * 60 * 1000;
 
 /**
  * @param {object} db
@@ -149,7 +152,65 @@ function createPortalAccess(db, { secret } = {}) {
     return old ? { clientId: old.client_id, email: old.email, projectId: old.project_id } : null;
   }
 
-  return { issue, signIn, startSession, readSession, endSession, inviteFor };
+  /* ── View as client (C8) ──────────────────────────────────────────────────
+     The studio's look at one client's portal. A link token from the project
+     header, good once for PREVIEW_LINK_MS, is swapped for the preview's own
+     cookie token, good for PREVIEW_MS. Neither is a client session: reading one
+     writes nothing, so a preview is never a sign-in, never "last seen", and the
+     hub router refuses every write made under it. */
+  const previewLinkId = (token) => hmacSign(secret, `preview-link\n${token}`);
+  const previewId = (token) => hmacSign(secret, `preview-session\n${token}`);
+
+  /** A preview link for this client's project; the token comes back once. */
+  function createPreview(clientId, projectId, { now = new Date() } = {}) {
+    const token = randomBytes(32).toString('base64url');
+    const at = now.toISOString();
+    db.transaction(() => {
+      // Each new one clears what has run out: unopened links past their minutes, and ended previews.
+      db.prepare(`DELETE FROM portal_previews WHERE (opened_at IS NULL AND link_expires_at <= ?) OR expires_at <= ?`).run(at, at);
+      db.prepare(`
+        INSERT INTO portal_previews (id, client_id, project_id, link_hash, link_expires_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(randomToken(16), clientId, projectId, previewLinkId(token), new Date(now.getTime() + PREVIEW_LINK_MS).toISOString(), at);
+    })();
+    return { token };
+  }
+
+  /**
+   * Opens a preview from its link, once: { token (for the cookie), clientId,
+   * projectId, expiresAt }, or null for a link that's unknown, used or run out.
+   */
+  function openPreview(linkToken, { now = new Date() } = {}) {
+    if (typeof linkToken !== 'string' || !linkToken || linkToken.length > MAX_TOKEN) return null;
+    const token = randomBytes(32).toString('base64url');
+    const at = now.toISOString();
+    const expires = new Date(now.getTime() + PREVIEW_MS).toISOString();
+    // One statement, so two tabs opening the same link can't both have it.
+    const row = db.prepare(`
+      UPDATE portal_previews SET link_hash = NULL, session_hash = ?, opened_at = ?, expires_at = ?
+       WHERE link_hash = ? AND opened_at IS NULL AND link_expires_at > ?
+         -- A client gone since the link was made leaves it unused, not spent on a page that can't open.
+         AND EXISTS (SELECT 1 FROM clients c WHERE c.id = portal_previews.client_id)
+       RETURNING client_id, project_id, expires_at
+    `).get(previewId(token), at, expires, previewLinkId(linkToken), at);
+    return row ? { token, clientId: row.client_id, projectId: row.project_id, expiresAt: row.expires_at } : null;
+  }
+
+  /** The live preview behind a cookie's token, as { clientId, projectId, expiresAt }, or null. Writes nothing. */
+  function readPreview(token, { now = new Date() } = {}) {
+    if (typeof token !== 'string' || !token || token.length > MAX_TOKEN) return null;
+    const row = db.prepare('SELECT client_id, project_id, expires_at FROM portal_previews WHERE session_hash = ?').get(previewId(token));
+    if (!row || !row.expires_at || new Date(row.expires_at).getTime() <= now.getTime()) return null;
+    return { clientId: row.client_id, projectId: row.project_id, expiresAt: row.expires_at };
+  }
+
+  function endPreview(token) {
+    if (typeof token === 'string' && token && token.length <= MAX_TOKEN) {
+      db.prepare('DELETE FROM portal_previews WHERE session_hash = ?').run(previewId(token));
+    }
+  }
+
+  return { issue, signIn, startSession, readSession, endSession, inviteFor, createPreview, openPreview, readPreview, endPreview };
 }
 
 /** What the studio sees of a client's portal access. No secret is in it. */
@@ -173,4 +234,4 @@ function accessStatus(db, clientId) {
   };
 }
 
-module.exports = { createPortalAccess, accessStatus, CODE_FORMAT, CODE_DIGITS, SESSION_DAYS };
+module.exports = { createPortalAccess, accessStatus, CODE_FORMAT, CODE_DIGITS, SESSION_DAYS, PREVIEW_LINK_MS, PREVIEW_MS };

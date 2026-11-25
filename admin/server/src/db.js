@@ -1125,6 +1125,13 @@ const MIGRATIONS = [
       require('./migrations/v30-deemed-reminders').migrateV30(db);
     },
   },
+  {
+    version: 31,
+    name: 'portal_previews: View as client, a short read-only look at the portal (C8)',
+    up(db) {
+      require('./migrations/v31-portal-previews').migrateV31(db);
+    },
+  },
 ];
 
 /**

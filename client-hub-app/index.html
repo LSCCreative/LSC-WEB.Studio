@@ -270,6 +270,29 @@
     .tab{ min-height:var(--touch-min); }
     .link{ display:inline-block; padding:var(--space-4) 0; }
   }
+  /* ---- View as client (C8): the studio's read-only preview ----
+     Fixed to the foot, so it never fights the sticky topbar, and above dialogs (a
+     preview's Approve or Send is refused, and the bar says why before it's tried).
+     The lightbox covers it: a photo is looked at full screen. */
+  /* Room for the bar under the page; the script sets the bar's real height. */
+  body.is-preview{ padding-bottom:96px; }
+  .preview-bar{
+    position:fixed; left:0; right:0; bottom:0; z-index:40;
+    padding:var(--space-4) var(--space-7) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+    background:var(--color-bg-inverse); color:var(--color-text-inverse);
+    border-top:2px solid var(--color-accent-primary);
+  }
+  .preview-bar[hidden]{ display:none; }
+  .preview-bar .wrap{ padding:0; display:flex; align-items:center; justify-content:space-between; gap:var(--space-5); flex-wrap:wrap; }
+  .preview-bar .eyebrow{ color:var(--color-accent-primary); margin-right:var(--space-4); }
+  .preview-bar p{ font-size:var(--font-size-sm); line-height:1.45; margin:0; min-width:0; flex:1 1 260px; }
+  .preview-bar .btn{ flex:0 0 auto; background:transparent; color:var(--color-text-inverse); border-color:color-mix(in srgb, var(--color-text-inverse) 35%, transparent); }
+  .preview-bar .btn:hover{ border-color:var(--color-text-inverse); }
+  @media (max-width:768px){
+    .preview-bar{ padding-left:var(--space-6); padding-right:var(--space-6); }
+    .preview-bar .btn{ width:100%; min-height:var(--touch-min); }
+  }
+
   @media (prefers-reduced-motion:reduce){
     *, *::before, *::after{ animation:none !important; transition:none !important; }
   }
@@ -278,6 +301,7 @@
 <body>
 
 <div id="app"></div>
+<div id="preview-bar" class="preview-bar" role="region" aria-label="Preview" hidden></div>
 
 <script>
 /* =========================================================
@@ -304,6 +328,8 @@ const CODE_FORMAT = /^(?:\d{4}|\d{6})$/;
 async function api(path, opts = {}){
   const init = { method: opts.method || 'GET', credentials: 'include', headers: {} };
   if(opts.body !== undefined){ init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(opts.body); }
+  // A preview's tab marks every call (C8): the server applies the preview to marked calls only.
+  if(previewTab()) path += (path.includes('?') ? '&' : '?') + 'preview=1';
   let res;
   try { res = await fetch(HUB.edgeBase + path, init); }
   catch(_){ const e = new Error('offline'); e.status = 0; throw e; }
@@ -312,6 +338,8 @@ async function api(path, opts = {}){
   if(!res.ok){
     const e = new Error(path + ' → ' + res.status);
     e.status = res.status; e.code = data && data.error;
+    // The preview ran out or was ended elsewhere: say so, never carry on as anyone else.
+    if(e.code === 'preview_ended') previewOver('expired');
     throw e;
   }
   return data;
@@ -412,12 +440,14 @@ function roundWords(a, p){
    #/p/<id>/d/<item>          a deliverable's review
    #/p/<id>/d/<item>/<n>      photo n (from 1) open in the lightbox
    #/invite/<token>           an invite (boot reads it and takes it out of the bar)
+   #/preview/<token>          the studio's View as client (C8), read the same way
    Ids, never UPIDs (IA URL Strategy). The photo is replaced in place as the client
    arrows through, so Back leaves the deliverable rather than walking the photos. */
 function parseRoute(hash){
   const h = String(hash || '').replace(/^#/, '');
   let m;
   if(/^\/invite\//.test(h)) return { name:'invite' };
+  if(/^\/preview\//.test(h)) return { name:'preview' };
   if((m = /^\/p\/([^/]+)\/d\/([^/]+)(?:\/(\d{1,4}))?\/?$/.exec(h))) {
     return { name:'review', projectId: decodeURIComponent(m[1]), itemId: decodeURIComponent(m[2]), photo: m[3] ? Number(m[3]) : null };
   }
@@ -470,7 +500,7 @@ function icon(name, size = 20){
 }
 
 let state = {
-  phase: 'loading',        // loading | signin | offline | notfound | dashboard | project
+  phase: 'loading',        // loading | signin | offline | notfound | dashboard | project | previewEnded
   busy: false,             // offline because of too many requests, not no answer
   client: null,            // { businessName, contactName } of whoever is signed in
   email: '',
@@ -480,6 +510,9 @@ let state = {
   loginBusy: false,
   invite: null,            // { email, projectId } from an invite link
   inviteGone: false,       // the invite link no longer works
+  preview: null,           // { projectId, expiresAt }: the studio's read-only View as client (C8)
+  previewToken: null,      // a preview link being opened, kept so Retry can try it again
+  previewEnded: null,      // why the preview screen shows: 'ended' | 'gone' (link used or run out) | 'expired'
   projects: [],            // the dashboard's cards (GET /hub/projects)
   showPast: false,         // Past projects expanded on the dashboard
   cache: {},               // project id → portalProject(), for this page's life (keeps notes made here)
@@ -520,6 +553,8 @@ function setState(patch){ Object.assign(state, patch); render(); }
    else's: on a shared computer, the invited client must never land in the work
    of whoever signed in there before. */
 async function boot(){
+  const previewLink = /^#\/preview\/([^/?#]+)/.exec(location.hash);
+  if(previewLink) return openPreview(decodeURIComponent(previewLink[1]));
   const params = new URLSearchParams(location.search);
   const fromHash = /^#\/invite\/([^/?#]+)/.exec(location.hash);
   const token = fromHash ? decodeURIComponent(fromHash[1]) : params.get('invite');
@@ -539,6 +574,7 @@ async function boot(){
   try {
     session = await api('/hub/session');
   } catch(e){
+    if(e.code === 'preview_ended') return; // api() has shown the preview's end
     if(e.status !== 401) return offline(e);
   }
 
@@ -553,10 +589,88 @@ async function boot(){
     try { await api('/hub/sign-out', { method:'POST', body:{} }); } catch(_){ /* their own sign-in replaces the cookie */ }
     session = null;
   }
-  if(session){ state.client = session.client; return route(); }
+  if(session){ state.client = session.client; setPreview(session.preview || null); return route(); }
   if(invite){ state.invite = invite; state.email = invite.email || ''; state.inviteGone = false; }
   // Clears anything an earlier sign-in left in this page (an invite opened in the same tab).
   signedOut(null);
+}
+
+/* ---------------- View as client (C8) ----------------
+   The studio's look at this portal as one client sees it, opened from the project
+   header. The link's token is read once and taken out of the bar, like an invite's;
+   the server swaps it for a preview cookie of its own, beside any real sign-in on this
+   browser, and refuses every write made under it. The page is the client's own: only
+   the bar at the foot, and the words a refused write gets, say it's a preview. */
+const PREVIEW_REFUSED = 'This is a preview, so nothing is saved. Only the client can do this, signed in as themselves.';
+/* This tab is a preview: `?preview` in its address, so a reload stays one, and another
+   portal tab on the same browser (a client's own) never is. */
+const previewTab = () => new URLSearchParams(location.search).has('preview');
+async function openPreview(token){
+  state.previewToken = token;
+  history.replaceState(null, '', location.pathname + '?preview');
+  try {
+    const r = await api('/hub/preview', { method:'POST', body:{ token } });
+    state.previewToken = null;
+    state.client = r.client;
+    setPreview(r.preview);
+    return go(projectHash(r.preview.projectId));
+  } catch(e){
+    if(e.status === 404){ state.previewToken = null; return previewOver('gone'); }
+    return offline(e); // Retry opens the same link again: it isn't used until it opens
+  }
+}
+
+function setPreview(preview){
+  state.preview = preview && preview.projectId ? preview : null;
+  paintPreviewBar();
+}
+
+/* The bar is outside #app, so a repaint of the page never takes it away. */
+function paintPreviewBar(){
+  const bar = document.getElementById('preview-bar');
+  const on = !!state.preview;
+  document.body.classList.toggle('is-preview', on);
+  bar.hidden = !on;
+  if(!on){ bar.innerHTML = ''; document.body.style.paddingBottom = ''; return; }
+  const who = state.client && (state.client.businessName || state.client.contactName) || 'the client';
+  const until = new Date(state.preview.expiresAt);
+  const ends = isNaN(until) ? '' : ` Ends at ${until.toLocaleTimeString('en-AU', { hour:'numeric', minute:'2-digit' })}.`;
+  bar.innerHTML = `
+    <div class="wrap">
+      <p><span class="eyebrow">Preview</span>You’re seeing what ${escapeHtml(who)} sees. Read-only: nothing you do here is saved, sent or logged as them.${ends}</p>
+      <button id="end-preview" type="button" class="btn">End preview</button>
+    </div>`;
+  document.getElementById('end-preview').onclick = endPreview;
+  roomForPreviewBar();
+}
+const roomForPreviewBar = () => { document.body.style.paddingBottom = document.getElementById('preview-bar').offsetHeight + 'px'; };
+
+async function endPreview(){
+  try { await api('/hub/preview/end', { method:'POST', body:{} }); }
+  catch(_){ /* it runs out on its own within the hour */ }
+  previewOver('ended');
+}
+
+/* The preview is over: ended here, its link already used or run out, or its hour up. */
+function previewOver(why){
+  history.replaceState(null, '', location.pathname); // a reload starts as an ordinary portal tab
+  state.cache = {};
+  setPreview(null);
+  setState({ phase:'previewEnded', previewEnded: why, client:null, project:null, projects:[] });
+}
+
+function renderPreviewEnded(){
+  const words = {
+    ended: ['Preview ended', 'You can close this tab.'],
+    gone: ['This preview link has been used', 'A View as client link opens once, within 10 minutes. Open it again from the project in the studio app.'],
+    expired: ['This preview has ended', 'It ran out (a preview lasts an hour) or was ended in another tab. Open View as client again from the project in the studio app.'],
+  }[state.previewEnded] || ['Preview ended', 'You can close this tab.'];
+  return `
+  <main class="center-screen">
+    <p class="eyebrow mb-4">View as client</p>
+    <h1 class="display title-2xl mb-2">${words[0]}</h1>
+    <p class="muted text-sm" style="max-width:340px">${words[1]}</p>
+  </main>`;
 }
 
 /* A read that didn't come back: too many requests just now, or no answer at all. */
@@ -572,7 +686,7 @@ const REVIEW_RESET = { revisionOpen:false, revisionDraft:'', pausedAt:null, paus
 let routing = 0;
 async function route(){
   const r = parseRoute(location.hash);
-  if(r.name === 'invite'){ setState({ phase:'loading' }); return boot(); }
+  if(r.name === 'invite' || r.name === 'preview'){ setState({ phase:'loading' }); return boot(); }
   if(!state.client) return;
   const ticket = ++routing; // a later navigation wins over a slower earlier one
   if(r.name === 'dashboard') return showDashboard(ticket);
@@ -637,6 +751,7 @@ async function loadProject(id, ticket){
 }
 
 function failedRead(e){
+  if(e && e.status === 401 && state.preview) return previewOver('expired');
   if(e && e.status === 401) return signedOut('You’ve been signed out. Sign in again to carry on.');
   offline(e);
 }
@@ -651,6 +766,7 @@ function signedOut(text){
 }
 
 async function signOut(){
+  if(state.preview) return endPreview();
   try {
     await api('/hub/sign-out', { method:'POST', body:{} });
   } catch(_){
@@ -1400,6 +1516,7 @@ function renderRevisionForm(a){
 /* Why a note didn't save, in plain words. The text always stays where it was typed. */
 function noteFailure(e){
   if(!e || e.status === 0) return 'Your note wasn’t saved: there’s no connection. It’s still in the box, so try again.';
+  if(e.code === 'preview') return PREVIEW_REFUSED;
   if(e.status === 401) return 'You’ve been signed out, so your note wasn’t saved. Copy it, then sign in again.';
   if(e.status === 429) return 'Too many notes at once. Wait a minute, then try again. Your note is still in the box.';
   if(e.code === 'not_current') return 'There’s a newer version of this now. Copy your note, then reload the page to see the new version.';
@@ -1431,7 +1548,7 @@ async function saveNote(a, body){
 function videoFailed(){
   api('/hub/session')
     .then(() => setState({ videoFailed:true }))
-    .catch(e => e.status === 401 ? signedOut('Your session ended. Sign in again to carry on.') : setState({ videoFailed:true }));
+    .catch(e => e.status === 401 ? (state.preview ? previewOver('expired') : signedOut('Your session ended. Sign in again to carry on.')) : setState({ videoFailed:true }));
 }
 
 /* ================= helpers ================= */
@@ -1454,11 +1571,15 @@ function render(){
   if(state.phase === 'loading'){ root.innerHTML = renderLoading(); return; }
   if(state.phase === 'offline'){
     root.innerHTML = renderOffline();
-    document.getElementById('retry').onclick = () => { setState({ phase:'loading' }); boot(); };
+    document.getElementById('retry').onclick = () => {
+      setState({ phase:'loading' });
+      if(state.previewToken) openPreview(state.previewToken); else boot();
+    };
     return;
   }
   if(state.phase === 'signin'){ root.innerHTML = renderSignIn(); bindSignIn(); return; }
   if(state.phase === 'notfound'){ root.innerHTML = renderNotFound(); return; }
+  if(state.phase === 'previewEnded'){ root.innerHTML = renderPreviewEnded(); return; }
   if(state.phase === 'dashboard'){ root.innerHTML = renderDashboard(); bindDashboard(); return; }
   if(!state.project){ root.innerHTML = renderLoading(); return; }
   if(state.clientScreen === 'asset' && activeAsset()){ root.innerHTML = renderClientAsset(); bindClientAsset(); return; }
@@ -1543,7 +1664,7 @@ function bindClientAsset(){
         toast(SETTLED[e.code]);
         return route();
       }
-      setState({ approving:false, approveError: e.status === 401
+      setState({ approving:false, approveError: e.code === 'preview' ? PREVIEW_REFUSED : e.status === 401
         ? 'You’ve been signed out, so nothing was approved. Sign in again to approve.'
         : e.status === 0 ? 'Nothing was approved: there’s no connection. Try again.'
         : e.code === 'unsent_notes' ? 'You have notes that haven’t been sent. Send or remove them first.'
@@ -1572,7 +1693,7 @@ function bindClientAsset(){
         setState({ sending:false, sendModalAssetId:null });
         return route();
       }
-      setState({ sending:false, sendError: e.status === 401
+      setState({ sending:false, sendError: e.code === 'preview' ? PREVIEW_REFUSED : e.status === 401
         ? 'You’ve been signed out. Your notes are saved: sign in again to send them.'
         : e.code === 'no_notes' ? 'There are no unsent notes to send.'
         : 'Your notes weren’t sent. They’re still saved here, so try again.' });
@@ -1756,7 +1877,7 @@ function bindAssetInteraction(a){
         await api('/hub/projects/' + encodeURIComponent(p.id) + '/notes/' + encodeURIComponent(id), { method:'DELETE' });
         a.comments = a.comments.filter(c => c.id !== id);
       } catch(e){
-        toast(e.status === 0 ? 'That note wasn’t removed: there’s no connection.' : e.code === 'sent' ? 'That note was already sent.' : 'That note wasn’t removed. Try again.');
+        toast(e.code === 'preview' ? PREVIEW_REFUSED : e.status === 0 ? 'That note wasn’t removed: there’s no connection.' : e.code === 'sent' ? 'That note was already sent.' : 'That note wasn’t removed. Try again.');
       }
       refreshAssetInteraction();
     };
@@ -1846,6 +1967,8 @@ function bindAssetInteraction(a){
 // An invite opened in a tab already on the portal changes only the fragment, which
 // doesn't reload the page, so it's read here too.
 window.addEventListener('hashchange', route);
+// The preview bar wraps to more lines on a narrow screen: the page keeps room for it.
+window.addEventListener('resize', () => { if(state.preview) roomForPreviewBar(); });
 
 render();
 boot();
