@@ -278,6 +278,11 @@ a background tag lookup for rows still without an id (`app.locals.bunnyPublisher
 Needs you's Publish failed is computed (failed row, newest version, needed item); its row text is one
 line in `web/js/needs.js`, not checked in the browser. **Slice 5 adds a user step:** set the library's
 webhook URL to `https://hub-api.lsccreative.studio/hub/bunny-webhook`. 1137/1137.
+Slice 3 review (6) fixed: a webhook with Bunny's headers that fails verification is logged (at most every
+10 min); REST-seen states set `last_event_at` too, so a delayed older webhook can't undo them; a row the
+30-minute limit failed is taken up if its video turns up within 6 h; unknown-id lookups run at most every
+15 s; a zoneless Timestamp is UTC. Publish failed row seen in the browser on the scratch admin (desktop and
+375 px, links to the item). **The scratch db is now at v33** (portal-api restarted). 1142/1142.
 
 **Next: Slice 4 (Publish from the Deliverables tab, play in the portal) | Model: Opus 5.5 | Effort: High**.
 Frontend task (admin + portal), with the player guardrail. Decide there: one button or two (Bunny publish,

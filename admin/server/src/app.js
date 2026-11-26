@@ -163,6 +163,7 @@ function createApp(db, opts = {}) {
     // Tests only: a fake Bunny, a short wait between lookups, a clock.
     bunnyFetch: opts.bunnyFetch,
     videoLookupGapMs: opts.videoLookupGapMs,
+    adoptGapMs: opts.bunnyAdoptGapMs,
     now: opts.bunnyNow,
   });
   app.locals.bunnyPublisher = bunnyPublisher;

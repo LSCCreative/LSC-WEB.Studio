@@ -76,7 +76,7 @@ const WEBHOOK_STATUS = {
  *   signingSecret    HUB_SIGNING_SECRET: signs the source URL Bunny pulls from
  *   publicBaseUrl    hub-api's public address, where Bunny pulls from
  *   deliverablesDir  the read-only NAS deliverables folder
- * Tests only: bunnyFetch (Bunny's API), videoLookupGapMs, now (ms clock).
+ * Tests only: bunnyFetch (Bunny's API), videoLookupGapMs, adoptGapMs, now (ms clock).
  */
 function createBunnyPublisher(db, opts = {}) {
   const missing = [
@@ -98,11 +98,11 @@ function createBunnyPublisher(db, opts = {}) {
     INSERT INTO bunny_assets (
       version_id, kind, project_id, item_id, source_path, source_size, source_mtime,
       bunny_video_id, collection_id, publish_tag, status, error, progress_done, progress_total,
-      created_at, updated_at
+      last_event_at, created_at, updated_at
     ) VALUES (
       @version_id, @kind, @project_id, @item_id, @source_path, @source_size, @source_mtime,
       @bunny_video_id, @collection_id, @publish_tag, @status, @error, @progress_done, 1,
-      @now, @now
+      @now, @now, @now
     )
     ON CONFLICT(version_id, kind) DO UPDATE SET
       source_path    = excluded.source_path,
@@ -115,23 +115,43 @@ function createBunnyPublisher(db, opts = {}) {
       error          = excluded.error,
       progress_done  = excluded.progress_done,
       progress_total = excluded.progress_total,
-      last_event_at  = NULL,
+      last_event_at  = excluded.last_event_at,
       updated_at     = excluded.updated_at
   `);
+  /* Every state written from what Bunny's REST API showed also moves last_event_at
+     to when it was seen, so a webhook older than that observation can't undo it
+     (a delayed retry of an earlier event, Bunny retrying for up to 4 hours). */
   const setVideo = db.prepare(`
-    UPDATE bunny_assets SET bunny_video_id = ?, status = ?, error = NULL, progress_done = ?, updated_at = ?
+    UPDATE bunny_assets SET bunny_video_id = ?, status = ?, error = NULL, progress_done = ?, updated_at = ?,
+           last_event_at = MAX(COALESCE(last_event_at, ''), ?)
      WHERE version_id = ? AND kind = ?
   `);
   const failAsset = db.prepare(`
-    UPDATE bunny_assets SET status = 'failed', error = ?, progress_done = 0, updated_at = ?
+    UPDATE bunny_assets SET status = 'failed', error = ?, progress_done = 0, updated_at = ?,
+           last_event_at = MAX(COALESCE(last_event_at, ''), ?)
      WHERE version_id = ? AND kind = ?
   `);
+  const markVideo = (videoId, status, done, versionId, kind) => {
+    const at = isoNow();
+    setVideo.run(videoId, status, done, at, at, versionId, kind);
+  };
+  const markFailed = (error, versionId, kind) => {
+    const at = isoNow();
+    failAsset.run(error, at, at, versionId, kind);
+  };
   const getByVideo = db.prepare('SELECT * FROM bunny_assets WHERE bunny_video_id = ?');
   const setFromEvent = db.prepare(`
     UPDATE bunny_assets SET status = ?, error = ?, progress_done = ?, last_event_at = ?, updated_at = ?
      WHERE version_id = ? AND kind = ? AND bunny_video_id = ?
   `);
-  const waitingForId = db.prepare("SELECT * FROM bunny_assets WHERE status = 'processing' AND bunny_video_id IS NULL ORDER BY created_at");
+  /* Rows with no video id yet: still processing, or failed with nothing Bunny listed
+     (the 30-minute limit, a slow queue) inside the 6 hours a webhook can still come. */
+  const waitingForId = db.prepare(`
+    SELECT * FROM bunny_assets
+     WHERE bunny_video_id IS NULL AND publish_tag IS NOT NULL
+       AND (status = 'processing' OR (status = 'failed' AND updated_at >= ?))
+     ORDER BY created_at
+  `);
   const setServed = db.prepare(`
     UPDATE bunny_assets SET source_size = ?, source_mtime = ? WHERE version_id = ? AND kind = 'video'
   `);
@@ -243,23 +263,23 @@ function createBunnyPublisher(db, opts = {}) {
         // attempt failing: say why now rather than after 30 minutes.
         const video = await bunny.findVideoByTag(row.publish_tag, row.collection_id, { includeFailed: true });
         if (video && statusFromVideo(video) === 'failed') {
-          failAsset.run(failReasonOf(video), isoNow(), row.version_id, row.kind);
+          markFailed(failReasonOf(video), row.version_id, row.kind);
         } else if (video) {
           const status = statusFromVideo(video);
-          setVideo.run(video.guid, status, status === 'ready' ? 1 : 0, isoNow(), row.version_id, row.kind);
+          markVideo(video.guid, status, status === 'ready' ? 1 : 0, row.version_id, row.kind);
         } else if (now() - new Date(row.updated_at).getTime() > UNLISTED_VIDEO_LIMIT_MS) {
-          failAsset.run('Bunny never listed the fetched video. Publish again.', isoNow(), row.version_id, row.kind);
+          markFailed('Bunny never listed the fetched video. Publish again.', row.version_id, row.kind);
         }
       } else {
         const video = await bunny.getVideo(row.bunny_video_id);
         if (!video) {
-          failAsset.run('Bunny no longer has this video. Publish again.', isoNow(), row.version_id, row.kind);
+          markFailed('Bunny no longer has this video. Publish again.', row.version_id, row.kind);
         } else {
           const status = statusFromVideo(video);
           if (status === 'failed') {
-            failAsset.run(failReasonOf(video), isoNow(), row.version_id, row.kind);
+            markFailed(failReasonOf(video), row.version_id, row.kind);
           } else if (status !== row.status) {
-            setVideo.run(row.bunny_video_id, status, status === 'ready' ? 1 : 0, isoNow(), row.version_id, row.kind);
+            markVideo(row.bunny_video_id, status, status === 'ready' ? 1 : 0, row.version_id, row.kind);
           }
         }
       }
@@ -392,11 +412,43 @@ function createBunnyPublisher(db, opts = {}) {
      after the webhook is answered; one look at a time. `adopting` is that look,
      for the tests to wait on. */
   let adopting = Promise.resolve();
+  let scheduled = null;
+  let lastPassAt = -Infinity;
+  const adoptGapMs = opts.adoptGapMs ?? 15000;
   function adoptWaiting() {
-    adopting = adopting.then(async () => {
-      for (const row of waitingForId.all()) await refresh(row);
+    // At most one pass every adoptGapMs, and one waiting covers every webhook that
+    // asks meanwhile: a Republish's old video sends a run of events over its encode,
+    // and each needn't look up every waiting row again.
+    if (scheduled) return scheduled;
+    const wait = Math.max(0, lastPassAt + adoptGapMs - Date.now());
+    scheduled = new Promise((resolve) => {
+      const timer = setTimeout(resolve, wait);
+      if (timer.unref) timer.unref();
+    }).then(async () => {
+      scheduled = null;
+      lastPassAt = Date.now();
+      const since = new Date(now() - SOURCE_TTL_SECONDS * 1000).toISOString();
+      for (const row of waitingForId.all(since)) {
+        if (row.status === 'processing') await refresh(row);
+        else await adoptLate(row);
+      }
     }).catch((err) => console.error('[bunny-publish] adopting after a webhook failed:', err.message));
-    return adopting;
+    adopting = scheduled;
+    return scheduled;
+  }
+
+  /* A row the unlisted limit failed whose video Bunny has listed after all: take it
+     up, so a slow queue doesn't need a second pull. A failed match stays failed. */
+  async function adoptLate(row) {
+    try {
+      const video = await bunny.findVideoByTag(row.publish_tag, row.collection_id);
+      if (video) {
+        const status = statusFromVideo(video);
+        markVideo(video.guid, status, status === 'ready' ? 1 : 0, row.version_id, row.kind);
+      }
+    } catch (err) {
+      console.error('[bunny-publish] late lookup failed:', err.message);
+    }
   }
 
   /**
@@ -421,7 +473,8 @@ function createBunnyPublisher(db, opts = {}) {
       adoptWaiting();
       return 'unknown';
     }
-    const at = Date.parse(event.Timestamp);
+    const stamp = typeof event.Timestamp === 'string' ? event.Timestamp.trim() : '';
+    const at = Date.parse(/(?:[zZ]|[+-]\d\d:?\d\d)$/.test(stamp) || !stamp ? stamp : `${stamp}Z`);
     const eventAt = Number.isFinite(at) ? new Date(at).toISOString() : null;
     if (eventAt && row.last_event_at && eventAt < row.last_event_at) return 'ignored';
     if (meaning === 'processing' && row.status === 'ready') return 'unchanged';

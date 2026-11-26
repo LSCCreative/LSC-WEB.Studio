@@ -163,13 +163,24 @@ function createHubRouter(db, opts = {}) {
   // test-bunny-webhook.js catches. Unsigned or wrong is a 401, which Bunny doesn't
   // retry. A good one is a 200 whatever it changed (an unknown id included), so
   // Bunny stops; it is applied before answering, so a 200 means it is recorded.
+  const BAD_SIGNATURE_LOG_MS = 10 * 60 * 1000;
+  let lastBadSignatureLog = -Infinity;
   router.post('/hub/bunny-webhook', express.raw({ type: () => true, limit: '64kb' }), async (req, res) => {
     if (!bunnyPublisher) return res.status(503).json({ error: 'bunny not set up' });
     if (!Buffer.isBuffer(req.body)) {
       console.error('[hub/bunny-webhook] the body was already parsed: a JSON parser is mounted ahead of the webhook');
       return res.status(401).json({ error: 'unsigned' });
     }
-    if (!bunnyPublisher.verifyWebhook(req.body, req.headers)) return res.status(401).json({ error: 'unsigned' });
+    if (!bunnyPublisher.verifyWebhook(req.body, req.headers)) {
+      // Bunny doesn't retry a 401, so a wrong key would stop every webhook without a
+      // trace. Only when it looks like Bunny's (its signature header), at most every
+      // 10 minutes, and never the key or the signature itself.
+      if (req.headers['x-bunnystream-signature'] && Date.now() - lastBadSignatureLog > BAD_SIGNATURE_LOG_MS) {
+        lastBadSignatureLog = Date.now();
+        console.warn('[hub/bunny-webhook] a webhook with Bunny\'s signature headers didn\'t verify: check BUNNY_STREAM_READ_KEY is the library\'s current read-only key');
+      }
+      return res.status(401).json({ error: 'unsigned' });
+    }
     let event;
     try {
       event = JSON.parse(req.body.toString('utf8'));
