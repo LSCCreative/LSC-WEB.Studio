@@ -10,6 +10,13 @@
  * loop over a backup. Issuing a new one replaces the old, ends the client's
  * sessions, and retires their old per-project codes.
  *
+ * THEIR OWN PIN. At their first sign-in the portal asks the client to choose a
+ * PIN (6 digits, not an obvious one) to use instead (choosePin). Only once: a
+ * session can't change a PIN already chosen, so someone left signed in on the
+ * client's computer can't swap it for one of their own. It is kept exactly as the code
+ * is and replaces it; `code_chosen_at` says they have one. The studio issuing a
+ * new code puts the studio's code back and the client is asked again.
+ *
  * OLD CODES. Until a client is issued a Client code, the old hub's per-project
  * codes still sign them in (brief, Defaults 5): a `private_auth` row on one of
  * their projects, for their address, with that code. Those were 4 digits, kept
@@ -28,8 +35,19 @@ const { sha256Hex, randomToken, hmacSign, safeEqual } = require('./hub/tokens');
 const { normEmail, LOGIN_IDS } = require('./clients');
 
 const CODE_DIGITS = 6;
-/* What the sign-in form may send: a Client code, or an old 4-digit one. */
+/* What the sign-in form may send: a Client code or their own PIN (6), or an old 4-digit code. */
 const CODE_FORMAT = /^(?:\d{4}|\d{6})$/;
+/* A PIN the client chooses for themselves at their first sign-in. Six digits, as the
+   code it replaces: under the sign-in throttle (10 wrong per email per 15 minutes) a
+   4-digit one would fall to patient guessing within days. */
+const PIN_FORMAT = /^\d{6}$/;
+
+/** A PIN anyone would try first: one digit six times, or a straight run up or down (123456, 987654). */
+function obviousPin(pin) {
+  const d = [...pin].map(Number);
+  const steps = new Set(d.slice(1).map((n, i) => n - d[i]));
+  return steps.size === 1 && [0, 1, -1].includes([...steps][0]);
+}
 const SESSION_DAYS = 30;
 const TOUCH_INTERVAL_MS = 5 * 60 * 1000;
 const MAX_TOKEN = 200;
@@ -61,17 +79,50 @@ function createPortalAccess(db, { secret } = {}) {
     const invite = randomToken(24);
     db.transaction(() => {
       db.prepare(`
-        INSERT INTO client_logins (client_id, code_hash, invite_hash, invite_project_id, code_set_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO client_logins (client_id, code_hash, invite_hash, invite_project_id, code_set_at, code_chosen_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, NULL, ?)
         ON CONFLICT(client_id) DO UPDATE SET
           code_hash = excluded.code_hash, invite_hash = excluded.invite_hash,
           invite_project_id = excluded.invite_project_id, code_set_at = excluded.code_set_at,
-          updated_at = excluded.updated_at
+          code_chosen_at = NULL, updated_at = excluded.updated_at
       `).run(clientId, codeHash(clientId, code), sha256Hex(invite), projectId, now, now);
       // A new code is a reset: whoever was signed in with the old one signs in again.
       db.prepare('DELETE FROM client_sessions WHERE client_id = ?').run(clientId);
     })();
     return { code, invite };
+  }
+
+  /** True while the client still signs in with the studio's code (or an old per-project one), not a PIN of their own. */
+  function needsPin(clientId) {
+    const login = loginOf.get(clientId);
+    return !login || !login.code_chosen_at;
+  }
+
+  /**
+   * The client's own PIN, in place of their code from now on (their first sign-in).
+   * `keepSessionId` is the session that set it: every other session of theirs ends,
+   * as a new password would end them. A client still on an old per-project code gets
+   * a login row here, which retires those codes and their old invite, as a reset does.
+   * Returns null when saved, or why not: `bad_pin` (not 6 digits), `obvious_pin`, or
+   * `pin_set` (they already chose one; only a reset by the studio lets them choose again).
+   */
+  function choosePin(clientId, rawPin, { keepSessionId = null, now = new Date().toISOString() } = {}) {
+    const pin = typeof rawPin === 'string' ? rawPin : '';
+    if (!PIN_FORMAT.test(pin)) return 'bad_pin';
+    if (obviousPin(pin)) return 'obvious_pin';
+    let refused = null;
+    db.transaction(() => {
+      // Checked inside the write, so two tabs saving at once can't both set one.
+      if (!needsPin(clientId)) { refused = 'pin_set'; return; }
+      db.prepare(`
+        INSERT INTO client_logins (client_id, code_hash, invite_hash, invite_project_id, code_set_at, code_chosen_at, updated_at)
+        VALUES (?, ?, NULL, NULL, ?, ?, ?)
+        ON CONFLICT(client_id) DO UPDATE SET
+          code_hash = excluded.code_hash, code_chosen_at = excluded.code_chosen_at, updated_at = excluded.updated_at
+      `).run(clientId, codeHash(clientId, pin), now, now, now);
+      db.prepare('DELETE FROM client_sessions WHERE client_id = ? AND id IS NOT ?').run(clientId, keepSessionId);
+    })();
+    return refused;
   }
 
   /** The client this email and code sign in, as { clientId, via }, or null. */
@@ -210,12 +261,12 @@ function createPortalAccess(db, { secret } = {}) {
     }
   }
 
-  return { issue, signIn, startSession, readSession, endSession, inviteFor, createPreview, openPreview, readPreview, endPreview };
+  return { issue, needsPin, choosePin, signIn, startSession, readSession, endSession, inviteFor, createPreview, openPreview, readPreview, endPreview };
 }
 
 /** What the studio sees of a client's portal access. No secret is in it. */
 function accessStatus(db, clientId) {
-  const login = db.prepare('SELECT code_set_at, invite_project_id FROM client_logins WHERE client_id = ?').get(clientId);
+  const login = db.prepare('SELECT code_set_at, code_chosen_at, invite_project_id FROM client_logins WHERE client_id = ?').get(clientId);
   const now = new Date().toISOString();
   const sessions = db.prepare(`
     SELECT COUNT(*) AS n, MAX(created_at) AS last FROM client_sessions WHERE client_id = ? AND expires_at > ?
@@ -226,6 +277,8 @@ function accessStatus(db, clientId) {
   return {
     hasCode: Boolean(login),
     codeSetAt: login ? login.code_set_at : null,
+    // When the client chose their own PIN in place of the code: the code the studio sent no longer works.
+    pinChosenAt: login ? login.code_chosen_at || null : null,
     inviteProjectId: login ? login.invite_project_id || null : null,
     // Old per-project codes that still sign this client in: none once a code is issued.
     oldCodes: login ? 0 : legacy,
@@ -234,4 +287,4 @@ function accessStatus(db, clientId) {
   };
 }
 
-module.exports = { createPortalAccess, accessStatus, CODE_FORMAT, CODE_DIGITS, SESSION_DAYS, PREVIEW_LINK_MS, PREVIEW_MS };
+module.exports = { createPortalAccess, accessStatus, obviousPin, CODE_FORMAT, PIN_FORMAT, CODE_DIGITS, SESSION_DAYS, PREVIEW_LINK_MS, PREVIEW_MS };

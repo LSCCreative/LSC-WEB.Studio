@@ -225,6 +225,25 @@
   /* ---- dialogs and toasts ---- */
   .modal-scrim{ position:fixed; inset:0; z-index:30; display:flex; align-items:center; justify-content:center; padding:var(--space-7); background:var(--color-surface-overlay); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
   .modal{ width:100%; max-width:400px; padding:var(--space-7); background:var(--color-bg-float); border:1px solid var(--color-border-subtle); border-radius:var(--radius-lg); box-shadow:var(--shadow-lg); }
+  /* The client's own PIN (first sign-in): above the page, and above the preview bar's
+     layer too, since nothing behind it can be used until it's set. */
+  .pin-scrim{ z-index:45; }
+  .pin-scrim .modal{ max-width:420px; animation:pinIn var(--duration-slow) var(--easing-out); }
+  @keyframes pinIn{ from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:none;} }
+  .pin-label{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:var(--space-3); }
+  .pin-show{ min-height:auto; padding:0; background:none; border:0; color:var(--color-text-secondary); font:var(--eyebrow-font); letter-spacing:var(--letter-spacing-wide); text-transform:uppercase; cursor:pointer; }
+  .pin-show:hover{ color:var(--color-text-primary); }
+  .pin-show:focus-visible{ outline:none; box-shadow:var(--shadow-focus); border-radius:var(--radius-sm); }
+  /* Masked as dots without being password fields: Safari offers a strong password for a
+     pair of those, and its letters stripped would leave both boxes "matching". */
+  .pin-field{ -webkit-text-security:disc; }
+  .pin-field.is-shown{ -webkit-text-security:none; }
+  .pin-msg{ min-height:1.5em; display:flex; align-items:center; gap:var(--space-3); }
+  .pin-msg.is-match{ color:var(--color-status-success-text); }
+  @media (max-width:767px){
+    .pin-scrim{ padding:var(--space-6); align-items:flex-start; padding-top:max(var(--space-8), env(safe-area-inset-top, 0px)); }
+    .pin-show{ padding:var(--space-3) 0; }
+  }
   .toast{
     position:fixed; top:var(--space-6); left:50%; transform:translateX(-50%); z-index:60;
     padding:var(--space-4) var(--space-6); border-radius:var(--radius-md);
@@ -302,6 +321,7 @@
 
 <div id="app"></div>
 <div id="preview-bar" class="preview-bar" role="region" aria-label="Preview" hidden></div>
+<div id="pin-host"></div>
 
 <script>
 /* =========================================================
@@ -319,6 +339,7 @@ const HUB = {
 };
 
 const isHlsUrl = (v) => /\.m3u8(?:[?#]|$)/i.test(v || '');
+/* A Client code or the client's own PIN (6 digits), or an old per-project code (4). */
 const CODE_FORMAT = /^(?:\d{4}|\d{6})$/;
 
 /* ---------------- the API ----------------
@@ -505,6 +526,8 @@ let state = {
   phase: 'loading',        // loading | signin | offline | notfound | dashboard | project | previewEnded
   busy: false,             // offline because of too many requests, not no answer
   client: null,            // { businessName, contactName } of whoever is signed in
+  choosePin: false,        // the PIN dialog is up: their first sign-in, still on the studio's code
+  pinBusy: false,          // the new PIN is on its way to the server
   email: '',
   code: '',
   loginError: false,       // shake/red state on the code field
@@ -586,12 +609,12 @@ async function boot(){
     if(invite.projectId){
       try { mine = (await api('/hub/projects')).projects.some(p => p.id === invite.projectId); } catch(_){ mine = false; }
     }
-    if(mine){ state.client = session.client; return go(projectHash(invite.projectId)); }
+    if(mine){ state.client = session.client; askForPin(session.choosePin); return go(projectHash(invite.projectId)); }
     // Someone else's sign-in: it ends here, and the invited client signs in as themselves.
     try { await api('/hub/sign-out', { method:'POST', body:{} }); } catch(_){ /* their own sign-in replaces the cookie */ }
     session = null;
   }
-  if(session){ state.client = session.client; setPreview(session.preview || null); return route(); }
+  if(session){ state.client = session.client; setPreview(session.preview || null); askForPin(session.choosePin); return route(); }
   if(invite){ state.invite = invite; state.email = invite.email || ''; state.inviteGone = false; }
   // Clears anything an earlier sign-in left in this page (an invite opened in the same tab).
   signedOut(null);
@@ -759,6 +782,7 @@ function failedRead(e){
 }
 
 function signedOut(text){
+  askForPin(false);
   setState({
     phase:'signin', client:null, project:null, projects:[], cache:{}, showPast:false, clientScreen:'landing', activeAssetId:null,
     code:'', loginBusy:false, loginError:false, loginMsg: text ? { text, error:false } : null,
@@ -783,6 +807,136 @@ async function signOut(){
   signedOut(null);
 }
 
+/* ================= THEIR OWN PIN =================
+   At their first sign-in (the server says `choosePin` while they still use the code
+   the studio emailed), the client picks a 6-number PIN and types it twice. The server
+   takes it once (a session can't change it after) and refuses an obvious one.
+   It replaces the code, so next time they sign in with their email and the PIN and
+   don't need the email. It can't be skipped: the page behind it is inert until it's
+   saved. It lives in #pin-host, outside #app, so the page repainting under it (a route,
+   a reload of the project) never takes it or what's typed in it away. A preview never
+   asks: the server says so, and the studio couldn't save one for the client anyway. */
+const PIN_FORMAT = /^\d{6}$/;
+/* The server's obviousPin: one digit six times, or a straight run up or down. */
+function obviousPin(pin){
+  const steps = new Set([...pin].slice(1).map((n, i) => n - pin[i]));
+  return steps.size === 1 && [0, 1, -1].includes([...steps][0]);
+}
+
+function askForPin(on){
+  on = !!on && !state.preview;
+  if(on === state.choosePin) return;
+  state.choosePin = on;
+  state.pinBusy = false;
+  const host = document.getElementById('pin-host');
+  const behind = [document.getElementById('app'), document.getElementById('preview-bar')];
+  behind.forEach(el => { if(el) el.inert = on; });
+  if(!on){ host.innerHTML = ''; return; }
+  host.innerHTML = renderPinDialog();
+  bindPinDialog();
+}
+
+function renderPinDialog(){
+  // The contact's first name only: a business name's first word ("The") is no greeting.
+  const first = state.client && String(state.client.contactName || '').trim().split(/\s+/)[0];
+  const field = (id, label, extra = '', gap = '') => `
+        <div class="pin-label">
+          <label for="${id}" class="eyebrow">${label}</label>${extra}
+        </div>
+        <input id="${id}" class="field field-code pin-field ${gap}" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" autocorrect="off" spellcheck="false" aria-describedby="pin-msg">`;
+  return `
+  <div class="modal-scrim pin-scrim">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pin-title" aria-describedby="pin-what">
+      <p class="eyebrow mb-3">${first ? `Welcome, ${escapeHtml(first)}` : 'Welcome'}</p>
+      <h2 id="pin-title" class="display title-lg mb-3">Choose your own PIN</h2>
+      <p id="pin-what" class="text-sm muted mb-6">Pick 6 numbers you’ll remember. Next time, sign in with your email and this PIN, so you won’t need to find our email again.</p>
+      <form id="pin-form" novalidate>
+        ${field('pin-new', 'New PIN', '<button id="pin-show" type="button" class="pin-show" aria-pressed="false">Show</button>', 'mb-6')}
+        ${field('pin-again', 'Type it again')}
+        <p id="pin-msg" class="pin-msg login-msg mt-4 mb-6" role="status">6 numbers</p>
+        <button id="pin-save" type="submit" class="btn btn-primary btn-block btn-lg">Confirm PIN</button>
+      </form>
+    </div>
+  </div>`;
+}
+
+function bindPinDialog(){
+  const one = document.getElementById('pin-new');
+  const two = document.getElementById('pin-again');
+  [one, two].forEach(el => el.addEventListener('input', () => {
+    const digits = el.value.replace(/\D/g, '').slice(0, 6);
+    if(digits !== el.value) el.value = digits;
+    el.classList.remove('invalid');
+    pinHint();
+  }));
+  document.getElementById('pin-show').onclick = (e) => {
+    const show = !one.classList.contains('is-shown');
+    [one, two].forEach(el => el.classList.toggle('is-shown', show));
+    e.currentTarget.textContent = show ? 'Hide' : 'Show';
+    e.currentTarget.setAttribute('aria-pressed', String(show));
+  };
+  document.getElementById('pin-form').onsubmit = (e) => { e.preventDefault(); savePin(); };
+  one.focus();
+}
+
+/* The line under the fields, as they type: what's wanted, then whether the two agree. */
+function pinMsg(text, kind = ''){
+  const el = document.getElementById('pin-msg');
+  if(!el) return;
+  el.className = `pin-msg login-msg mt-4 mb-6${kind ? ' is-' + kind : ''}`;
+  el.innerHTML = kind === 'match' ? `${icon('check', 14)}<span>${escapeHtml(text)}</span>` : escapeHtml(text);
+}
+function pinHint(){
+  const a = document.getElementById('pin-new').value, b = document.getElementById('pin-again').value;
+  if(PIN_FORMAT.test(a) && obviousPin(a)) return pinMsg('Too easy to guess. Pick another.', 'error');
+  if(!b || b.length < a.length) return pinMsg('6 numbers');
+  if(PIN_FORMAT.test(a) && a === b) return pinMsg('The PINs match', 'match');
+  return pinMsg('These don’t match yet', 'error');
+}
+
+async function savePin(){
+  if(state.pinBusy) return;
+  const one = document.getElementById('pin-new');
+  const two = document.getElementById('pin-again');
+  const fail = (text, el) => {
+    pinMsg(text, 'error');
+    if(el){ el.classList.add('invalid', 'shake'); setTimeout(() => el.classList.remove('shake'), 400); el.focus(); }
+  };
+  if(!PIN_FORMAT.test(one.value)) return fail('Use 6 numbers.', one);
+  if(obviousPin(one.value)) return fail('That PIN is too easy to guess. Pick another.', one);
+  if(one.value !== two.value){ two.value = ''; return fail('The two PINs don’t match. Type it again.', two); }
+  const btn = document.getElementById('pin-save');
+  const busy = (on) => {
+    state.pinBusy = on;
+    btn.disabled = one.disabled = two.disabled = on;
+    btn.textContent = on ? 'Saving…' : 'Confirm PIN';
+  };
+  busy(true);
+  try {
+    await api('/hub/pin', { method:'POST', body:{ pin: one.value } });
+    askForPin(false);
+    toast('PIN saved. Use it with your email next time you sign in.');
+  } catch(e){
+    busy(false);
+    if(e.status === 401) return signedOut('You were signed out. Sign in again with your Client code.');
+    if(e.status === 400) return fail(e.code === 'obvious_pin' ? 'That PIN is too easy to guess. Pick another.' : 'Use 6 numbers.', one);
+    // Already chosen (another tab, or a reload that raced): nothing to ask for any more.
+    if(e.status === 409){ askForPin(false); return; }
+    if(e.status === 429) return fail('Too many tries just now. Wait a few minutes, then try again.');
+    return fail('Can’t reach the studio’s server. Check your connection and try again.');
+  }
+}
+
+/* Keys while it's up: Tab stays inside it, and nothing reaches the page behind. */
+function pinKeys(e){
+  if(e.key !== 'Tab') return;
+  const items = [...document.querySelectorAll('#pin-host button, #pin-host input')].filter(el => !el.disabled);
+  if(!items.length) return;
+  const first = items[0], last = items[items.length - 1];
+  if(e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+  else if(!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+}
+
 /* ================= SIGN IN ================= */
 function renderSignIn(){
   const welcome = !!state.invite;
@@ -794,12 +948,12 @@ function renderSignIn(){
     <h1 class="display title-2xl mb-2">${welcome ? 'Welcome' : 'Client Portal'}</h1>
     <p class="muted text-sm mb-8" style="max-width:320px">${welcome
       ? 'Enter the Client code from your invitation email to see your work.'
-      : 'Sign in with your email and the Client code the studio sent you.'}</p>
+      : 'Sign in with your email and your PIN, or the Client code the studio sent you.'}</p>
 
     <form id="signin-form" class="w-form" novalidate>
       <label for="client-login-email" class="eyebrow" style="display:block;margin-bottom:var(--space-3)">Email</label>
       <input id="client-login-email" class="field mb-6" type="email" autocomplete="email" inputmode="email" value="${escapeAttr(state.email)}" ${state.loginBusy ? 'disabled' : ''}>
-      <label for="client-code-input" class="eyebrow" style="display:block;margin-bottom:var(--space-3)">Client code</label>
+      <label for="client-code-input" class="eyebrow" style="display:block;margin-bottom:var(--space-3)">${welcome ? 'Client code' : 'Client code or PIN'}</label>
       <input id="client-code-input" class="field field-code mb-6 ${state.loginError ? 'invalid' : ''}" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" value="${escapeAttr(state.code)}" ${state.loginBusy ? 'disabled' : ''}>
       <button id="signin-btn" type="submit" class="btn btn-primary btn-block btn-lg" ${state.loginBusy ? 'disabled' : ''}>${state.loginBusy ? 'Checking…' : 'Sign in'}</button>
     </form>
@@ -836,13 +990,14 @@ async function submitSignIn(){
   try {
     const r = await api('/hub/auth', { method:'POST', body:{ email, code } });
     state.client = r.client;
+    askForPin(r.choosePin);
     state.loginBusy = false; state.code = ''; state.loginMsg = null; state.inviteGone = false;
     const landing = state.invite && state.invite.projectId;
     state.invite = null;
     if(landing && parseRoute(location.hash).name === 'dashboard') return go(projectHash(landing));
     return route();
   } catch(e){
-    if(e.status === 401) return failLogin('That email and code didn’t match. Check your invitation and try again.', true);
+    if(e.status === 401) return failLogin('That email and code didn’t match. Check your PIN or invitation and try again.', true);
     // Two limits: wrong codes for this email (15 minutes), and requests from this connection (a few).
     if(e.status === 429 && e.code === 'too_many_attempts') return failLogin('Too many wrong codes for this email. Wait 15 minutes, then try again.', false, 'code');
     if(e.status === 429) return failLogin('Too many tries from this connection. Wait a few minutes, then try again.', false, 'code');
@@ -866,7 +1021,7 @@ function bindSignIn(){
   if(form) form.onsubmit = (e) => { e.preventDefault(); submitSignIn(); };
   const forgot = document.getElementById('client-forgot');
   if(forgot) forgot.onclick = () => {
-    state.loginMsg = { text:'Ask the studio for a new invitation. It brings a new Client code, and your old one stops working.', error:false };
+    state.loginMsg = { text:'Ask the studio for a new invitation. It brings a new Client code, and your old code or PIN stops working.', error:false };
     const el = document.getElementById('login-msg');
     if(el){ el.textContent = state.loginMsg.text; el.classList.remove('is-error'); el.hidden = false; }
   };
@@ -1837,6 +1992,7 @@ function bindPhotoLightbox(a){
 
 // Escape closes, arrows walk the library, but never while the client is typing a note.
 document.addEventListener('keydown', (e) => {
+  if(state.choosePin){ pinKeys(e); return; } // the page behind the PIN dialog waits
   if(state.approveModalAssetId && e.key === 'Escape' && !state.approving){ e.preventDefault(); setState({ approveModalAssetId:null, approveError:null }); return; }
   if(state.sendModalAssetId && e.key === 'Escape' && !state.sending){ e.preventDefault(); setState({ sendModalAssetId:null, sendError:null }); return; }
   if(state.lightboxIdx == null) return;

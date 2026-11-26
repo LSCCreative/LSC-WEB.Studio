@@ -61,9 +61,11 @@ function inviteOffer(db, project, env) {
   const sent = lastOf('portal_invite_sent');
   if (sent) return { state: 'sent', at: sent.at };
   const access = accessStatus(db, client.id);
-  // A failed invite's code, still the newest, that nobody has ever signed in with.
+  // A failed invite's code, still the newest, that nobody has ever signed in with. A PIN
+  // the client chose proves they did, though their sessions may have ended since.
   const failed = lastOf('portal_invite_failed');
   const retry = Boolean(failed && access.hasCode && access.codeSetAt && access.codeSetAt <= failed.at
+    && !access.pinChosenAt
     && !db.prepare('SELECT 1 FROM client_sessions WHERE client_id = ? LIMIT 1').get(client.id));
   if ((access.hasCode || access.oldCodes > 0) && !retry) return { state: 'has_access' };
   if (!client.email || !isEmail(client.email)) return { state: 'no_email' };

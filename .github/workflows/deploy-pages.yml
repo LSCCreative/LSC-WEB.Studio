@@ -10,15 +10,19 @@ permissions:
   pages: write
   id-token: write
 
+# One deploy at a time, and a running one always finishes (as GitHub's starter has
+# it): a push mid-deploy queues behind it instead of cancelling it, so the site
+# is never left between the build and the deploy jobs.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 # Two jobs, as GitHub's starter workflow has it: deploy-pages run in the same job
 # as the upload can look for the artifact before it is listed and find none
 # (actions/deploy-pages#451; it failed three times in a row on 2026-11-27). By the
-# time a second job starts, the upload is always there. Re-running a failed run
-# doesn't help either: it uploads a second artifact, and deploy refuses two.
+# time a second job starts, the upload is always there. A failed deploy job can
+# be retried with "Re-run failed jobs" (it reuses the one artifact); "Re-run all
+# jobs" uploads a second one, and deploy refuses two.
 jobs:
   build:
     runs-on: ubuntu-latest

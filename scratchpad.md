@@ -5,6 +5,12 @@
 
 ## BUILD: merged admin + paid delivery. On branch `merged-admin`, P1-P4 and M1-M6 done, live
 
+**Client PIN (side feature, 2026-11-27, uncommitted on `merged-admin`, NOT deployed; review fixes in: 6 digits, no obvious ones, once only, no password fields, no invite retry after a PIN).** Schema **v34**
+(`client_logins.code_chosen_at`), `POST /hub/pin`, `choosePin` on `/hub/auth` and `/hub/session`; the portal's
+PIN dialog lives in `#pin-host` (outside `#app`, page inert behind it, no skip, never in a preview). Tests:
+`test-portal-pin.js` (own file: its sign-ins would use up `test-portal-sessions.js`'s rate limit). Checked on scratch
+at 375 px and desktop. Deploy: NAS first (migration), then Pages. B2 Slice 5 is still open (iPhone note on PTC9 v4).
+
 **M3 done 2026-11-06 (local, not pushed).** The portal is mounted in billing's `app.js`: trust proxy always 1
 hop; `hub-api` serves `/hub/*` and `/health` only (Host header); billing's CORS skips `/hub` and ignores portal
 origins; the portal router sits before billing's JSON parser, with the raw-body slot above it for B1's webhook.
@@ -328,9 +334,12 @@ View as client in Chromium: contract 1, 2, 4, 5 pass, 3 refused as a preview sho
 2026-11-26 21:22-21:25 UTC: the user signed in as the client on the iPhone (Chrome for iOS, `CriOS/158`) and the Mac
 (Chrome 158); two notes on v3 (one with no stamp, one at 121.088 s) sent as one set; no approval, so no C10 email.
 **`playsinline` adopted** (the user, 2026-11-27): `#asset-video` in `client-hub-app/index.html`, a page check in
-`test-portal-page.js`, feature-spec's Player decisions; 1151/1151. It's portal-side, so it ships with the Pages
-release (merge `merged-admin` → `main`, ask first). **Left before ticking Slice 5:** that release, then the iPhone
-contract again (inline); desktop Safari unchecked (no Safari session reached the server). An imported NAS-linked
+`test-portal-page.js`, feature-spec's Player decisions; 1151/1151. Released 2026-11-27: PR #3 squash-merged as `49f43fc`; its Pages
+deploy failed 3 times (deploy-pages found no artifact right after the upload in the same job, actions/deploy-pages#451),
+fixed by `4b9e11a` (build and deploy jobs; pushed to `main` with the user's OK), deployed; main merged back into
+`merged-admin` (`c49860d`). Live portal: `playsinline` and the poster code are served, and the PTC9 card shows Bunny's
+poster in View as client. **Left before ticking Slice 5:** the user re-runs the iPhone contract (inline now);
+desktop Safari unchecked (no Safari session reached the server). An imported NAS-linked
 version: none live (PTC9's v1/v2 were made here), so that check has nothing to run on.
 
 **After Slice 5:** per ROADMAP/TASKS.md the order is payment next, then the remaining Bunny slices (Slice 6,

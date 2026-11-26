@@ -173,7 +173,8 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       as Bunny HLS. Contract: desktop Chrome passed (View as client, then the user signed in); the
       user's iPhone (Chrome for iOS, WebKit + native HLS) and Mac Chrome sent two notes on v3 as one set,
       one stamped at the exact frame. **`playsinline` adopted** (the user, 2026-11-27), in the portal page,
-      so it ships with the Pages release. **Left:** after that release, re-run the contract on the iPhone
+      so it ships with the Pages release (live 2026-11-27, `49f43fc` + the workflow fix `4b9e11a`).
+      **Left:** re-run the contract on the iPhone
       (inline now); desktop Safari was not checked; no imported NAS-linked version exists on the live db
       to play (PTC9's were made here), so that check has nothing to run on.
 
