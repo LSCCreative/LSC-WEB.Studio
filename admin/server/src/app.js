@@ -165,6 +165,7 @@ function createApp(db, opts = {}) {
     videoLookupGapMs: opts.videoLookupGapMs,
     now: opts.bunnyNow,
   });
+  app.locals.bunnyPublisher = bunnyPublisher;
   if (hub && !bunnyPublisher.ready) {
     console.warn(`[bunny] publishing to Bunny is off until these are set: ${bunnyPublisher.missing.join(', ')}`);
   }

@@ -29,6 +29,7 @@
  * URL) `ready` is false and the routes answer 503: the server still starts.
  */
 
+const crypto = require('crypto');
 const { basename, extname } = require('path');
 const { createBunny, missingBunnySettings, statusFromVideo } = require('./hub/bunny');
 const { createUrlSigner } = require('./hub/url-signing');
@@ -56,6 +57,18 @@ function publishTag(seed) {
 const TRANSCODE_FAILED = 'Bunny couldn’t transcode the file. Check it plays, then publish again.';
 const PULL_FAILED = 'Bunny couldn’t fetch the file from the NAS. Check hub-api is reachable, then publish again.';
 const failReasonOf = (video) => (video.status === 6 ? PULL_FAILED : TRANSCODE_FAILED);
+const DELETED_ON_BUNNY = 'The video was deleted on Bunny. Publish again.';
+
+/* A webhook's Status (Bunny's docs, "Webhooks"), which is NOT the REST enum
+   statusFromVideo reads: here 3 is finished and 4 one resolution done. What it
+   means for a row; codes not listed (captions, chapters, presigned uploads) say
+   nothing about whether the video plays, and are ignored. */
+const WEBHOOK_STATUS = {
+  0: 'processing', 1: 'processing', 2: 'processing', 4: 'processing',
+  3: 'ready',
+  5: 'failed',
+  32: 'deleted',
+};
 
 /**
  * opts:
@@ -102,6 +115,7 @@ function createBunnyPublisher(db, opts = {}) {
       error          = excluded.error,
       progress_done  = excluded.progress_done,
       progress_total = excluded.progress_total,
+      last_event_at  = NULL,
       updated_at     = excluded.updated_at
   `);
   const setVideo = db.prepare(`
@@ -112,6 +126,12 @@ function createBunnyPublisher(db, opts = {}) {
     UPDATE bunny_assets SET status = 'failed', error = ?, progress_done = 0, updated_at = ?
      WHERE version_id = ? AND kind = ?
   `);
+  const getByVideo = db.prepare('SELECT * FROM bunny_assets WHERE bunny_video_id = ?');
+  const setFromEvent = db.prepare(`
+    UPDATE bunny_assets SET status = ?, error = ?, progress_done = ?, last_event_at = ?, updated_at = ?
+     WHERE version_id = ? AND kind = ? AND bunny_video_id = ?
+  `);
+  const waitingForId = db.prepare("SELECT * FROM bunny_assets WHERE status = 'processing' AND bunny_video_id IS NULL ORDER BY created_at");
   const setServed = db.prepare(`
     UPDATE bunny_assets SET source_size = ?, source_mtime = ? WHERE version_id = ? AND kind = 'video'
   `);
@@ -351,7 +371,74 @@ function createBunnyPublisher(db, opts = {}) {
     return view(row, file && file.stat);
   }
 
-  return { ready, missing, check, publish, status, verifySource, servedSource, refresh, view };
+  /**
+   * Whether a webhook is Bunny's: X-BunnyStream-Signature is the lowercase hex
+   * HMAC-SHA256 of the raw body, keyed with the library's read-only key, beside a
+   * v1 / hmac-sha256 version and algorithm. `raw` must be the bytes as received:
+   * a body a JSON parser has read is refused, since re-serialising changes them.
+   */
+  function verifyWebhook(raw, headers = {}) {
+    if (!ready || !Buffer.isBuffer(raw)) return false;
+    if (String(headers['x-bunnystream-signature-version'] || '') !== 'v1') return false;
+    if (String(headers['x-bunnystream-signature-algorithm'] || '').toLowerCase() !== 'hmac-sha256') return false;
+    const given = String(headers['x-bunnystream-signature'] || '');
+    if (!/^[0-9a-f]{64}$/.test(given)) return false;
+    const expected = crypto.createHmac('sha256', opts.bunny.streamReadKey).update(raw).digest('hex');
+    return crypto.timingSafeEqual(Buffer.from(given, 'hex'), Buffer.from(expected, 'hex'));
+  }
+
+  /* The rows still waiting for Bunny to list their video: a webhook can beat the
+     tag lookup, so an unknown id sends them to look again. In the background,
+     after the webhook is answered; one look at a time. `adopting` is that look,
+     for the tests to wait on. */
+  let adopting = Promise.resolve();
+  function adoptWaiting() {
+    adopting = adopting.then(async () => {
+      for (const row of waitingForId.all()) await refresh(row);
+    }).catch((err) => console.error('[bunny-publish] adopting after a webhook failed:', err.message));
+    return adopting;
+  }
+
+  /**
+   * One verified webhook, parsed. Answers what happened, for the log and the tests:
+   * 'applied', 'ignored' (another library, a live stream, a code that says
+   * nothing, or an event older than the row's last), 'unchanged' (it would only
+   * move a finished video back to processing) or 'unknown' (no row has that
+   * video: an old one replaced by a Republish, or one whose id we haven't
+   * learned yet, so the waiting rows look again).
+   * Events can arrive out of order and more than once: the row keeps the newest
+   * Timestamp it applied, and a progress event never undoes ready.
+   */
+  async function applyWebhook(event) {
+    if (!event || typeof event !== 'object') return 'ignored';
+    if (event.IsLiveStreamWebhook === true) return 'ignored';
+    if (String(event.VideoLibraryId) !== String(opts.bunny.libraryId)) return 'ignored';
+    const meaning = WEBHOOK_STATUS[event.Status];
+    const videoId = typeof event.VideoGuid === 'string' ? event.VideoGuid : '';
+    if (!meaning || !videoId) return 'ignored';
+    const row = getByVideo.get(videoId);
+    if (!row) {
+      adoptWaiting();
+      return 'unknown';
+    }
+    const at = Date.parse(event.Timestamp);
+    const eventAt = Number.isFinite(at) ? new Date(at).toISOString() : null;
+    if (eventAt && row.last_event_at && eventAt < row.last_event_at) return 'ignored';
+    if (meaning === 'processing' && row.status === 'ready') return 'unchanged';
+    const next = {
+      processing: ['processing', null, 0],
+      ready: ['ready', null, 1],
+      failed: ['failed', TRANSCODE_FAILED, 0],
+      deleted: ['failed', DELETED_ON_BUNNY, 0],
+    }[meaning];
+    setFromEvent.run(...next, eventAt || row.last_event_at, isoNow(), row.version_id, row.kind, videoId);
+    return 'applied';
+  }
+
+  return {
+    ready, missing, check, publish, status, verifySource, servedSource, refresh, view, verifyWebhook, applyWebhook,
+    adopted: () => adopting,
+  };
 }
 
 module.exports = { createBunnyPublisher, UNLISTED_VIDEO_LIMIT_MS, SOURCE_TTL_SECONDS };

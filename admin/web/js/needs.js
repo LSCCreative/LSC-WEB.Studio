@@ -63,6 +63,9 @@ const LSCNeeds = (() => {
       case 'deemed_approval':
         // Past the client's 14 business days on a Final; the item page has Mark approved (C7).
         return [item.title + ' v' + item.n, 'No reply in 14 business days', item.days > 0 ? 'due ' + ago(item.days) : 'due today'];
+      case 'publish_failed':
+        // Bunny's reason, in the words bunny-publish.js stored; the item has Publish again.
+        return [item.title + ' v' + item.n, item.error];
       case 'final_invoice':
         // No date when the old hub signed it off (R4): it isn't "today".
         return [typeof item.days === 'number' ? 'Everything approved ' + ago(item.days) : 'Everything approved'];

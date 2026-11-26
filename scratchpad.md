@@ -269,7 +269,19 @@ the library answers; sourceChanged follows what Bunny pulled; one deliverables f
 v33 empty-tables check is in DEPLOYMENT.md step 5 and Slice 5. 1129/1129 (22 in `test-bunny-publish.js`). **The NAS `.env` has no `BUNNY_*`
 names at all** (checked by name only): add them before Slice 5's deploy, or publishing answers 503.
 
-**Next: Slice 3 (the Bunny webhook) | Model: Sonnet 5.5 | Effort: High**.
+**B2 Slice 3 done 2026-11-26 (committed, not pushed, not deployed).** `POST /hub/bunny-webhook` in the hub
+router above its `express.json`, read with `express.raw`. Signature per Bunny's docs (fetched 2026-11-26):
+lowercase hex HMAC-SHA256 of the raw body with `BUNNY_STREAM_READ_KEY`, headers `X-BunnyStream-Signature`,
+`-Version: v1`, `-Algorithm: hmac-sha256`. Payload has `EventId` and `Timestamp`; rows keep `last_event_at`
+(added straight into v33: the scratch db was still at v32, so v33 had run nowhere). An unknown id → 200 and
+a background tag lookup for rows still without an id (`app.locals.bunnyPublisher.adopted()` for tests).
+Needs you's Publish failed is computed (failed row, newest version, needed item); its row text is one
+line in `web/js/needs.js`, not checked in the browser. **Slice 5 adds a user step:** set the library's
+webhook URL to `https://hub-api.lsccreative.studio/hub/bunny-webhook`. 1137/1137.
+
+**Next: Slice 4 (Publish from the Deliverables tab, play in the portal) | Model: Opus 5.5 | Effort: High**.
+Frontend task (admin + portal), with the player guardrail. Decide there: one button or two (Bunny publish,
+then the client's publish), and never offer Republish on a version the client has (the API refuses force).
 
 (C10 as planned:) New task (the user's call,
 2026-11-26, spec in TASKS.md): whole job paid + every item approved → client emailed each approved Final's Drive link, owner

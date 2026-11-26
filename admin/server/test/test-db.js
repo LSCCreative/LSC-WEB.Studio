@@ -837,7 +837,7 @@ test('v33 rebuilds the Bunny tables per version and project, and touches nothing
   const cols = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
   assert.deepEqual(cols('bunny_assets'), ['version_id', 'kind', 'project_id', 'item_id', 'source_path', 'source_size',
     'source_mtime', 'bunny_video_id', 'collection_id', 'publish_tag', 'storage_path', 'status', 'error',
-    'progress_done', 'progress_total', 'created_at', 'updated_at']);
+    'progress_done', 'progress_total', 'last_event_at', 'created_at', 'updated_at']);
   assert.deepEqual(cols('bunny_collections'), ['project_id', 'collection_id', 'name', 'created_at']);
   const row = "INSERT INTO bunny_assets (version_id, kind, project_id, item_id, source_path, status, created_at, updated_at) VALUES ('v1', 'video', 'p1', 'd1', 'A/x.mp4', 'processing', 'x', 'x')";
   db.prepare(row).run();

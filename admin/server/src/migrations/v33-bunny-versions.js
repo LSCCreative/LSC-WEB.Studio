@@ -13,7 +13,9 @@
  *                    row keeps the file it was made from (path, size, mtime), so a
  *                    NAS file replaced after publishing is reported, not hidden.
  *                    bunny_video_id is NULL until Bunny lists the fetched video,
- *                    which is found by publish_tag in its title.
+ *                    which is found by publish_tag in its title. last_event_at is
+ *                    the Timestamp of the newest Bunny webhook applied (Slice 3),
+ *                    so an older one arriving late can't undo it.
  *                    No foreign keys, on purpose: a row points at something the
  *                    studio pays Bunny to keep, so it outlives a deleted version
  *                    or project until cleanup (Slice 11) has taken that off Bunny.
@@ -59,6 +61,7 @@ function migrateV33(db) {
       error          TEXT,
       progress_done  INTEGER NOT NULL DEFAULT 0,
       progress_total INTEGER NOT NULL DEFAULT 0,
+      last_event_at  TEXT,
       created_at     TEXT NOT NULL,
       updated_at     TEXT NOT NULL,
       PRIMARY KEY (version_id, kind)

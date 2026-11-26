@@ -105,7 +105,7 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       version (Slice 4: no Republish there). Not checked against real Bunny again (the 2026-11-03 live test
       still stands for the calls). The NAS `.env` has no `BUNNY_*` yet (checked 2026-11-26).
 
-- [ ] Slice 3: **[API]** `POST /hub/bunny-webhook` on `hub-api`, mounted in `app.js`'s
+- [x] Slice 3: **[API]** `POST /hub/bunny-webhook` on `hub-api`, mounted in `app.js`'s
       raw-body slot (or above the hub router's `express.json`) with `express.raw()`, so the
       HMAC is over the exact bytes (merge safeguard **S20**). Verify
       `X-BunnyStream-Signature` (HMAC-SHA256 with `BUNNY_STREAM_READ_KEY`, constant-time),
@@ -117,6 +117,15 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       passes; unsigned, tampered and re-serialised bodies fail; a test that fails if a JSON
       parser is ever mounted ahead of it; unknown id; out-of-order events.
       | Model: Sonnet 5.5 | Effort: High
+      **Done 2026-11-26 (not deployed):** the route sits in the hub router above its JSON parser, with
+      `express.raw`. Signing per Bunny's docs: lowercase hex HMAC-SHA256 of the raw body with the
+      read-only key, plus `X-BunnyStream-Signature-Version: v1` and `-Algorithm: hmac-sha256`. Codes: 0-2
+      and 4 processing (never undoing ready), 3 ready, 5 failed, 32 (video deleted) failed; the rest are
+      ignored. Each row keeps the newest event `Timestamp` it applied (`last_event_at`, added to v33, which
+      had run nowhere), so an older event can't undo a newer one. An unknown id answers 200 and sends the
+      rows still waiting for their id to look again, in the background. Needs you's **Publish failed** is
+      computed: a failed row on a needed item's newest version, gone once ready or replaced. 8 tests in
+      `test-bunny-webhook.js`; 1137/1137.
 
 - [ ] Slice 4: **[ADMIN + API + PORTAL]** Publish from the Deliverables tab, play in the portal.
       - Admin (R3's deliverable item): a **Publish to Bunny** action beside the version's
@@ -134,7 +143,10 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
 - [ ] Slice 5: Verify video end to end and deploy. **[USER]** Before deploying, check the
       NAS `.env` for the 8 `BUNNY_*` names (without them publishing answers 503; it no
       longer stops the server). Also confirm the live `bunny_assets` and `bunny_collections` are
-      empty on the dry-run copy and on the live db (v33 stops on a row; DEPLOYMENT.md step 5). Deploy to the NAS. Real deliverable on the NAS → Publish →
+      empty on the dry-run copy and on the live db (v33 stops on a row; DEPLOYMENT.md step 5).
+      **[USER]** In Bunny, set the library's webhook URL to
+      `https://hub-api.lsccreative.studio/hub/bunny-webhook` (Stream → library → Webhooks); without
+      it, status still arrives through the 30-minute lookup on each status read. Deploy to the NAS. Real deliverable on the NAS → Publish →
       Ready → client signs in on another device → full player contract on desktop Chrome,
       desktop Safari and a **physical iPhone** → notes → approve. Also check a large master
       fetches through the Cloudflare Tunnel, and that an imported NAS-linked version still

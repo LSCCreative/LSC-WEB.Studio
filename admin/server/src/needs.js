@@ -15,7 +15,7 @@
  *   paid_claim        (C6+) "I've paid" pressed by the client
  *   revision_notes    (C4)  the client submitted notes
  *   final_invoice     (C5)  everything approved, final invoice not sent
- *   publish_failed    (B2)  Bunny reported a failure
+ *   publish_failed    (B2)  Bunny gave up on the newest version of a needed item
  *   invoice_overdue         a sent invoice past its due date
  *   quote_awaiting          a quote sent QUOTE_DAYS or more ago, no answer
  *   no_upid                 an accepted project with no UPID
@@ -103,6 +103,30 @@ function readNeeds(db, { today, briefs, rows }) {
         round, included: ROUNDS_INCLUDED, extraRound: round !== null && round > ROUNDS_INCLUDED,
       }),
       id: 'revision_notes:' + s.deliverable_id,
+    });
+  });
+
+  // Publish failed (Bunny Slice 3): Bunny gave up on the newest version of a needed item,
+  // so the client can't be given it. Leaves when a publish of it goes through (or a newer
+  // version replaces it); the row opens the item, where Publish again is.
+  db.prepare(`
+    SELECT b.version_id, b.error, b.updated_at, v.n, d.id AS item_id, d.title,
+           p.id AS project_id, p.client_id, p.upid, p.name
+      FROM bunny_assets b
+      JOIN deliverable_versions v ON v.id = b.version_id
+      JOIN deliverables d ON d.id = v.deliverable_id
+      JOIN projects p ON p.id = d.project_id
+     WHERE b.status = 'failed' AND p.archived_at IS NULL AND p.declined_at IS NULL AND d.not_needed_at IS NULL
+       AND v.n = (SELECT MAX(n) FROM deliverable_versions WHERE deliverable_id = d.id)
+     ORDER BY b.updated_at, b.version_id
+  `).all().forEach((b) => {
+    const since = sydneyDay(b.updated_at);
+    items.push({
+      ...base('publish_failed', b, {
+        itemId: b.item_id, versionId: b.version_id, title: b.title || '', n: b.n, error: b.error || '',
+        since, days: daysBetween(since, today),
+      }),
+      id: 'publish_failed:' + b.version_id,
     });
   });
 

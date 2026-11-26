@@ -154,8 +154,38 @@ function createHubRouter(db, opts = {}) {
 
   const router = express.Router();
 
-  // Raw-body routes (the Bunny webhook, task B1) go above this line: they need
-  // the exact bytes for their signature check (merge safeguard S20).
+  // Raw-body routes go above this line: they need the exact bytes for their
+  // signature check (merge safeguard S20).
+
+  // ── POST /hub/bunny-webhook: Bunny Stream telling us a video's state (Bunny
+  // Slice 3). Signed over the raw body (bunny-publish.js verifyWebhook), so it is
+  // read here as bytes; any parser ahead of it makes every webhook fail, which
+  // test-bunny-webhook.js catches. Unsigned or wrong is a 401, which Bunny doesn't
+  // retry. A good one is a 200 whatever it changed (an unknown id included), so
+  // Bunny stops; it is applied before answering, so a 200 means it is recorded.
+  router.post('/hub/bunny-webhook', express.raw({ type: () => true, limit: '64kb' }), async (req, res) => {
+    if (!bunnyPublisher) return res.status(503).json({ error: 'bunny not set up' });
+    if (!Buffer.isBuffer(req.body)) {
+      console.error('[hub/bunny-webhook] the body was already parsed: a JSON parser is mounted ahead of the webhook');
+      return res.status(401).json({ error: 'unsigned' });
+    }
+    if (!bunnyPublisher.verifyWebhook(req.body, req.headers)) return res.status(401).json({ error: 'unsigned' });
+    let event;
+    try {
+      event = JSON.parse(req.body.toString('utf8'));
+    } catch {
+      return res.status(400).json({ error: 'bad request' });
+    }
+    try {
+      const outcome = await bunnyPublisher.applyWebhook(event);
+      return res.json({ ok: true, outcome });
+    } catch (err) {
+      // A 5xx is retried by Bunny for about 4 hours: right for a database hiccup.
+      console.error('[hub/bunny-webhook] could not apply an event:', err.message);
+      return res.status(500).json({ error: 'server error' });
+    }
+  });
+
   router.use('/hub', express.json({ limit: '2mb' }));
 
   /* ── The client's side (C1) ──────────────────────────────────────────────

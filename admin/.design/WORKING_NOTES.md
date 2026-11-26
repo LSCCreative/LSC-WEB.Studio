@@ -230,6 +230,8 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   points at something Bunny bills for, so it must outlive a deleted version until cleanup removes the video.
   Bunny pulls from `/hub/source/<versionId>/<name>`, signed over the version id for 6 hours: never mint a
   `/hub/files` token for Bunny. Bunny's REST status (3 transcoding, 4 finished) is not the webhook's.
+  The webhook (`/hub/bunny-webhook`) verifies over the raw body: nothing may parse JSON ahead of it
+  (`test-bunny-webhook.js` fails if anything does). Webhook 3 is finished, 4 one resolution.
 
 ## Frontend traps
 
