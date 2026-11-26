@@ -262,7 +262,11 @@ hub router's `requireAdmin`/`backupDir` options are gone. **Route change from th
 `POST`/`GET /api/projects/:id/deliverables/:itemId/versions/:versionId/bunny`, beside R3's client publish (which
 already owned `…/publish`). Slice 4 must decide: chain them on one button, or two steps, and hold the client's
 publish of a video until Bunny is ready. Bunny pulls from `/hub/source/<versionId>/<name>?token&expires` (6 h).
-1123/1123 (16 new in `test-bunny-publish.js`, fake in `test/fake-bunny.js`). **The NAS `.env` has no `BUNNY_*`
+Code review (7 findings) all fixed: a video Bunny fails before listing says why at once (6 = pull failed,
+5 = transcode); a Republish behind a running publish runs after it; force is refused on a version the client
+has seen (a changed file is a new version: Slice 4 must not offer Republish there); a 404 is "deleted" only if
+the library answers; sourceChanged follows what Bunny pulled; one deliverables folder for check and source; the
+v33 empty-tables check is in DEPLOYMENT.md step 5 and Slice 5. 1129/1129 (22 in `test-bunny-publish.js`). **The NAS `.env` has no `BUNNY_*`
 names at all** (checked by name only): add them before Slice 5's deploy, or publishing answers 503.
 
 **Next: Slice 3 (the Bunny webhook) | Model: Sonnet 5.5 | Effort: High**.

@@ -33,6 +33,10 @@ deploys the marketing site (its allow-list), never the admin.
 4. `sh /volume4/lsc-admin/m6-checks.sh /volume4/lsc-admin/data` must print ALL PASS; check the boot log's
    migration line. An open admin tab offers a reload when the version changes.
 5. If a migration ships, run it on a copy of the backup first.
+   **v33 (Bunny Slice 2) refuses to run if `bunny_assets` or `bunny_collections` holds a row**, and a server
+   that won't migrate crash-loops under `restart: always`. Before that deploy, on the live db:
+   `sqlite3 -readonly …/billing.db "SELECT COUNT(*) FROM bunny_assets; SELECT COUNT(*) FROM bunny_collections;"`
+   must print `0` twice (it did on 2026-11-26). Not zero: stop and ask; don't deploy.
 
 ## NAS `.env` (`/volume4/lsc-admin/app/.env`, mode 600; names in `server/.env.example`)
 

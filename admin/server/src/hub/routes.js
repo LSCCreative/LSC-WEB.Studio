@@ -632,6 +632,8 @@ function createHubRouter(db, opts = {}) {
     if (!v || !v.source_path || posix.basename(v.source_path) !== name) return notFound();
     const file = deliverables.resolveDeliverablePath(v.source_path);
     if (!file) return notFound();
+    // What Bunny gets is what sourceChanged compares against.
+    bunnyPublisher.servedSource(v.id, file.stat);
     return streamFile(req, res, file.absolute, file.stat, false, { cacheControl: 'no-store' });
   });
 

@@ -101,7 +101,8 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       video still transcoding (`getVideo`), so a row turns ready without the webhook. Rows have no foreign
       keys on purpose (they point at what Bunny bills for, so cleanup must find them). The hub import now
       skips empty hub Bunny tables and refuses a row. 16 tests in `test-bunny-publish.js` (fake Bunny in
-      `test/fake-bunny.js`); 1123/1123. Not checked against real Bunny again (the 2026-11-03 live test
+      `test/fake-bunny.js`); code review's 7 fixed, 1129/1129. Force is refused once the client has the
+      version (Slice 4: no Republish there). Not checked against real Bunny again (the 2026-11-03 live test
       still stands for the calls). The NAS `.env` has no `BUNNY_*` yet (checked 2026-11-26).
 
 - [ ] Slice 3: **[API]** `POST /hub/bunny-webhook` on `hub-api`, mounted in `app.js`'s
@@ -132,7 +133,8 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
 
 - [ ] Slice 5: Verify video end to end and deploy. **[USER]** Before deploying, check the
       NAS `.env` for the 8 `BUNNY_*` names (without them publishing answers 503; it no
-      longer stops the server). Deploy to the NAS. Real deliverable on the NAS → Publish →
+      longer stops the server). Also confirm the live `bunny_assets` and `bunny_collections` are
+      empty on the dry-run copy and on the live db (v33 stops on a row; DEPLOYMENT.md step 5). Deploy to the NAS. Real deliverable on the NAS → Publish →
       Ready → client signs in on another device → full player contract on desktop Chrome,
       desktop Safari and a **physical iPhone** → notes → approve. Also check a large master
       fetches through the Cloudflare Tunnel, and that an imported NAS-linked version still

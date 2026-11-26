@@ -153,11 +153,13 @@ function createApp(db, opts = {}) {
   // The studio's emails about what a client did go through the mailer built further down, so they look it up when they fire.
   // Publishing to Bunny (Bunny Slice 2): the studio's /api routes start it, and the
   // portal's router serves the signed file Bunny pulls. Not set up, it answers 503.
+  // One deliverables folder for all of it: what publishing checks is what Bunny is served.
+  const deliverablesDir = opts.deliverablesDir || (hub || config.hub).deliverablesDir;
   const bunnyPublisher = createBunnyPublisher(db, {
     bunny: hub ? hub.bunny : {},
     signingSecret: hub ? hub.signingSecret : '',
     publicBaseUrl: hub ? hub.publicBaseUrl : '',
-    deliverablesDir: opts.deliverablesDir || (hub || config.hub).deliverablesDir,
+    deliverablesDir,
     // Tests only: a fake Bunny, a short wait between lookups, a clock.
     bunnyFetch: opts.bunnyFetch,
     videoLookupGapMs: opts.videoLookupGapMs,
@@ -168,6 +170,7 @@ function createApp(db, opts = {}) {
   }
   const portal = buildPortal(db, hub, appUrlOf(opts.appUrl !== undefined ? opts.appUrl : config.appUrl), {
     bunnyPublisher,
+    deliverablesDir,
     onNotesSubmitted: (ev) => notesSubmitted(db, {
       mailer: app.locals.mailer, appUrl: appUrlOf(opts.appUrl !== undefined ? opts.appUrl : config.appUrl),
     }, ev),
@@ -343,7 +346,7 @@ function createApp(db, opts = {}) {
   const stageD = { markSent: opts.markSentRoutes !== undefined ? opts.markSentRoutes : config.isTest };
   registerProjectRoutes(app, db, { ...stageD, hnryPush });
   registerDeliverableRoutes(app, db, {
-    deliverablesDir: opts.deliverablesDir || (hub || config.hub).deliverablesDir,
+    deliverablesDir,
     bunnyPublisher,
     // The portal invite carries a Client code, so it's sent from the request that issues it (portal-invite.js).
     portal: {

@@ -48,13 +48,13 @@ let db;
 let bunny;
 
 /* One running app over the shared database: `start` again is a server restart. */
-async function start({ bunnySettings = FAKE_BUNNY_SETTINGS } = {}) {
+async function start({ bunnySettings = FAKE_BUNNY_SETTINGS, hubDir = DIR } = {}) {
   const app = createApp(db, {
     hub: {
       signingSecret: SIGNING_SECRET,
       corsOrigins: ['https://lsccreative.studio'],
       publicBaseUrl: `https://${HUB_HOST}`,
-      deliverablesDir: DIR,
+      deliverablesDir: hubDir,
       bunny: bunnySettings,
     },
     deliverablesDir: DIR,
@@ -132,7 +132,7 @@ async function addVersion(p, filePath) {
 const publish = (p, v, body = {}) => s.call('POST', `${base(p, v)}/bunny`, body);
 const statusOf = (p, v) => s.call('GET', `${base(p, v)}/bunny`);
 const rowOf = (v) => db.prepare("SELECT * FROM bunny_assets WHERE version_id = ? AND kind = 'video'").get(v);
-const reset = () => Object.assign(bunny.state, { failFetch: false, listAfter: 0, neverList: false, statusOnFetch: 4 });
+const reset = () => Object.assign(bunny.state, { failFetch: false, listAfter: 0, neverList: false, statusOnFetch: 4, libraryGone: false });
 
 test('a video version goes to Bunny once: its project’s collection, a tagged title, a signed source', async () => {
   reset();
@@ -400,6 +400,108 @@ test('the signed source serves the file, with Range, to the right version until 
 
   clock += (SOURCE_TTL_SECONDS + 1) * 1000;
   assert.equal((await get(signed)).status, 404, 'expired after 6 hours');
+});
+
+test('a video Bunny gives up on before listing it says why at once, not after 30 minutes', async () => {
+  reset();
+  const p = project();
+  const v = await addVersion(p, 'Acme/Hero.mp4');
+  bunny.state.statusOnFetch = 6;
+  const pulled = await publish(p, v);
+  assert.deepEqual([pulled.status, pulled.body.status], [502, 'failed']);
+  assert.match(pulled.body.error, /couldn’t fetch the file from the NAS/);
+
+  // Listed late, and failed by then: the next status read says so.
+  bunny.state.statusOnFetch = 5;
+  bunny.state.listAfter = 10;
+  assert.equal((await publish(p, v)).body.status, 'processing');
+  bunny.state.videos[bunny.state.videos.length - 1].listAfter = 0;
+  const read = await statusOf(p, v);
+  assert.deepEqual([read.body.status, read.body.error], ['failed', 'Bunny couldn’t transcode the file. Check it plays, then publish again.']);
+
+  // A crash adoption still never picks up a failed attempt.
+  bunny.state.statusOnFetch = 4;
+  bunny.state.listAfter = 0;
+  const fresh = project();
+  const fv = await addVersion(fresh, 'Acme/Hero.mp4');
+  bunny.state.statusOnFetch = 5;
+  await publish(fresh, fv);
+  db.prepare('DELETE FROM bunny_assets WHERE version_id = ?').run(fv);
+  bunny.state.statusOnFetch = 4;
+  const fetchesBefore = bunny.fetches();
+  assert.equal((await publish(fresh, fv)).body.status, 'ready');
+  assert.equal(bunny.fetches(), fetchesBefore + 1, 'the failed video was not adopted');
+});
+
+test('a Republish sent while a plain publish is running runs after it, not into it', async () => {
+  reset();
+  const p = project();
+  const v = await addVersion(p, 'Acme/Hero.mp4');
+  const fetchesBefore = bunny.fetches();
+  const [plain, forced, again] = await Promise.all([publish(p, v), publish(p, v, { force: true }), publish(p, v)]);
+  assert.deepEqual([plain.status, forced.status, again.status], [200, 200, 200]);
+  assert.equal(bunny.fetches(), fetchesBefore + 2, 'the plain publish and the force: the third joined the force');
+  const mine = bunny.state.videos.filter((x) => x.source && x.source.includes(`/hub/source/${v}/`));
+  assert.equal(mine.length, 2);
+  assert.equal(rowOf(v).bunny_video_id, mine[1].guid, 'the force’s video is the one kept');
+});
+
+test('a version the client has seen can’t have its video replaced; a first publish of it still goes', async () => {
+  reset();
+  const p = project();
+  const v = await addVersion(p, 'Acme/Hero.mp4');
+  db.prepare('UPDATE deliverable_versions SET published_at = ? WHERE id = ?').run(nowIso(), v);
+  const first = await publish(p, v);
+  assert.equal(first.status, 200, 'the same file onto Bunny changes nothing the client saw');
+  const before = rowOf(v);
+  const forced = await publish(p, v, { force: true });
+  assert.deepEqual([forced.status, forced.body.error], [409, 'published']);
+  assert.deepEqual(rowOf(v), before);
+});
+
+test('a 404 for a video only reads as deleted when the library still answers', async () => {
+  reset();
+  const p = project();
+  const v = await addVersion(p, 'Acme/Hero.mp4');
+  bunny.state.statusOnFetch = 3;
+  await publish(p, v);
+  bunny.state.libraryGone = true;
+  const wrongLibrary = await statusOf(p, v);
+  assert.deepEqual([wrongLibrary.status, wrongLibrary.body.status], [200, 'processing'], 'left as it was, and logged');
+  assert.ok(logged.some((l) => /\[bunny-publish\] status lookup failed/.test(l)));
+  bunny.state.libraryGone = false;
+  bunny.state.videos = bunny.state.videos.filter((x) => x.guid !== rowOf(v).bunny_video_id);
+  assert.equal((await statusOf(p, v)).body.status, 'failed');
+});
+
+test('sourceChanged compares against the file Bunny pulled, even when it pulled late', async () => {
+  reset();
+  const p = project();
+  const file = path.join(DIR, 'Acme', 'Late.mp4');
+  fs.writeFileSync(file, 'the cut published');
+  const v = await addVersion(p, 'Acme/Late.mp4');
+  await publish(p, v);
+  fs.writeFileSync(file, 'a fixed cut, saved before Bunny pulled');
+  assert.equal((await statusOf(p, v)).body.sourceChanged, true);
+  const src = new URL(bunny.state.videos.find((x) => x.guid === rowOf(v).bunny_video_id).source);
+  const pulled = await s.raw(src.pathname + src.search, { host: HUB_HOST });
+  assert.equal(pulled.text, 'a fixed cut, saved before Bunny pulled');
+  assert.equal((await statusOf(p, v)).body.sourceChanged, false, 'Bunny has the fixed cut');
+  fs.rmSync(file);
+});
+
+test('the source route serves from the folder publishing checked', async () => {
+  reset();
+  const other = await start({ hubDir: path.join(TMP, 'not-the-deliverables') });
+  try {
+    const p = project();
+    const r = await other.call('POST', `/api/projects/${p.id}/deliverables/${p.item}/versions`, { path: 'Acme/Hero.mp4' });
+    const v = r.body.deliverables.find((d) => d.id === p.item).versions[0].id;
+    assert.equal((await other.call('POST', `${base(p, v)}/bunny`, {})).status, 200);
+    const src = new URL(bunny.state.videos.find((x) => x.guid === rowOf(v).bunny_video_id).source);
+    const pulled = await other.raw(src.pathname + src.search, { host: HUB_HOST });
+    assert.deepEqual([pulled.status, pulled.text], [200, '0123456789']);
+  } finally { await other.close(); }
 });
 
 test('without every Bunny setting, both routes say so, and nothing reaches Bunny', async () => {

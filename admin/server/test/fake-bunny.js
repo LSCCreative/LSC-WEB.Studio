@@ -11,12 +11,14 @@
      listAfter             how many searches pass before a fetched video is listed
                            (Bunny lists one a few seconds after accepting it)
      neverList             fetched videos are never listed
-     statusOnFetch         a fetched video's REST status (4 finished, 3 transcoding)
+     statusOnFetch         a fetched video's REST status (4 finished, 3 transcoding,
+                           5 transcode failed, 6 the pull failed)
+     libraryGone           every request 404s, as a wrong library id would
    calls: every request, with the AccessKey it carried. */
 
 function fakeBunny() {
   const calls = [];
-  const state = { collections: [], videos: [], failFetch: false, listAfter: 0, neverList: false, statusOnFetch: 4 };
+  const state = { collections: [], videos: [], failFetch: false, listAfter: 0, neverList: false, statusOnFetch: 4, libraryGone: false };
   const reply = (status, data) => ({ ok: status < 400, status, json: async () => data });
   const listed = (v) => !state.neverList && v.searchesSeen >= v.listAfter;
 
@@ -25,7 +27,7 @@ function fakeBunny() {
     const method = init.method || 'GET';
     calls.push({ method, path: u.pathname, search: u.search, key: init.headers && init.headers.AccessKey, body: init.body });
     const route = u.pathname.replace('/library/lib1', '');
-    if (!u.pathname.startsWith('/library/lib1')) return reply(404, { message: 'no such library' });
+    if (!u.pathname.startsWith('/library/lib1') || state.libraryGone) return reply(404, { message: 'no such library' });
     if (route === '/collections' && method === 'GET') {
       return reply(200, { items: state.collections.filter((c) => c.name.includes(u.searchParams.get('search'))) });
     }

@@ -81,25 +81,30 @@ function createBunny(settings, { fetchImpl = fetch } = {}) {
     await streamRequest(`/videos/fetch?${params}`, { method: 'POST', body: { url, title } });
   }
 
-  /* Newest video carrying this tag, skipping failed ones so a retry can't adopt
-     the attempt it's replacing. Null if Bunny hasn't listed it yet. */
-  async function findVideoByTag(tag, collectionId) {
+  /* Newest video carrying this tag. Null if Bunny hasn't listed it yet. A failed
+     one is skipped unless `includeFailed`: adopting after a crash must not pick
+     up a dead attempt, but a row looking for its own (unique) tag needs to see
+     that Bunny gave up, or it waits out the 30 minutes for nothing. */
+  async function findVideoByTag(tag, collectionId, { includeFailed = false } = {}) {
     const params = new URLSearchParams({ search: tag, collection: collectionId, itemsPerPage: '100' });
     const { items } = await streamRequest(`/videos?${params}`);
     const matches = (items || [])
-      .filter((v) => v.title?.includes(tag) && statusFromVideo(v) !== 'failed')
+      .filter((v) => v.title?.includes(tag) && (includeFailed || statusFromVideo(v) !== 'failed'))
       .sort((a, b) => String(b.dateUploaded).localeCompare(String(a.dateUploaded)));
     return matches[0] || null;
   }
 
   /* One video by its id, for a row still transcoding. Null once Bunny has no
-     such video (deleted in the dashboard), so the caller can say so. */
+     such video (deleted in the dashboard), so the caller can say so. A 404 only
+     counts as that when the library itself still answers: a wrong library id or
+     a moved API also 404s, and must not read as every video deleted. */
   async function getVideo(videoId) {
     try {
       return await streamRequest(`/videos/${encodeURIComponent(videoId)}`);
     } catch (err) {
-      if (/\(404\)/.test(err.message)) return null;
-      throw err;
+      if (!/\(404\)/.test(err.message)) throw err;
+      await streamRequest('/videos?itemsPerPage=1');
+      return null;
     }
   }
 

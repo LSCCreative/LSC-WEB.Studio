@@ -51,6 +51,12 @@ function publishTag(seed) {
   return `lsc-${sha256Hex(seed).slice(0, 16)}`;
 }
 
+/* Why Bunny gave up on a video, from its REST status: 6 is the pull itself
+   failing (the NAS or the tunnel unreachable from Bunny), 5 the transcode. */
+const TRANSCODE_FAILED = 'Bunny couldn’t transcode the file. Check it plays, then publish again.';
+const PULL_FAILED = 'Bunny couldn’t fetch the file from the NAS. Check hub-api is reachable, then publish again.';
+const failReasonOf = (video) => (video.status === 6 ? PULL_FAILED : TRANSCODE_FAILED);
+
 /**
  * opts:
  *   bunny            Bunny settings (config.hub.bunny)
@@ -106,6 +112,9 @@ function createBunnyPublisher(db, opts = {}) {
     UPDATE bunny_assets SET status = 'failed', error = ?, progress_done = 0, updated_at = ?
      WHERE version_id = ? AND kind = ?
   `);
+  const setServed = db.prepare(`
+    UPDATE bunny_assets SET source_size = ?, source_mtime = ? WHERE version_id = ? AND kind = 'video'
+  `);
   const getCollection = db.prepare('SELECT collection_id FROM bunny_collections WHERE project_id = ?');
   const insertCollection = db.prepare(`
     INSERT INTO bunny_collections (project_id, collection_id, name, created_at) VALUES (?, ?, ?, ?)
@@ -151,6 +160,14 @@ function createBunnyPublisher(db, opts = {}) {
   /* Whether a signed source request is genuine: for the hub router's route. */
   function verifySource(versionId, token, expires) {
     return Boolean(signer) && signer.verifyPath(sourceSignedPath(versionId), token, expires);
+  }
+
+  /* The file as Bunny pulled it, which may be later than the publish (a retry
+     within the link's 6 hours): sourceChanged compares against what Bunny has.
+     A pull that lands before the row exists leaves the publish's own stat,
+     taken a moment before the fetch call. */
+  function servedSource(versionId, stat) {
+    setServed.run(stat.size, Math.round(stat.mtimeMs), versionId);
   }
 
   /* Why a version can't go to Bunny Stream, as [status, code, message], or the
@@ -202,8 +219,12 @@ function createBunnyPublisher(db, opts = {}) {
     if (!row || row.status !== 'processing') return row;
     try {
       if (!row.bunny_video_id) {
-        const video = await bunny.findVideoByTag(row.publish_tag, row.collection_id);
-        if (video) {
+        // The row's own tag is unique to this attempt, so a failed match is this
+        // attempt failing: say why now rather than after 30 minutes.
+        const video = await bunny.findVideoByTag(row.publish_tag, row.collection_id, { includeFailed: true });
+        if (video && statusFromVideo(video) === 'failed') {
+          failAsset.run(failReasonOf(video), isoNow(), row.version_id, row.kind);
+        } else if (video) {
           const status = statusFromVideo(video);
           setVideo.run(video.guid, status, status === 'ready' ? 1 : 0, isoNow(), row.version_id, row.kind);
         } else if (now() - new Date(row.updated_at).getTime() > UNLISTED_VIDEO_LIMIT_MS) {
@@ -216,7 +237,7 @@ function createBunnyPublisher(db, opts = {}) {
         } else {
           const status = statusFromVideo(video);
           if (status === 'failed') {
-            failAsset.run('Bunny couldn’t transcode the file. Check it plays, then publish again.', isoNow(), row.version_id, row.kind);
+            failAsset.run(failReasonOf(video), isoNow(), row.version_id, row.kind);
           } else if (status !== row.status) {
             setVideo.run(row.bunny_video_id, status, status === 'ready' ? 1 : 0, isoNow(), row.version_id, row.kind);
           }
@@ -257,7 +278,7 @@ function createBunnyPublisher(db, opts = {}) {
         });
         for (let attempt = 0; !video && attempt < VIDEO_LOOKUP_ATTEMPTS; attempt += 1) {
           await new Promise((done) => setTimeout(done, lookupGapMs));
-          video = await bunny.findVideoByTag(tag, collectionId);
+          video = await bunny.findVideoByTag(tag, collectionId, { includeFailed: true });
         }
       }
       const status = video ? statusFromVideo(video) : 'processing';
@@ -267,7 +288,7 @@ function createBunnyPublisher(db, opts = {}) {
         collection_id: collectionId,
         publish_tag: tag,
         status,
-        error: status === 'failed' ? 'Bunny couldn’t transcode the file. Check it plays, then publish again.' : null,
+        error: status === 'failed' ? failReasonOf(video) : null,
         progress_done: status === 'ready' ? 1 : 0,
         now: isoNow(),
       });
@@ -299,13 +320,22 @@ function createBunnyPublisher(db, opts = {}) {
    * The caller has already checked the version is this project's and passed check().
    */
   async function publish(project, version, file, { force = false } = {}) {
-    let pending = publishesInFlight.get(version.id);
-    if (!pending) {
-      pending = publishVideo(project, version, file, force).finally(() => publishesInFlight.delete(version.id));
-      publishesInFlight.set(version.id, pending);
+    // A repeat while one is running joins it, unless it's a force behind a plain
+    // publish: that one runs after it, or the Republish would be lost.
+    let entry = publishesInFlight.get(version.id);
+    if (!entry || (force && !entry.force)) {
+      const before = entry ? entry.promise.catch(() => null) : Promise.resolve();
+      const mine = {
+        force,
+        promise: before.then(() => publishVideo(project, version, file, force)).finally(() => {
+          if (publishesInFlight.get(version.id) === mine) publishesInFlight.delete(version.id);
+        }),
+      };
+      publishesInFlight.set(version.id, mine);
+      entry = mine;
     }
     try {
-      const row = await pending;
+      const row = await entry.promise;
       return { httpStatus: row.status === 'failed' ? 502 : 200, body: view(row, file.stat) };
     } catch (err) {
       if (!err.keptExisting) throw err;
@@ -321,7 +351,7 @@ function createBunnyPublisher(db, opts = {}) {
     return view(row, file && file.stat);
   }
 
-  return { ready, missing, check, publish, status, verifySource, refresh, view };
+  return { ready, missing, check, publish, status, verifySource, servedSource, refresh, view };
 }
 
 module.exports = { createBunnyPublisher, UNLISTED_VIDEO_LIMIT_MS, SOURCE_TTL_SECONDS };

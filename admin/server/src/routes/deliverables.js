@@ -337,7 +337,7 @@ function registerDeliverableRoutes(app, db, opts = {}) {
      { force? }. Its own route, beside the client's publish below: Bunny is where
      the client will watch it from, and Slice 4 holds the client's publish until
      this is ready. Once per version unless force, which replaces a working video
-     (a NAS file changed since). Answers the publish's view, not the folder:
+     (a NAS file changed since), and only before the client has the version. Answers the publish's view, not the folder:
      { status, error, sourceChanged, posterUrl, progress }, 502 when Bunny refused. */
   const bunnyPublisher = opts.bunnyPublisher || null;
   const bunnyOff = (res) => refuse(res, 503, 'bunny_not_set_up', 'Publishing to Bunny isn’t set up on this server yet.');
@@ -350,9 +350,15 @@ function registerDeliverableRoutes(app, db, opts = {}) {
       if (!v) return undefined;
       if (d.not_needed_at) return refuse(res, 409, 'not_needed', 'This one is marked not needed. Mark it needed first.');
       if (!bunnyPublisher || !bunnyPublisher.ready) return bunnyOff(res);
+      const force = (req.body || {}).force === true;
+      // A version the client has seen never changes (its notes and approval name it):
+      // a changed file is a new version, not a replaced video.
+      if (force && v.published_at) {
+        return refuse(res, 409, 'published', 'The client has seen this version, so its video stays. Add the new file as a new version.');
+      }
       const checked = await bunnyPublisher.check(v);
       if (checked.refusal) return refuse(res, ...checked.refusal);
-      const { httpStatus, body } = await bunnyPublisher.publish(p, v, checked.file, { force: (req.body || {}).force === true });
+      const { httpStatus, body } = await bunnyPublisher.publish(p, v, checked.file, { force });
       return res.status(httpStatus).json(body);
     } catch (err) {
       return next(err);
