@@ -139,26 +139,28 @@ test('a forged X-Forwarded-For can’t change the IP an approval records (S7)', 
   assert.equal(got.ip, '203.0.113.9', 'the hop the tunnel added, not the one the client wrote');
 });
 
-test('the Bunny publish routes take billing’s real login, and settings can’t replace it (R3)', async () => {
-  const open = await start({ hub: hubSettings({ requireAdmin: (_req, _res, next) => next() }) });
+test('Bunny publishing is under /api, behind billing’s real login; the old /hub pair is gone (Bunny Slice 2)', async () => {
+  const open = await start();
   try {
     open.db.prepare("INSERT INTO account (id, username, password_hash, created_at, updated_at) VALUES (1, 'tester', ?, 'x', 'x')")
       .run(await hashPassword('a-long-test-password'));
-    const routes = [['/hub/publish-asset', 'POST'], ['/hub/publish-status?path=Acme/x.mp4', 'GET']];
-    for (const [p, method] of routes) {
-      const refused = await open.call(p, { method, body: method === 'POST' ? { path: 'Acme/x.mp4' } : undefined });
-      assert.equal(refused.status, 401, p);
+    const route = '/api/projects/p_ip/deliverables/d1/versions/v1/bunny';
+    for (const method of ['POST', 'GET']) {
+      const refused = await open.call(route, { method, body: method === 'POST' ? {} : undefined });
+      assert.equal(refused.status, 401, method);
     }
     const login = await open.call('/api/login', { method: 'POST', body: { username: 'tester', password: 'a-long-test-password' } });
     assert.equal(login.status, 200, login.text);
     const cookie = login.headers['set-cookie'][0].split(';')[0];
-    for (const [p, method] of routes) {
-      // Past the login; these settings have no Bunny keys.
-      const r = await open.call(p, { method, headers: { cookie }, body: method === 'POST' ? { path: 'Acme/x.mp4' } : undefined });
-      assert.deepEqual([r.status, r.body], [503, { error: 'bunny not set up' }], p);
+    // Past the login: there is no such item, which is the next thing checked.
+    assert.equal((await open.call(route, { method: 'GET', headers: { cookie } })).status, 404);
+    for (const [p, method] of [['/hub/publish-asset', 'POST'], ['/hub/publish-status?path=Acme/x.mp4', 'GET']]) {
+      const gone = await open.call(p, { method, host: HUB_HOST, headers: { cookie }, body: method === 'POST' ? { path: 'Acme/x.mp4' } : undefined });
+      assert.equal(gone.status, 404, p);
     }
-    const stray = await open.call('/hub/publish-asset', { method: 'POST', headers: { cookie: 'other=%E0%A4%A' }, body: {} });
-    assert.equal(stray.status, 401, 'another site’s malformed cookie is a refusal, not a server error');
+    // These settings have no Bunny keys, so no source link can be genuine.
+    const source = await open.call('/hub/source/v1/x.mp4?token=abc&expires=9999999999', { host: HUB_HOST });
+    assert.equal(source.status, 404);
   } finally { await open.close(); }
 });
 

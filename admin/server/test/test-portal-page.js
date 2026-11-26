@@ -112,6 +112,11 @@ check('the portal signs in through the server’s session, holding no token of i
   assert.match(page, /attachReviewSource\(video, video\.dataset\.src, videoFailed\)/);
 });
 
+check('the review player plays inline on an iPhone (the user, 2026-11-27)', () => {
+  // Without playsinline every iPhone play goes full screen and the client must leave it to comment.
+  assert.match(fnBody('renderVideoCanvas'), /<video id="asset-video" controls playsinline /);
+});
+
 check('the player survives a revision: the <video> sits outside the partial repaint', () => {
   const interaction = fnBody('renderAssetInteraction');
   assert.doesNotMatch(interaction, /<video|asset-video|pause-pill/, 'the repainted part never builds the player');
@@ -191,4 +196,17 @@ check('no download anywhere on the portal, and notes are saved on the server as 
   assert.match(add, /state\.noteError = noteFailure\(e\)/);
   // Approve is off while notes are unsent.
   assert.match(fnBody('renderAssetInteraction'), /unsent\.length \? 'disabled/);
+});
+
+check('a video on Bunny Stream shows its poster and plays through the same player (Bunny Slice 4)', () => {
+  // The poster comes only with an HLS review, and the review link is the reply's url either way.
+  assert.match(fnBody('portalProject'), /poster: \(!photo && review && review\.type === 'hls' && review\.poster\) \|\| ''/);
+  assert.match(fnBody('portalProject'), /reviewLink: \(!photo && review && review\.url\) \|\| ''/);
+  // A card shows the poster as an <img>: no card pulls a playlist or a segment.
+  const thumb = fnBody('renderAssetThumb');
+  assert.ok(thumb.indexOf('if(a.poster)') < thumb.indexOf('isHlsUrl(a.reviewLink)'));
+  assert.match(thumb, /<img src="\$\{escapeAttr\(a\.poster\)\}"[^>]*onerror="this\.remove\(\)"/);
+  // The review player is still the one <video id="asset-video">, fed by attachReviewSource.
+  assert.match(fnBody('renderVideoCanvas'), /<video id="asset-video"[^>]*\$\{a\.poster \? ` poster="\$\{escapeAttr\(a\.poster\)\}"` : ''\}/);
+  assert.match(page, /attachReviewSource\(video, video\.dataset\.src, videoFailed\)/);
 });

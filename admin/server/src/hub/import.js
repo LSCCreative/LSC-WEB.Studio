@@ -35,10 +35,12 @@ const TABLES = [
   { name: 'private_auth', key: ['project_id'] },
   { name: 'deliverable_tokens', key: ['token'] },
   { name: 'agreement_evidence', key: ['project_id'] },
-  { name: 'bunny_collections', key: ['folder_name'] },
-  { name: 'bunny_assets', key: ['relative_path', 'kind'] },
 ];
-const NOT_COPIED = ['meta', 'admin_sessions'];
+/* The hub's Bunny tables were keyed by NAS path; billing's are per version since
+   v33 (Bunny Slice 2), so there is nowhere to put a row. None was ever real (the
+   hub never had Bunny keys), so empty ones are skipped and a row stops the import. */
+const BUNNY_TABLES = ['bunny_collections', 'bunny_assets'];
+const NOT_COPIED = ['meta', 'admin_sessions', ...BUNNY_TABLES];
 
 /** A stored file link, as hub/routes.js writes them: [https://<host>]/hub/files/<token>. */
 const FILE_LINK = /(?:https?:\/\/([^/"\s]+))?\/hub\/files\/([A-Za-z0-9_-]+)/g;
@@ -56,6 +58,10 @@ function checkHub(hub) {
   const known = new Set([...TABLES.map((t) => t.name), ...NOT_COPIED]);
   const unknown = [...hubTables].filter((t) => !known.has(t) && !t.startsWith('sqlite_'));
   if (unknown.length) throw new Error(`The hub database has tables this import doesn't know: ${unknown.join(', ')}. Nothing was copied.`);
+  for (const table of BUNNY_TABLES) {
+    const rows = hubTables.has(table) ? hub.prepare(`SELECT COUNT(*) FROM ${quote(table)}`).pluck().get() : 0;
+    if (rows) throw new Error(`The hub's ${table} has ${rows} row(s), and billing.db keeps Bunny publishes per version now. Nothing was copied.`);
+  }
   if (!TABLES.some((t) => hubTables.has(t.name))) {
     throw new Error('That isn\'t the Client Hub\'s database: it has none of the hub\'s tables. Nothing was copied.');
   }

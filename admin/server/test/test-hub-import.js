@@ -30,7 +30,7 @@ let n = 0;
 const file = (name) => path.join(TMP, `${name}-${(n += 1)}.db`);
 
 /** A hub database in the hub's schema 6, with a little of everything. */
-function makeHub({ old = false } = {}) {
+function makeHub({ old = false, bunnyRow = false } = {}) {
   const f = file('client-hub');
   const db = new Database(f);
   db.pragma('journal_mode = WAL');
@@ -58,6 +58,9 @@ function makeHub({ old = false } = {}) {
   } else {
     db.prepare("INSERT INTO deliverable_tokens VALUES ('tokA', 'Acme/Final.mp4', 0, '2026-10-01T00:00:00.000Z')").run();
     db.prepare("INSERT INTO deliverable_tokens VALUES ('tokB', 'Acme/Final.mp4', 1, '2026-10-01T00:00:00.000Z')").run();
+  }
+  // The hub never had Bunny keys, so its Bunny tables were empty; a row is the case the import refuses.
+  if (bunnyRow) {
     db.prepare("INSERT INTO bunny_collections VALUES ('Acme', 'col-1', '2026-10-03T00:00:00.000Z')").run();
     db.prepare("INSERT INTO bunny_assets VALUES ('Acme/Final.mp4', 'video', 'vid-1', NULL, 'col-1', 'tag1', 'ready', NULL, 1234, 5678, '2026-10-03T00:00:00.000Z', '2026-10-03T00:00:00.000Z')").run();
   }
@@ -89,9 +92,9 @@ test('every hub table comes across, its times as written, and a second run chang
   assert.deepEqual(first.conflicts, []);
   assert.deepEqual(counts(first), {
     records: [2, 2, 0], private_auth: [2, 2, 0], deliverable_tokens: [2, 2, 0],
-    agreement_evidence: [1, 1, 0], bunny_collections: [1, 1, 0], bunny_assets: [1, 1, 0],
+    agreement_evidence: [1, 1, 0]
   });
-  assert.deepEqual(first.skipped, ['meta', 'admin_sessions']);
+  assert.deepEqual(first.skipped, ['meta', 'admin_sessions', 'bunny_collections', 'bunny_assets'], 'the Bunny tables are empty, so skipped');
   assert.equal(count(billing, 'admin_sessions'), 0, 'the editor signs in again');
   assert.deepEqual(verifyImport(hub, billing), []);
   assert.equal(billing.prepare("SELECT updated_at FROM records WHERE project_id = 'p2'").pluck().get(), '2026-11-05 23:30:00',
@@ -102,7 +105,7 @@ test('every hub table comes across, its times as written, and a second run chang
   const second = importHub(hub, billing);
   assert.deepEqual(counts(second), {
     records: [2, 0, 2], private_auth: [2, 0, 2], deliverable_tokens: [2, 0, 2],
-    agreement_evidence: [1, 0, 1], bunny_collections: [1, 0, 1], bunny_assets: [1, 0, 1],
+    agreement_evidence: [1, 0, 1]
   });
   assert.equal(fingerprint(billing), before, 'nothing changed');
   hub.close(); billing.close();
@@ -155,11 +158,19 @@ test('an older hub, without Bunny tables or downloadable links, comes across wit
   const billing = openDatabase(file('billing'));
   const report = importHub(hub, billing);
   assert.equal(report.written, true);
-  assert.equal(counts(report).bunny_assets, 'absent');
-  assert.equal(counts(report).bunny_collections, 'absent');
+  assert.deepEqual(report.skipped, ['meta', 'admin_sessions'], 'no Bunny tables to skip');
   assert.deepEqual(billing.prepare('SELECT token, downloadable FROM deliverable_tokens ORDER BY token').all(),
     [{ token: 'tokA', downloadable: 0 }, { token: 'tokB', downloadable: 0 }], 'review links, their only kind then');
   assert.deepEqual(verifyImport(hub, billing), []);
+  hub.close(); billing.close();
+});
+
+test('a hub Bunny row stops the import before anything is written: billing keeps them per version (v33)', () => {
+  const { hub } = makeHub({ bunnyRow: true });
+  const billing = openDatabase(file('billing'));
+  const before = fingerprint(billing);
+  assert.throws(() => importHub(hub, billing), /hub's bunny_collections has 1 row\(s\)[^]*Nothing was copied/);
+  assert.equal(fingerprint(billing), before);
   hub.close(); billing.close();
 });
 

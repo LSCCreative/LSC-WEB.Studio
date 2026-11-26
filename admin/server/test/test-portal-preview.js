@@ -234,7 +234,7 @@ test('the server refuses every write under a preview, whatever the route, and no
 
   // Every hub write either goes through signedIn (so a preview is refused there), or is one
   // of these, none of which acts as a client. A new client write without signedIn fails here.
-  const notAsClient = ['/hub/auth', '/hub/invite', '/hub/sign-out', '/hub/preview', '/hub/preview/end', '/hub/publish-asset'];
+  const notAsClient = ['/hub/auth', '/hub/invite', '/hub/sign-out', '/hub/preview', '/hub/preview/end', '/hub/bunny-webhook'];
   const writes = routes.filter((r) => r.method !== 'GET' && r.method !== 'HEAD');
   assert.deepEqual(writes.filter((r) => !r.signedIn && !notAsClient.includes(r.path)), []);
   const clientWrites = writes.filter((r) => r.signedIn);

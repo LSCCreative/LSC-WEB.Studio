@@ -136,7 +136,8 @@ const ProjectDeliverables = (() => {
       const clock = deemedOf(item);
       return 'v' + newest.n + ' published ' + when(newest.publishedAt) + (clock && clock.due ? ' · approval due' : '');
     }
-    return 'v' + newest.n + ' not published' + (published ? ' · v' + published.n + ' is with the client' : '');
+    const bunny = { none: ' · send to Bunny first', processing: ' · Bunny processing', failed: ' · Bunny failed', ready: ' · Bunny has an old cut' }[bunnyHold(newest)] || '';
+    return 'v' + newest.n + ' not published' + bunny + (published ? ' · v' + published.n + ' is with the client' : '');
   }
 
   /* Sets sent on Finals (C5). Past the included ones the client was told it's charged
@@ -157,7 +158,8 @@ const ProjectDeliverables = (() => {
     const off = Boolean(item.notNeededAt);
     const meta = [item.format, item.duration].filter(Boolean).join(' · ');
     const named = item.title;
-    const canPublish = newest && !newest.publishedAt && !off && !filed();
+    // A video waiting on Bunny opens its page, where Send to Bunny is.
+    const canPublish = newest && !newest.publishedAt && !off && !filed() && !bunnyHold(newest);
     const primary = filed()
       ? '<button type="button" class="btn btn-sm" data-dlv="open" data-id="' + esc(item.id) + '" aria-label="Open ' + esc(named) + '">Open</button>'
       : off
@@ -430,6 +432,241 @@ const ProjectDeliverables = (() => {
     });
   }
 
+  // ── Bunny Stream (Bunny Slice 4) ──────────────────────────────────────────
+  /* With Bunny on (the folder's bunnyOn), the client watches a video from Bunny
+     Stream: Send to Bunny comes first, and the client's Publish waits until it's
+     ready there with the file the NAS holds now. The two stay separate steps, since
+     Bunny takes minutes and Publish can email the client. Photo libraries aren't
+     sent yet (Bunny Slice 7). The folder carries each version's status; a read of
+     /bunny adds the poster and whether the NAS file changed since, and is repeated
+     while Bunny processes. The newest read is kept per version, so a redraw (any
+     write's reply) starts from it, not from the older folder. */
+  const BUNNY_CHECK_MS = 10000;
+  const bunnyViews = new Map();
+  let bunnyTimer = null;
+  const stopBunnyChecks = () => {
+    clearTimeout(bunnyTimer);
+    bunnyTimer = null;
+  };
+
+  const bunnyApplies = (v) => Boolean(ctx.folder.bunnyOn && v && v.kind === 'video' && v.sourcePath);
+  /* The folder's status wins when it differs (the webhook moved it on since the
+     last read); the kept read adds the poster and the changed-file check. */
+  function bunnyOf(v) {
+    const status = v.bunny ? v.bunny.status : 'none';
+    const seen = bunnyViews.get(v.id);
+    if (seen && seen.status === status) return seen;
+    return { status, error: v.bunny ? v.bunny.error : null, sourceChanged: false, posterUrl: null };
+  }
+  /* Why the client's Publish waits, or '' when it needn't. */
+  function bunnyHold(v) {
+    if (!bunnyApplies(v) || v.publishedAt) return '';
+    const b = bunnyOf(v);
+    return b.status === 'ready' && !b.sourceChanged ? '' : b.status;
+  }
+  /* A view the server answered with: kept, and the folder's copy brought level, so
+     the checklist row says the same when the screen goes back to it. */
+  function keepBunny(v, view) {
+    const kept = { status: view.status, error: view.error || null, sourceChanged: Boolean(view.sourceChanged), posterUrl: view.posterUrl || null };
+    bunnyViews.set(v.id, kept);
+    v.bunny = view.status === 'none' ? null : { status: kept.status, error: kept.error, videoId: (v.bunny && v.bunny.videoId) || null };
+    return kept;
+  }
+
+  const BUNNY_CHIP = {
+    none: ['Not sent', 'is-void'],
+    processing: ['Processing', 'is-info'],
+    ready: ['Ready', 'is-ok'],
+    failed: ['Failed', 'is-alert'],
+  };
+
+  function bunnyMarkup(item, v) {
+    if (!bunnyApplies(v)) return '';
+    const b = bunnyOf(v);
+    const n = 'v' + v.n;
+    const can = !filed() && !item.notNeededAt;
+    const sent = Boolean(v.publishedAt);
+    const chip = b.status === 'ready' && b.sourceChanged ? ['Old cut', 'is-alert'] : BUNNY_CHIP[b.status] || BUNNY_CHIP.none;
+    const button = (label, force) => '<button type="button" class="btn btn-sm" data-write id="dlv-bunny-send"' +
+      (force ? ' data-force' : '') + '>' + label + '</button>';
+    let note = '';
+    let act = '';
+    if (b.status === 'processing') {
+      note = 'Bunny is fetching the file from the NAS and transcoding it. This checks again every 10 seconds, and you can leave the page.';
+    } else if (b.status === 'failed') {
+      note = (b.error || 'Bunny couldn’t take it.') + (sent ? ' Until it’s there, the client watches it from the NAS.' : '');
+      if (can) act = button('Send to Bunny again');
+    } else if (b.status === 'ready' && b.sourceChanged) {
+      note = sent
+        ? 'The NAS file changed after ' + n + ' went out. The client still watches the cut on Bunny: add the new file as a new version.'
+        : 'The NAS file changed after it went to Bunny, so Bunny has the old cut. Republish it before you publish ' + n + '.';
+      if (can && !sent) act = button('Republish to Bunny…', true);
+    } else if (b.status === 'ready') {
+      note = sent ? 'The client watches it from Bunny.' : 'The client will watch it from Bunny once you publish ' + n + '.';
+    } else {
+      note = sent
+        ? 'The client watches this from the NAS. Send it to Bunny and they’ll watch it from there once it’s ready, ' +
+          'as long as the NAS file is still the one they were given.'
+        : 'The client watches videos from Bunny Stream, so send it there before you publish. Bunny fetches it from the NAS and transcodes it, which takes a few minutes.';
+      if (can) act = button('Send to Bunny');
+    }
+    const poster = b.status === 'ready' && b.posterUrl
+      ? '<div class="dlv-bunny-poster"><img src="' + esc(b.posterUrl) + '" alt="" loading="lazy"></div>' : '';
+    return (
+      '<div class="dlv-bunny' + (poster ? ' has-poster' : '') + '" id="dlv-bunny">' + poster +
+      '<div class="dlv-bunny-body">' +
+      '<p class="dlv-bunny-head"><span class="dlv-bunny-label">Bunny Stream</span>' +
+      '<span class="pf-chip ' + chip[1] + '">' + chip[0] + '</span></p>' +
+      '<p class="dlv-note" id="dlv-bunny-note" role="status">' + esc(note) + '</p>' +
+      (act ? '<div class="dlv-bunny-acts">' + act + '</div>' : '') +
+      '</div></div>'
+    );
+  }
+
+  /* Redraws the Bunny block and Publish's hold in place: the preview, a half-typed
+     Drive link and focus elsewhere on the page are left alone. */
+  function paintBunny(item, v) {
+    const block = $('dlv-bunny');
+    if (!block) return;
+    const hadFocus = block.contains(document.activeElement);
+    block.outerHTML = bunnyMarkup(item, v);
+    bindBunny(item, v);
+    const publishBtn = $('dlv-publish');
+    if (publishBtn) {
+      const held = Boolean(bunnyHold(v));
+      publishBtn.disabled = held;
+      if (held) publishBtn.setAttribute('aria-describedby', 'dlv-bunny-note');
+      else publishBtn.removeAttribute('aria-describedby');
+    }
+    if (hadFocus) focusBunny();
+  }
+  /* Focus back on the block after its button was replaced: its next action, or the
+     block itself while there is none (Processing), so the keyboard isn't dropped. */
+  function focusBunny() {
+    const block = $('dlv-bunny');
+    if (!block) return;
+    const publishBtn = $('dlv-publish');
+    const next = $('dlv-bunny-send') || (publishBtn && !publishBtn.disabled ? publishBtn : null);
+    if (next) return next.focus();
+    block.setAttribute('tabindex', '-1');
+    block.focus();
+  }
+
+  /* The item and version as the screen holds them now, if it is still that
+     version's page: a reply that lands after the studio moved on (another item,
+     another project, a redraw from another write) must not paint there
+     (web/README.md, "A write's outcome must not touch a screen the user has
+     left"). Null otherwise. */
+  function stillOn(projectId, itemId, versionId) {
+    if (!ctx || !box || !box.isConnected || ctx.itemId !== itemId || ctx.folder.project.id !== projectId) return null;
+    const item = ctx.folder.deliverables.find((d) => d.id === itemId);
+    const v = item && newestOf(item);
+    if (!v || v.id !== versionId || !$('dlv-bunny')) return null;
+    return { item, v };
+  }
+
+  const sameView = (a, b) => Boolean(a && b) && a.status === b.status && a.error === b.error &&
+    a.sourceChanged === b.sourceChanged && a.posterUrl === b.posterUrl;
+
+  /* Reads where the publish stands, and again every 10 seconds while Bunny is
+     processing it. Stops once the screen has moved on. Repaints only when
+     something changed, so focus and the status note are left alone otherwise. */
+  async function checkBunny(item, v) {
+    stopBunnyChecks();
+    const block = $('dlv-bunny');
+    if (!block || !v.bunny) return;
+    try {
+      const view = await LSCApi.get(versionUrl(item, v, '/bunny'));
+      if (!block.isConnected) return;
+      const before = bunnyOf(v);
+      const kept = keepBunny(v, view);
+      if (!sameView(before, kept)) paintBunny(item, v);
+    } catch (err) {
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (err.kind === 'auth') return ctx.authLost();
+      if (!block.isConnected) return;
+      const note = $('dlv-bunny-note');
+      if (note && err.kind !== 'network') note.textContent = 'Couldn’t check Bunny: ' + failureText(err);
+    }
+    if (bunnyOf(v).status === 'processing' && $('dlv-bunny')) {
+      bunnyTimer = setTimeout(() => {
+        if ($('dlv-bunny') && $('dlv-bunny').isConnected) checkBunny(item, v);
+      }, BUNNY_CHECK_MS);
+    }
+    return undefined;
+  }
+
+  /* Sends the version to Bunny, or with force replaces the video it has there.
+     The reply is the publish's state, with `refused` when Bunny said no (a 200:
+     the server is fine). What Bunny answered is kept whatever screen is up;
+     `live` is the screen to show it on, or null when the studio has moved on. */
+  async function postBunny(item, v, force) {
+    const at = [ctx.folder.project.id, item.id, v.id];
+    try {
+      const view = await LSCApi.post(versionUrl(item, v, '/bunny'), force ? { force: true } : {});
+      keepBunny(v, view);
+      const live = stillOn(...at);
+      if (live) keepBunny(live.v, view);
+      return { view, live, refused: view.refused ? view.error || 'Bunny refused it.' : null };
+    } catch (err) {
+      if (!(err instanceof LSCApi.ApiError)) throw err;
+      if (err.kind === 'auth') {
+        ctx.authLost();
+        return null;
+      }
+      const live = stillOn(...at);
+      if (err.code === 'not_found') {
+        if (live) ctx.missing();
+        return null;
+      }
+      return { live, refused: failureText(err) };
+    }
+  }
+
+  function bindBunny(item, v) {
+    // A thumbnail that won't load leaves the frame empty rather than a broken image.
+    const poster = box.querySelector('.dlv-bunny-poster img');
+    if (poster) poster.addEventListener('error', () => poster.remove(), { once: true });
+    const send = $('dlv-bunny-send');
+    if (!send) return;
+    const settle = (result) => {
+      if (!result || !result.live) return;
+      const { item: liveItem, v: liveV } = result.live;
+      paintBunny(liveItem, liveV);
+      // A failed row says why in the block; anything else refused (a kept video, a
+      // file gone) goes in the panel's error line.
+      if (result.refused && (!result.view || result.view.status !== 'failed')) showError(result.refused);
+      if (bunnyOf(liveV).status === 'processing') checkBunny(liveItem, liveV);
+    };
+    if (send.hasAttribute('data-force')) {
+      send.addEventListener('click', () => ctx.confirm(send, {
+        title: 'Republish v' + v.n + ' to Bunny?',
+        body: 'Bunny fetches ' + (v.fileName || 'the file') + ' from the NAS again, and v' + v.n + ' uses the new video once it’s ready. ' +
+          'The old one stays on Bunny until cleanup takes it off.',
+        confirm: 'Republish',
+        run: async () => {
+          clearError();
+          const result = await postBunny(item, v, true);
+          // Refused with nothing to show (the file gone, say): the dialog says why.
+          if (result && result.refused && !result.view) throw new Error(result.refused);
+          settle(result);
+          // The dialog hands focus back to the button it came from, which settle replaced.
+          if (result && result.live) setTimeout(focusBunny, 0);
+        },
+      }));
+      return;
+    }
+    send.addEventListener('click', () => busyWhile(send, async () => {
+      clearError();
+      Toast.working('Sending to Bunny…');
+      const result = await postBunny(item, v, false);
+      if (result && !result.refused) Toast.ok(result.view.status === 'ready' ? 'Ready on Bunny.' : 'Sent. Bunny is processing it.');
+      else if (result && result.refused && !result.live) Toast.error('Bunny didn’t take v' + v.n + ' of ' + item.title + ': ' + result.refused);
+      else Toast.hide();
+      settle(result);
+    }));
+  }
+
   // ── One deliverable ───────────────────────────────────────────────────────
 
   function stageMarkup(item) {
@@ -467,8 +704,12 @@ const ProjectDeliverables = (() => {
       '<p class="dlv-file-name">' + esc(v.fileName || v.sourcePath) + '</p>' +
       '<p class="dlv-note">' + esc(what) + ' · ' + STAGE[v.stage] + '</p>' +
       '<p class="dlv-path ref">' + esc(v.sourcePath) + '</p>' +
+      bunnyMarkup(item, v) +
       '<div class="dlv-acts">' +
-      (live && !v.publishedAt && !off ? '<button type="button" class="btn" data-write id="dlv-publish">Publish v' + v.n + '…</button>' : '') +
+      (live && !v.publishedAt && !off
+        ? '<button type="button" class="btn" data-write id="dlv-publish"' +
+          (bunnyHold(v) ? ' disabled aria-describedby="dlv-bunny-note"' : '') + '>Publish v' + v.n + '…</button>'
+        : '') +
       '<button type="button" class="btn" id="dlv-preview">Preview</button>' +
       (live && !v.publishedAt ? '<button type="button" class="btn btn-ghost" data-write id="dlv-remove-version">Remove this version</button>' : '') +
       '</div>' +
@@ -717,6 +958,12 @@ const ProjectDeliverables = (() => {
 
     const publishBtn = $('dlv-publish');
     if (publishBtn) publishBtn.addEventListener('click', () => publish(item, publishBtn));
+    if (newest && bunnyApplies(newest)) {
+      bindBunny(item, newest);
+      // The folder has the status only: the poster, a changed NAS file and a
+      // processing one's progress come from Bunny's side.
+      if (newest.bunny) checkBunny(item, newest);
+    }
     const deemBtn = $('dlv-deem');
     if (deemBtn) deemBtn.addEventListener('click', () => markDeemed(item, deemBtn));
     const previewBtn = $('dlv-preview');
@@ -797,6 +1044,7 @@ const ProjectDeliverables = (() => {
 
   /* The panel, for ctx.itemId. False when that item doesn't exist. */
   function draw(panel, context) {
+    stopBunnyChecks();
     box = panel;
     ctx = context;
     if (ctx.itemId) {

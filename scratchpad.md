@@ -231,12 +231,115 @@ copy, no existing value changed, server boots on it. Step 3: **NAS deployed** at
 `/volume4/lsc-admin/app.prev-c9`; new image `178549010c2b`, migrated v21→v31 on boot, `m6-checks.sh` ALL PASS. The build takes
 ~10 minutes on the NAS (npm). **The NAS moved to 192.168.1.46** (same host keys as .45): use
 `ssh -o HostName=192.168.1.46 -o HostKeyAlias=192.168.1.45 lsc-nas` until the router reserves it and ~/.ssh/config is updated.
-Until step 4 the old portal page on Pages can't sign in (its routes are gone); no client is live.
+Step 4: PR LSCCreative/LSC-WEB.Studio#2 merged as `f86adae`; the Pages run succeeded (tokens copied); the live portal loads,
+reaches hub-api and shows sign-in (fonts and tokens load; only the signed-out 401 in the console).
 **Rollback:** `cd /volume4/lsc-admin && mv app app.c9 && mv app.prev-c9 app && docker tag lsc-admin:pre-c9 lsc-admin:latest`, put the
 pre-c9 db back as `data/billing.db` (container stopped), then `cd app && docker compose up -d` (no --build).
-Left: step 4 (PR merged-admin → main, which deploys Pages), step 5 (the user's real job on a phone), step 6 (docs, CORS_ORIGINS, old containers).
+Step 5: the user ran test project PTC9 end to end on a phone; all six steps worked, the server log stayed empty.
+**C9 done.** Left with the user: void the test deposit INV-11021927 in Hnry (PTC9's deposit was pushed there); remove
+`CORS_ORIGINS` from the NAS `.env` (then `docker compose up -d`, no --build); remove the old `lsc-billing` and `client-hub-api`
+containers on OK; reserve the NAS's address and update ~/.ssh/config. The local live-db copies were deleted.
 
-**Next within C9: step 4 | Model: Opus 5.5 | Effort: High.** Merge `merged-admin` to `main`, redeploy (NAS before Pages),
+**C10 done 2026-11-26 (not deployed).** Schema v32 `files_releases`, `server/src/files-release.js`, mail templates
+`filesReadyEmail` / `filesSentOwnerEmail` / `filesNotSentOwnerEmail`, Mark paid dialog note + toast, Activity labels.
+Code review (9 findings): 8 fixed, 1 not needed (a void always makes an unpaid replacement). v32 baselines every job
+already paid and approved, so old jobs never email on their own. 1106/1106 pass (14 in `test-files-release.js`).
+Seen on the dev server (stub mail): dialog wording, client email, toast, and a baselined job's "already has their files".
+**C10 deployed 2026-11-26 (NAS only, `af74649`).** NAS code checksummed against `5853094` first (180/180 match). Live
+backup `data/backups/pre-c10-20261126-115830.db`; dry run on a copy: every existing table identical, `files_releases`
+0 rows (no job was paid and approved, so no baselines). Rollback image `lsc-admin:pre-c10` (`178549010c2b`), previous
+folder `/volume4/lsc-admin/app.prev-c10`; new image `302e7892ab62`, migrated v31→v32 on boot (premigrate copy taken),
+mail connected, `m6-checks.sh` ALL PASS. `MAIL_REPLY_TO` is set. Local live-db copies deleted.
+**Rollback:** as C9's, with `app.prev-c10`, `lsc-admin:pre-c10` and the pre-c10 db.
+**Heads-up:** PTC9's Final is paid and approved but its deposit is still a live draft; voiding it (or marking it paid)
+makes the job fully paid, and C10 then emails PTC9's test client their files. A fine first live check.
+`merged-admin` is ahead of origin with C10 and these notes (not pushed; `main` doesn't need it for the NAS).
+
+**B2 Slice 2 done 2026-11-26 (committed, not pushed, not deployed).** Schema v33 rebuilds `bunny_assets`
+(per version + kind, no FKs on purpose) and `bunny_collections` (per project, named "<projectId> <name>", found
+again by the id prefix). `src/bunny-publish.js` holds the logic; the old `/hub/publish-asset` / `-status` and the
+hub router's `requireAdmin`/`backupDir` options are gone. **Route change from the plan:** the Bunny fetch is
+`POST`/`GET /api/projects/:id/deliverables/:itemId/versions/:versionId/bunny`, beside R3's client publish (which
+already owned `…/publish`). Slice 4 must decide: chain them on one button, or two steps, and hold the client's
+publish of a video until Bunny is ready. Bunny pulls from `/hub/source/<versionId>/<name>?token&expires` (6 h).
+Code review (7 findings) all fixed: a video Bunny fails before listing says why at once (6 = pull failed,
+5 = transcode); a Republish behind a running publish runs after it; force is refused on a version the client
+has seen (a changed file is a new version: Slice 4 must not offer Republish there); a 404 is "deleted" only if
+the library answers; sourceChanged follows what Bunny pulled; one deliverables folder for check and source; the
+v33 empty-tables check is in DEPLOYMENT.md step 5 and Slice 5. 1129/1129 (22 in `test-bunny-publish.js`). **The NAS `.env` has no `BUNNY_*`
+names at all** (checked by name only): add them before Slice 5's deploy, or publishing answers 503.
+
+**B2 Slice 3 done 2026-11-26 (committed, not pushed, not deployed).** `POST /hub/bunny-webhook` in the hub
+router above its `express.json`, read with `express.raw`. Signature per Bunny's docs (fetched 2026-11-26):
+lowercase hex HMAC-SHA256 of the raw body with `BUNNY_STREAM_READ_KEY`, headers `X-BunnyStream-Signature`,
+`-Version: v1`, `-Algorithm: hmac-sha256`. Payload has `EventId` and `Timestamp`; rows keep `last_event_at`
+(added straight into v33: the scratch db was still at v32, so v33 had run nowhere). An unknown id → 200 and
+a background tag lookup for rows still without an id (`app.locals.bunnyPublisher.adopted()` for tests).
+Needs you's Publish failed is computed (failed row, newest version, needed item); its row text is one
+line in `web/js/needs.js`, not checked in the browser. **Slice 5 adds a user step:** set the library's
+webhook URL to `https://hub-api.lsccreative.studio/hub/bunny-webhook`. 1137/1137.
+Slice 3 review (6) fixed: a webhook with Bunny's headers that fails verification is logged (at most every
+10 min); REST-seen states set `last_event_at` too, so a delayed older webhook can't undo them; a row the
+30-minute limit failed is taken up if its video turns up within 6 h; unknown-id lookups run at most every
+15 s; a zoneless Timestamp is UTC. Publish failed row seen in the browser on the scratch admin (desktop and
+375 px, links to the item). **The scratch db is now at v33** (portal-api restarted). 1142/1142.
+
+**B2 Slice 4 done 2026-11-26 (committed, not pushed, not deployed).** Two steps, not one button: the version
+panel's **Bunny Stream** block (Not sent / Processing / Ready + poster / Failed + reason / Old cut + Republish…,
+never on a published version) above the client's Publish, which is disabled (aria-describedby the note) until
+Bunny is ready with the file the NAS holds now. The server enforces it: with Bunny on, `…/publish` of a video
+answers 409 `bunny_not_ready` / `bunny_stale` (its status read also asks Bunny, so a just-finished one passes).
+Photo libraries aren't held. A published video with no row can be sent too (old projects move over). The
+block checks `GET …/bunny` on open and every 10 s while processing (stops on any redraw). Folder replies carry
+`bunnyOn` and each version's `bunny` {status, error, videoId} (readChecklist); the portal's allow-list drops it
+and `reviewOf` builds `{ type:'hls', url, poster }` for a ready row only, everything else keeps the NAS link.
+Portal: cards and `#asset-video` take `poster`; playback unchanged through `attachReviewSource`. The dashboard
+has no media cards, so only the project page's deliverable cards changed. Bunny's stored reasons now say
+"send it to Bunny again". Tests: `test-bunny-review.js` (6) + a page check; 1149/1149 (re-run after the last focus fix).
+Browser (scratch, fake Bunny via `portal-api-fakebunny` in launch.json, script in this session's scratchpad,
+public Mux test HLS stream): admin Not sent → Processing → Ready by itself → Old cut (touched the file) →
+Republish → Publish, desktop and 375 px; portal card poster; **player contract on HLS in Chromium desktop and
+375 px: 1-6 pass** (no pill before Comment revisions; rounds notice → Continue stamps 00:43 at 43.258 s; pause
+re-stamps 01:15, play clears; Add note saved 75.858015 s = currentTime, box empty, same <video>, no reload;
+Approve absent while open; two fatal hls errors → fallback card → Try again plays). **Not checked: desktop
+Safari and a physical iPhone (native HLS)** — Slice 5's real-device run. Scratch db: C2-0001 Hero film v6 is
+published with a ready row on fake `vid-2` (plays from the NAS under plain portal-api, Bunny off).
+
+Slice 4 review (7) fixed: a Bunny refusal answers 200 with `refused: true`, not 502 (the admin read any 5xx as
+the server down and blocked every write); a Send to Bunny reply that lands after the studio left the item is
+kept but not painted (stillOn); Send on a published version is refused (409 `changed_since_published`) when
+the NAS file's mtime is after its publish; Needs you's Publish failed skips published versions; the 10 s check
+repaints only on a change; Slice 5 gained a user step for Bunny's Allowed Referrers (links are public until
+Slice 9). Checked in the browser on the fake Bunny: a refusal shows Failed with no banner; leaving mid-send
+left the other project's block alone. 1150/1150.
+
+**B2 Slice 5 in progress 2026-11-26.** NAS deployed at `bf7f9fd`, schema v33 (backup `pre-b2-20261126-154635.db`,
+image `lsc-admin:pre-b2`, folder `app.prev-b2`; dry run on a live copy first, copies deleted). m6-checks ALL PASS.
+The 8 `BUNNY_*` were piped from 1Password ("LSC Client Hub Bunny", mounted at `~/.config/lsc-billing/bunny.env`)
+into the NAS `.env` with grep, never printed (`.env.pre-bunny` kept); `up -d`; the boot warning is gone and an
+unsigned webhook gets 401. Bunny library 683470: webhook URL was already set; Allowed domains `lsccreative.studio`
+and `app.lsccreative.studio` (exact match: the bare domain doesn't cover `app`); Block direct url access left off,
+so no-referrer requests (native HLS) play; a foreign referrer gets 403.
+Real run on PTC9 Video 1: v3 = `Test Media/Online Video/Sheds Of Woollamia_V04_PVSFN07.mp4` (369 MB). Send took
+~11 s (collection `prj_cf6efa37 C9 Test` made, video listed at once); Bunny pulled it through the Tunnel and
+transcoded in ~8 min; Ready arrived by the signed webhook (last_event_at = the event's Timestamp). Published,
+no email. Live portal (Pages still the C9 page, so no card poster until the merge) plays Bunny HLS via hls.js;
+View as client in Chromium: contract 1, 2, 4, 5 pass, 3 refused as a preview should (text kept, no reload).
+2026-11-26 21:22-21:25 UTC: the user signed in as the client on the iPhone (Chrome for iOS, `CriOS/158`) and the Mac
+(Chrome 158); two notes on v3 (one with no stamp, one at 121.088 s) sent as one set; no approval, so no C10 email.
+**`playsinline` adopted** (the user, 2026-11-27): `#asset-video` in `client-hub-app/index.html`, a page check in
+`test-portal-page.js`, feature-spec's Player decisions; 1151/1151. It's portal-side, so it ships with the Pages
+release (merge `merged-admin` → `main`, ask first). **Left before ticking Slice 5:** that release, then the iPhone
+contract again (inline); desktop Safari unchecked (no Safari session reached the server). An imported NAS-linked
+version: none live (PTC9's v1/v2 were made here), so that check has nothing to run on.
+
+**After Slice 5:** per ROADMAP/TASKS.md the order is payment next, then the remaining Bunny slices (Slice 6,
+photo libraries → Edge Storage, Opus 5.5 | High). Ask the user before any push or the merge to `main` (Pages). User steps first:
+the 8 `BUNNY_*` names in the NAS `.env`, the library's webhook URL, empty live bunny tables (v33).
+
+(C10 as planned:) New task (the user's call,
+2026-11-26, spec in TASKS.md): whole job paid + every item approved → client emailed each approved Final's Drive link, owner
+copied, no confirmation; Bunny links join at B3. Then B2 Publish video through Bunny (Opus 5.5 | High). Merge `merged-admin` to `main`, redeploy (NAS before Pages),
 one real job start to finish with a test client on a real phone. Payment stays off. Ask the user before any push or deploy.
 
 **M2 done 2026-11-06 (local `46c3b78`, not pushed).** Hub code is in `admin/server/src/hub/`:

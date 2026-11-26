@@ -577,6 +577,139 @@ function deemedReminderEmail(v) {
   };
 }
 
+/* ── The files, once the job is paid (merged-admin C10) ─────────────────── */
+
+/* Only a web address is a link in these emails; anything else is left out. */
+const webLink = (v) => (/^https?:\/\/\S+$/i.test(String(v || '').trim()) ? String(v).trim() : '');
+
+/* Each item as a line: its title, the version, and its link or why there's none. */
+function fileLines(files, missingWord) {
+  return files.map((f) => {
+    const name = `${f.title || 'Deliverable'}${f.versionN ? ` (v${f.versionN})` : ''}`;
+    const link = webLink(f.driveLink);
+    return { name, link, text: link ? `${name}: ${link}` : `${name}: ${missingWord}` };
+  });
+}
+
+function fileListHtml(lines, missingWord) {
+  return '<ul style="margin:0 0 14px;padding:0 0 0 20px">' + lines.map((l) => '<li style="margin:0 0 8px">' + (l.link
+    ? `<a href="${esc(l.link)}" style="color:${C.ink};font-weight:700">${esc(l.name)}</a>`
+    : `${esc(l.name)}: <span style="color:${C.muted}">${esc(missingWord)}</span>`) + '</li>').join('') + '</ul>';
+}
+
+/**
+ * The client's files (C10): sent once the job is paid and every item approved.
+ * Each approved Final with its Drive backup link; an item without one is named,
+ * and the studio sends it by hand. `update`: a newer Final (or link) after the
+ * first email went, so this one says it is the latest set.
+ *
+ * @param {{business:object, appUrl:string, contactName?:string, projectName?:string,
+ *          upid?:string, files:Array<{title:string, versionN?:number, driveLink?:string}>,
+ *          update?:boolean}} v
+ */
+function filesReadyEmail(v) {
+  const b = businessOf(v);
+  const business = b.name;
+  const project = v.projectName || 'your project';
+  const missingWord = 'we’ll send this one to you separately';
+  const files = fileLines(v.files || [], missingWord);
+  const linked = files.filter((f) => f.link).length;
+  const intro = v.update
+    ? `We’ve updated the files for ${project}. These are the latest links, and they replace the ones we sent before.`
+    : `Thanks for your payment. ${project.charAt(0).toUpperCase() + project.slice(1)} is complete, and here ${files.length === 1 ? 'is your file' : 'are your files'}.`;
+  const after = linked
+    ? `The link${linked === 1 ? ' opens' : 's open'} in Google Drive. Please download a copy to keep.`
+    : '';
+  const lines = [v.contactName ? `Hi ${v.contactName},` : 'Hi,', intro];
+  return {
+    subject: `${v.update ? 'Updated files' : 'Your files'}${v.projectName ? `: ${v.projectName}` : ''} · ${business}`,
+    text: [...lines, files.map((f) => f.text).join('\n'), after, 'Thanks for working with us.', business].filter(Boolean).join('\n\n'),
+    html: shell({
+      heading: v.update ? 'Your updated files' : 'Your files',
+      sub: line(v.projectName, v.upid),
+      bodyHtml: lines.map((l) => `<p style="margin:0 0 14px">${esc(l)}</p>`).join('') +
+        fileListHtml(files, missingWord) +
+        (after ? `<p style="margin:0 0 14px">${esc(after)}</p>` : '') +
+        '<p style="margin:0 0 14px">Thanks for working with us.</p>',
+      business: b,
+      appUrl: v.appUrl,
+    }),
+  };
+}
+
+/**
+ * The studio's copy (C10): what went to the client, and to whom. An item with no
+ * Drive link is flagged, since the client was told it comes separately.
+ *
+ * @param {{business:object, appUrl:string, clientName?:string, to:string, projectName?:string,
+ *          upid?:string, files:Array, update?:boolean, link?:string}} v
+ */
+function filesSentOwnerEmail(v) {
+  const files = fileLines(v.files || [], 'no Drive link');
+  const missing = files.filter((f) => !f.link);
+  const who = v.clientName ? `${v.clientName} (${v.to})` : v.to;
+  const lines = [
+    `${v.update ? 'The updated files' : 'The files'}${v.projectName ? ` for ${v.projectName}` : ''} went to ${who}: the job is paid and every item is approved.`,
+  ];
+  if (missing.length) {
+    lines.push(`${missing.length === 1 ? 'One item has' : `${missing.length} items have`} no Drive backup link, so the client was told it comes separately: ${missing.map((f) => f.name).join(', ')}. Send ${missing.length === 1 ? 'it' : 'them'} by hand, or add the link and the client gets an updated email.`);
+  }
+  const button = 'Open the project';
+  return {
+    subject: `Files sent${v.projectName ? `: ${v.projectName}` : ''}${v.upid ? ` (${v.upid})` : ''}${missing.length ? ' · a link is missing' : ''}`,
+    text: `${lines.join('\n\n')}\n\n${files.map((f) => f.text).join('\n')}${v.link ? `\n\n${button}: ${v.link}` : ''}`,
+    html: shell({
+      heading: v.update ? 'Updated files sent' : 'Files sent',
+      sub: line(v.projectName, v.upid),
+      bodyHtml: lines.map((l) => `<p style="margin:0 0 14px">${esc(l)}</p>`).join('') + fileListHtml(files, 'no Drive link'),
+      button: v.link ? { label: button, url: v.link } : null,
+      business: businessOf(v),
+      appUrl: v.appUrl,
+      owner: true,
+    }),
+  };
+}
+
+/**
+ * The studio's notice that the files couldn't go (C10): the client has no email
+ * address (`no_email`: they go once one is added; `badEmail` when what they have
+ * isn't one), or every try failed (`gave_up`).
+ *
+ * @param {{business:object, appUrl:string, reason:'no_email'|'gave_up', clientName?:string, badEmail?:string,
+ *          to?:string, error?:string, attempts?:number, projectName?:string, upid?:string, link?:string}} v
+ */
+function filesNotSentOwnerEmail(v) {
+  const project = v.projectName || 'This project';
+  const lines = v.reason === 'no_email' && v.badEmail
+    ? [
+      `${project} is paid and every item is approved, but ${v.clientName || 'the client'}’s email address (${v.badEmail}) isn’t a valid address, so their files haven’t gone.`,
+      'Fix it in the client’s details and the files go within the hour.',
+    ]
+    : v.reason === 'no_email'
+    ? [
+      `${project} is paid and every item is approved, but ${v.clientName || 'the client'} has no email address, so their files haven’t gone.`,
+      'Add their email in the client’s details and the files go within the hour.',
+    ]
+    : [
+      `${project} is paid and every item is approved, but the email with the files to ${v.to} failed ${v.attempts} time${v.attempts === 1 ? '' : 's'}${v.error ? ` (${v.error})` : ''}. It won’t be tried again.`,
+      'Send the client their files by hand.',
+    ];
+  const button = 'Open the project';
+  return {
+    subject: `Files not sent${v.projectName ? `: ${v.projectName}` : ''}${v.upid ? ` (${v.upid})` : ''}`,
+    text: `${lines.join('\n\n')}${v.link ? `\n\n${button}: ${v.link}` : ''}`,
+    html: shell({
+      heading: 'Files not sent',
+      sub: line(v.projectName, v.upid),
+      bodyHtml: lines.map((l) => `<p style="margin:0 0 14px">${esc(l)}</p>`).join(''),
+      button: v.link ? { label: button, url: v.link } : null,
+      business: businessOf(v),
+      appUrl: v.appUrl,
+      owner: true,
+    }),
+  };
+}
+
 /** Settings → Email's "Send a test email": in the clients' dress, footer and
     all, since checking how they see it is what it's for. */
 function testEmail(v = {}) {
@@ -623,4 +756,5 @@ module.exports = {
   createMailer, isEmail, NOT_CONFIGURED, logoUrlOf,
   documentEmail, ownerSignedEmail, signedCopyEmail, testEmail, passwordResetEmail, callSheetEmail,
   portalInviteEmail, notesSubmittedEmail, deemedReminderEmail,
+  filesReadyEmail, filesSentOwnerEmail, filesNotSentOwnerEmail,
 };

@@ -368,6 +368,8 @@ function portalProject(view){
         id: d.id, title: d.title || '', stage: v.stage, n: v.n, versionId: v.id, submittedAt: v.submittedAt || null,
         type: photo ? 'photo' : 'video',
         reviewLink: (!photo && review && review.url) || '',
+        // Bunny's thumbnail for a video that plays from Bunny Stream (an <img>, no stream pulled).
+        poster: (!photo && review && review.type === 'hls' && review.poster) || '',
         photos: (photo && review && Array.isArray(review.urls))
           ? review.urls.map((url, i) => ({ name: 'Photo ' + (i + 1), reviewLink: url }))
           : [],
@@ -1090,7 +1092,8 @@ function renderInvoiceRow(inv){
 }
 
 // Media preview for a deliverable card.
-//   video: the review copy with #t=1, which makes the browser fetch just enough via
+//   video: Bunny's poster as an <img> when it plays from Bunny Stream; otherwise the
+//          review copy with #t=1, which makes the browser fetch just enough via
 //          Range to paint the frame at 1s as a still. muted + preload="metadata" keeps
 //          it cheap; it never plays here.
 //   photo: up to the first three images as a filmstrip.
@@ -1107,8 +1110,15 @@ function renderAssetThumb(a){
         ${shots.map(ph => `<img src="${escapeAttr(ph.reviewLink)}" alt="" loading="lazy" onerror="this.remove()">`).join('')}
       </div>`;
   }
-  // HLS gets the icon: a <video> thumb can't play it without hls.js, and where it can
-  // (native HLS) it would pull a playlist and segments per card.
+  if(a.poster){
+    return `
+      <div class="asset-thumb" aria-hidden="true">
+        ${fallback}
+        <img src="${escapeAttr(a.poster)}" alt="" loading="lazy" oncontextmenu="return false" onerror="this.remove()">
+      </div>`;
+  }
+  // HLS with no poster gets the icon: a <video> thumb can't play it without hls.js, and
+  // where it can (native HLS) it would pull a playlist and segments per card.
   if(!a.reviewLink || isHlsUrl(a.reviewLink)) return `<div class="asset-thumb">${fallback}</div>`;
   return `
     <div class="asset-thumb" aria-hidden="true">
@@ -1289,9 +1299,12 @@ function renderVideoCanvas(a){
       ${a.reviewLink ? `<button id="video-retry" class="btn">Try again</button>` : ''}
     </div>`;
   }
+  // playsinline (the user, 2026-11-27): on an iPhone the video plays in the page, not
+  // full screen, so the client can pause and tap COMMENT REVISIONS straight away.
+  // Full screen is still the player's own button.
   return `
     <div class="player">
-      <video id="asset-video" controls controlsList="nodownload" disablePictureInPicture oncontextmenu="return false" preload="metadata" data-src="${escapeAttr(a.reviewLink)}"></video>
+      <video id="asset-video" controls playsinline controlsList="nodownload" disablePictureInPicture oncontextmenu="return false" preload="metadata"${a.poster ? ` poster="${escapeAttr(a.poster)}"` : ''} data-src="${escapeAttr(a.reviewLink)}"></video>
     </div>
     <div id="pause-pill" class="timestamp-pill" ${state.pausedAt ? '' : 'style="display:none"'}>${icon('clock', 12)}<span id="pause-pill-time">${escapeHtml(state.pausedAt || '')}</span></div>
   `;

@@ -29,10 +29,8 @@ const { rateLimit, clientIp } = require('../src/routes/public');
 const { createPortalAccess } = require('../src/portal-access');
 
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
-/* Stands in for billing's login, which app.js passes (test-portal-mount.js runs the real one). */
+/* A studio cookie as billing's login would set: nothing under /hub reads it (test-portal-mount.js runs the real login). */
 const STUDIO_COOKIE = 'billing=signed-in';
-const requireAdmin = (req, res, next) => (String(req.headers.cookie || '').split('; ').includes(STUDIO_COOKIE)
-  ? next() : res.status(401).json({ error: 'unauthorized' }));
 const PORTAL = 'https://lsccreative.studio';
 const BASE = 'https://hub.example';
 const BUNNY = {
@@ -59,15 +57,13 @@ test('loading the hub code opens no database and reads no secret', () => {
 
 test('the router won’t build without its secrets and settings, and says which', () => {
   const db = openDatabase(path.join(TMP, 'secrets.db'));
-  const base = { publicBaseUrl: BASE, deliverablesDir: TMP, backupDir: path.join(TMP, 'secrets-backups'), rateLimit, clientIp, requireAdmin };
+  const base = { publicBaseUrl: BASE, deliverablesDir: TMP, rateLimit, clientIp };
   assert.throws(() => createHubRouter(db, base), /HUB_SIGNING_SECRET/);
   const secrets = { signingSecret: 's' };
   assert.throws(() => createHubRouter(db, { ...secrets, ...base, publicBaseUrl: '' }), /HUB_PUBLIC_BASE_URL/);
   assert.throws(() => createHubRouter(db, { ...secrets, ...base, deliverablesDir: '' }), /DELIVERABLES_DIR/);
-  assert.throws(() => createHubRouter(db, { ...secrets, ...base, backupDir: undefined }), /backupDir/);
   assert.throws(() => createHubRouter(db, { ...secrets, ...base, rateLimit: undefined }), /rateLimit/);
   assert.throws(() => createHubRouter(db, { ...secrets, ...base, clientIp: undefined }), /clientIp/);
-  assert.throws(() => createHubRouter(db, { ...secrets, ...base, requireAdmin: undefined }), /requireAdmin/);
   db.close();
 });
 
@@ -93,7 +89,7 @@ test('signed record links: right path and time only', () => {
   assert.equal(createUrlSigner('other').verifyPath('/hub/records/p1', token, expires), false, 'another secret');
 });
 
-test('paths normalise, so one file can’t publish twice under two names', () => {
+test('paths normalise, so one file can’t be added twice under two names', () => {
   assert.equal(normalizeDeliverablePath(' a/../b/c.mp4 '), 'b/c.mp4');
   assert.equal(normalizeDeliverablePath(''), '');
 });
@@ -198,57 +194,16 @@ for (const f of ['b10.jpg', 'b2.JPG', 'c.png', 'clip.mp4', 'shot.cr3', '.DS_Stor
 fs.writeFileSync(path.join(DELIVERABLES, 'Acme', 'Stills', 'raw', 'nested.jpg'), 'x');
 fs.writeFileSync(path.join(TMP, 'outside.mp4'), 'secret');
 
-/* A stand-in for Bunny Stream's API: one library, one collection, and a video
-   that appears once it has been fetched. */
-function fakeBunny() {
-  const calls = [];
-  const state = { collections: [], videos: [], failFetch: false };
-  const reply = (status, data) => ({ ok: status < 400, status, json: async () => data });
-  async function fetchImpl(url, init = {}) {
-    const u = new URL(url);
-    const method = init.method || 'GET';
-    calls.push({ method, path: u.pathname, search: u.search, key: init.headers && init.headers.AccessKey });
-    const route = u.pathname.replace('/library/lib1', '');
-    if (route === '/collections' && method === 'GET') {
-      return reply(200, { items: state.collections.filter((c) => c.name.includes(u.searchParams.get('search'))) });
-    }
-    if (route === '/collections' && method === 'POST') {
-      const c = { guid: `col-${state.collections.length + 1}`, name: JSON.parse(init.body).name };
-      state.collections.push(c);
-      return reply(200, c);
-    }
-    if (route === '/videos/fetch') {
-      if (state.failFetch) return reply(200, { success: false, message: 'fetch refused' });
-      const { title } = JSON.parse(init.body);
-      state.videos.push({ guid: `vid-${state.videos.length + 1}`, title, status: 4, dateUploaded: new Date().toISOString(),
-        collectionId: u.searchParams.get('collectionId'), source: JSON.parse(init.body).url });
-      return reply(200, { success: true });
-    }
-    if (route === '/videos') {
-      return reply(200, { items: state.videos.filter((v) => v.title.includes(u.searchParams.get('search'))) });
-    }
-    return reply(404, { message: 'no such route' });
-  }
-  return { fetchImpl, calls, state };
-}
-
 async function startHub(overrides = {}, { trustProxy = 1 } = {}) {
   const db = openDatabase(path.join(TMP, `hub-${crypto.randomBytes(4).toString('hex')}.db`));
   // Portal rows are billing projects (S11), so the ids these tests seed exist.
   const addProject = db.prepare("INSERT INTO projects (id, created_at, updated_at) VALUES (?, 'x', 'x')");
   for (const id of ['p_pub', 'p_sign', 'p_guess', 'p_clear', 'p_cf', 'p_ip', 'p_w']) addProject.run(id);
-  const backupDir = path.join(TMP, `hub-backups-${crypto.randomBytes(4).toString('hex')}`);
-  const bunny = fakeBunny();
   const router = createHubRouter(db, {
     signingSecret: 'test-signing-secret',
-    requireAdmin,
     corsOrigins: [PORTAL],
     publicBaseUrl: BASE,
     deliverablesDir: DELIVERABLES,
-    bunny: BUNNY,
-    bunnyFetch: bunny.fetchImpl,
-    videoLookupGapMs: 1,
-    backupDir,
     rateLimit,
     clientIp,
     ...overrides,
@@ -305,9 +260,8 @@ async function startHub(overrides = {}, { trustProxy = 1 } = {}) {
       .run(token, relativePath, downloadable, new Date().toISOString());
     return token;
   };
-  const prewrites = () => (fs.existsSync(backupDir) ? fs.readdirSync(backupDir).filter((f) => f.startsWith('prewrite-')).length : 0);
   return {
-    db, bunny, router, url, call, seedRecord, seedToken, seedClient, signIn, access, prewrites,
+    db, router, url, call, seedRecord, seedToken, seedClient, signIn, access,
     close: () => new Promise((r) => server.close(r)),
   };
 }
@@ -322,11 +276,9 @@ test.after(async () => {
   hub.db.close();
 });
 
-test('the studio’s routes need billing’s login, and the hub editor’s and sign-off are gone (R3, C5)', async () => {
-  for (const [p, method] of [['/hub/publish-asset', 'POST'], ['/hub/publish-status?path=x', 'GET']]) {
-    assert.equal((await hub.call(p, { method, body: method === 'POST' ? {} : undefined })).status, 401, p);
-  }
-  for (const [p, method] of [['/hub/admin-auth', 'POST'], ['/hub/publish', 'POST'], ['/hub/agreement/p1', 'GET'], ['/hub/agreement', 'POST'], ['/hub/deliverable-url', 'POST'],
+test('the studio’s routes are gone from /hub: the hub editor, sign-off and the old Bunny pair (R3, C5, Bunny Slice 2)', async () => {
+  // Bunny publishing moved to /api behind the login (Bunny Slice 2): the old pair are gone.
+  for (const [p, method] of [['/hub/publish-asset', 'POST'], ['/hub/publish-status?path=x', 'GET'], ['/hub/admin-auth', 'POST'], ['/hub/publish', 'POST'], ['/hub/agreement/p1', 'GET'], ['/hub/agreement', 'POST'], ['/hub/deliverable-url', 'POST'],
     ['/hub/deliverable-folder', 'POST'], ['/hub/notify', 'POST'], ['/hub/deliverables-health', 'GET']]) {
     assert.equal((await hub.call(p, { method, cookie, body: method === 'POST' ? {} : undefined })).status, 404, p);
   }
@@ -401,51 +353,6 @@ test('a file link stays inside the folder, and is Range-aware', async () => {
   for (const p of ['Acme/Nope.mp4', '../outside.mp4', '/etc/passwd', 'Acme/../../outside.mp4', 'Acme/Stills']) {
     assert.equal((await hub.call(`/hub/files/${hub.seedToken(p)}`)).status, 404, p);
   }
-});
-
-test('publishing a video to Bunny: once per file, found by its tag, ready to play', async () => {
-  const bad = async (body) => (await hub.call('/hub/publish-asset', { method: 'POST', cookie, body })).status;
-  assert.equal(await bad({ path: 'Acme/Hero.mp4', kind: 'photo' }), 400);
-  assert.equal(await bad({ path: 'Acme/Missing.mp4' }), 404);
-  assert.equal(await bad({ path: 'Loose.mp4' }), 422, 'must be inside a project folder');
-  assert.equal(await bad({ path: 'Acme/Notes.pdf' }), 422, 'not a video');
-
-  const first = await hub.call('/hub/publish-asset', { method: 'POST', cookie, body: { path: 'Acme/./Hero.mp4' } });
-  assert.equal(first.status, 200, JSON.stringify(first.body));
-  assert.deepEqual([first.body.status, first.body.videoId, first.body.sourceChanged], ['ready', 'vid-1', false]);
-  assert.equal(first.body.hlsUrl, 'https://vz-test.b-cdn.net/vid-1/playlist.m3u8');
-  assert.equal(hub.bunny.state.collections[0].name, 'Acme', 'one collection per project folder');
-  assert.ok(hub.bunny.calls.every((c) => c.key === BUNNY.streamApiKey), 'the key only travels as the AccessKey header');
-  assert.ok(hub.bunny.calls.every((c) => !c.search.includes(BUNNY.streamApiKey)));
-  assert.match(hub.bunny.state.videos[0].source, new RegExp(`^${BASE}/hub/files/[0-9a-f]{32}$`), 'Bunny pulls the file from its link');
-
-  const fetchesBefore = hub.bunny.calls.filter((c) => c.path.endsWith('/videos/fetch')).length;
-  const again = await hub.call('/hub/publish-asset', { method: 'POST', cookie, body: { path: 'Acme/Hero.mp4' } });
-  assert.equal(again.body.videoId, 'vid-1');
-  assert.equal(hub.bunny.calls.filter((c) => c.path.endsWith('/videos/fetch')).length, fetchesBefore, 'no second fetch');
-
-  const status = await hub.call('/hub/publish-status?path=Acme/Hero.mp4', { cookie });
-  assert.deepEqual([status.status, status.body.status, status.body.videoId], [200, 'ready', 'vid-1']);
-  assert.equal((await hub.call('/hub/publish-status?path=Acme/Other.mp4', { cookie })).status, 404);
-
-  // A forced republish that Bunny refuses keeps the working video.
-  hub.bunny.state.failFetch = true;
-  const forced = await hub.call('/hub/publish-asset', { method: 'POST', cookie, body: { path: 'Acme/Hero.mp4', force: true } });
-  assert.equal(forced.status, 502);
-  assert.deepEqual([forced.body.status, forced.body.videoId], ['ready', 'vid-1']);
-  assert.match(forced.body.error, /fetch refused/);
-  hub.bunny.state.failFetch = false;
-});
-
-test('without Bunny set up, publishing says so and the rest still works', async () => {
-  const noBunny = await startHub({ bunny: { ...BUNNY, streamApiKey: '' } });
-  try {
-    const c = cookie;
-    const r = await noBunny.call('/hub/publish-asset', { method: 'POST', cookie: c, body: { path: 'Acme/Hero.mp4' } });
-    assert.deepEqual([r.status, r.body], [503, { error: 'bunny not set up' }]);
-    assert.equal((await noBunny.call('/hub/publish-status?path=Acme/Hero.mp4', { cookie: c })).status, 503);
-    assert.equal(noBunny.bunny.calls.length, 0);
-  } finally { await noBunny.close(); noBunny.db.close(); }
 });
 
 test('CORS: credentials for the portal’s origin only; open reads for anyone', async () => {
@@ -540,21 +447,6 @@ function startHubSignIn(h) {
   h.db.prepare("INSERT INTO admin_sessions (token, created_at, expires_at) VALUES (?, 'x', '2999-01-01T00:00:00.000Z')").run(token);
   return `hub_admin_session=${token}`;
 }
-
-test('the hub’s writes take a copy first; refused requests and reads don’t', async () => {
-  const fresh = await startHub();
-  try {
-    const c = cookie;
-    assert.equal((await fresh.call('/hub/publish-asset', { method: 'POST', body: { path: 'Acme/Hero.mp4' } })).status, 401);
-    assert.equal(fresh.prewrites(), 0, 'nothing refused took a copy');
-
-    await fresh.call('/hub/publish-asset', { method: 'POST', cookie: c, body: { path: 'Acme/Hero.mp4' } });
-    assert.equal(fresh.prewrites(), 1, 'a video publish');
-    await fresh.call('/hub/auth', { method: 'POST', body: { email: 'a@b.example', code: '1234' } });
-    await fresh.call('/hub/publish-status?path=Acme/Hero.mp4', { cookie: c });
-    assert.equal(fresh.prewrites(), 1, 'a client signing in and a status read take none');
-  } finally { await fresh.close(); fresh.db.close(); }
-});
 
 test('unknown /hub paths and bad bodies answer in JSON, as the hub’s server did', async () => {
   const missing = await hub.call('/hub/no-such-route');

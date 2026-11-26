@@ -34,9 +34,13 @@ const transport = {
     return { messageId: `<stub-${Date.now()}@localhost>` };
   },
 };
-const mailer = createMailer({ ...config, mailFrom: config.mailFrom || 'admin@lsccreative.studio' }, { transport });
+// A reply-to stands in for the studio's address, so the owner's notices (C6, C10) print too.
+const mailer = createMailer({
+  ...config, mailFrom: config.mailFrom || 'admin@lsccreative.studio', mailReplyTo: config.mailReplyTo || 'studio@lsccreative.test',
+}, { transport });
 const db = openDatabase(config.dbFile);
 const app = createApp(db, { mailer, appUrl: config.appUrl || 'http://localhost:5173/' });
 app.listen(config.port, () => console.log(`[stub-mail] dev server on :${config.port}, email printed here${failing ? ' (every send fails)' : ''}`));
 app.locals.outbox.start();
 app.locals.deemedReminders.start();
+app.locals.filesRelease.start();

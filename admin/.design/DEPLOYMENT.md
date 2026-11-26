@@ -4,7 +4,11 @@ Read this only when deploying or redoing infrastructure. Logins and keys: `.cred
 (gitignored; the repo is public). The long original with the 2026-09-22 incident write-up is in
 `Project build archive/tracks/nas-hosted-billing/DEPLOYMENT_full.md`.
 
-## What is live (since the M6 cutover, 2026-11-07)
+## What is live (since the M6 cutover, 2026-11-07; the merged admin and new portal since C9, 2026-11-26; schema v32 since C10, the same day)
+
+The NAS is at **192.168.1.46** on the LAN since 2026-11-26 (it was .45; same host keys). Until the router reserves it and
+`~/.ssh/config` says so: `ssh -o HostName=192.168.1.46 -o HostKeyAlias=192.168.1.45 lsc-nas`. A rebuild takes ~10 minutes
+(npm on the NAS); the old container serves until the new one starts.
 
 | Part | Where |
 |---|---|
@@ -29,6 +33,10 @@ deploys the marketing site (its allow-list), never the admin.
 4. `sh /volume4/lsc-admin/m6-checks.sh /volume4/lsc-admin/data` must print ALL PASS; check the boot log's
    migration line. An open admin tab offers a reload when the version changes.
 5. If a migration ships, run it on a copy of the backup first.
+   **v33 (Bunny Slice 2) refuses to run if `bunny_assets` or `bunny_collections` holds a row**, and a server
+   that won't migrate crash-loops under `restart: always`. Before that deploy, on the live db:
+   `sqlite3 -readonly …/billing.db "SELECT COUNT(*) FROM bunny_assets; SELECT COUNT(*) FROM bunny_collections;"`
+   must print `0` twice (it did on 2026-11-26). Not zero: stop and ask; don't deploy.
 
 ## NAS `.env` (`/volume4/lsc-admin/app/.env`, mode 600; names in `server/.env.example`)
 

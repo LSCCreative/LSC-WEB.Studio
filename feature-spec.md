@@ -92,6 +92,9 @@ Relevant code today: `renderVideoCanvas` (~L1340), `bindClientAsset`
   `videoFailed` path as `video.onerror`.
 - Keep `controlsList="nodownload"`, `disablePictureInPicture`, and the
   context-menu block.
+- `playsinline` (the user, 2026-11-27, Bunny Slice 5): an iPhone plays the
+  review video in the page, so the client can pause and comment without
+  leaving full screen first. Full screen stays on the player's own button.
 
 ### Linking: by deliverable version (re-planned 2026-11-07, merge task B1)
 Since the merge, projects, deliverables and their versions live on the server

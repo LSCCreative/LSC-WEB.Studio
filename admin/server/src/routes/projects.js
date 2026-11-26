@@ -291,6 +291,11 @@ function readProjectRows(db, { today, clientId = null }) {
   });
 }
 
+/* Whether this server publishes videos to Bunny Stream (its settings are all there).
+   The Deliverables tab offers Send to Bunny, and holds a video's client publish
+   until it's ready there, only when it does. */
+const bunnyOn = (req) => Boolean(req.app.locals.bunnyPublisher && req.app.locals.bunnyPublisher.ready);
+
 function readFolder(db, id, today) {
   const p = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
   if (!p) return null;
@@ -935,7 +940,7 @@ function registerProjectRoutes(app, db, opts = {}) {
     if (!today) return res.status(400).json({ error: 'today_invalid' });
     const folder = readFolder(db, req.params.id, today);
     if (!folder) return res.status(404).json({ error: 'not_found' });
-    return res.json({ ok: true, ...folder, ...(extra || {}) });
+    return res.json({ ok: true, ...folder, bunnyOn: bunnyOn(req), ...(extra || {}) });
   }
 
   /* The project behind an action, or null once a 404 has been sent. */

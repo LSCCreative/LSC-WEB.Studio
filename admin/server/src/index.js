@@ -33,6 +33,8 @@ function main() {
   app.locals.outbox.start();
   // The client's deemed-approval reminders (C7): a pass now, then hourly.
   app.locals.deemedReminders.start();
+  // The client's files, once paid and approved (C10): retries hourly.
+  app.locals.filesRelease.start();
   console.log(`[mail] ${config.smtp.pass && config.mailFrom ? `connected as ${config.mailFrom}` : 'not set up (no SMTP key / MAIL_FROM)'}`);
   // Without it every email with a link fails with no_app_url (C7): say so at boot.
   if (!config.appUrl) console.log(`[mail] APP_URL ${process.env.APP_URL ? 'is not an http(s) address' : 'is not set'}: emails with a link will fail until it is`);
@@ -50,6 +52,7 @@ function main() {
     backupSchedule.stop();
     app.locals.outbox.stop();
     app.locals.deemedReminders.stop();
+    app.locals.filesRelease.stop();
     server.close(() => {
       try { db.close(); } catch (_) { /* already closed */ }
       process.exit(0);

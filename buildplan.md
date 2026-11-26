@@ -69,7 +69,7 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
 
 ### Part B — Video publishing (merge task B2)
 
-- [ ] Slice 2: **[API]** Publish a deliverable version's video.
+- [x] Slice 2: **[API]** Publish a deliverable version's video.
       - New numbered migration: rebuild `bunny_assets` keyed by `(version_id, kind)` with
         `project_id`, `item_id`, `source_path` (NAS relative path), `source_size`,
         `source_mtime`, `bunny_video_id`, `collection_id`, `publish_tag`, `storage_path`,
@@ -93,8 +93,19 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
         idempotency, 3 simultaneous publishes, force, failure keeps the old video, late
         listing, adoption, timeout, restart, signed source URL expires, another project's
         version id is a 404, no key in any log line. | Model: Opus 5.5 | Effort: High
+      **Done 2026-11-26 (not deployed):** schema v33 (both tables rebuilt; it stops if the old ones
+      hold a row, and the live ones are empty). `src/bunny-publish.js`; `GET /hub/source/<versionId>/<name>`
+      signed per version for 6 hours. **One change from the plan:** R3's `…/publish` already means
+      "show it to the client", so the Bunny fetch is its own pair, `POST`/`GET …/versions/:versionId/bunny`;
+      Slice 4 decides how the Deliverables tab chains them. A status read also asks Bunny about a known
+      video still transcoding (`getVideo`), so a row turns ready without the webhook. Rows have no foreign
+      keys on purpose (they point at what Bunny bills for, so cleanup must find them). The hub import now
+      skips empty hub Bunny tables and refuses a row. 16 tests in `test-bunny-publish.js` (fake Bunny in
+      `test/fake-bunny.js`); code review's 7 fixed, 1129/1129. Force is refused once the client has the
+      version (Slice 4: no Republish there). Not checked against real Bunny again (the 2026-11-03 live test
+      still stands for the calls). The NAS `.env` has no `BUNNY_*` yet (checked 2026-11-26).
 
-- [ ] Slice 3: **[API]** `POST /hub/bunny-webhook` on `hub-api`, mounted in `app.js`'s
+- [x] Slice 3: **[API]** `POST /hub/bunny-webhook` on `hub-api`, mounted in `app.js`'s
       raw-body slot (or above the hub router's `express.json`) with `express.raw()`, so the
       HMAC is over the exact bytes (merge safeguard **S20**). Verify
       `X-BunnyStream-Signature` (HMAC-SHA256 with `BUNNY_STREAM_READ_KEY`, constant-time),
@@ -106,8 +117,17 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       passes; unsigned, tampered and re-serialised bodies fail; a test that fails if a JSON
       parser is ever mounted ahead of it; unknown id; out-of-order events.
       | Model: Sonnet 5.5 | Effort: High
+      **Done 2026-11-26 (not deployed):** the route sits in the hub router above its JSON parser, with
+      `express.raw`. Signing per Bunny's docs: lowercase hex HMAC-SHA256 of the raw body with the
+      read-only key, plus `X-BunnyStream-Signature-Version: v1` and `-Algorithm: hmac-sha256`. Codes: 0-2
+      and 4 processing (never undoing ready), 3 ready, 5 failed, 32 (video deleted) failed; the rest are
+      ignored. Each row keeps the newest event `Timestamp` it applied (`last_event_at`, added to v33, which
+      had run nowhere), so an older event can't undo a newer one. An unknown id answers 200 and sends the
+      rows still waiting for their id to look again, in the background. Needs you's **Publish failed** is
+      computed: a failed row on a needed item's newest version, gone once ready or replaced. 8 tests in
+      `test-bunny-webhook.js`; 1137/1137.
 
-- [ ] Slice 4: **[ADMIN + API + PORTAL]** Publish from the Deliverables tab, play in the portal.
+- [x] Slice 4: **[ADMIN + API + PORTAL]** Publish from the Deliverables tab, play in the portal.
       - Admin (R3's deliverable item): a **Publish to Bunny** action beside the version's
         file, polling status: Processing / Ready / Failed with the reason / "The NAS file
         changed since publishing" with Republish. Poster thumbnail when ready. A version
@@ -119,16 +139,43 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       - Portal: the review player takes `review.url` through `attachReviewSource`; landing
         and dashboard cards use `poster` as an `<img>`. Update any publish help copy.
       - Player guardrail applies. | Model: Opus 5.5 | Effort: High
+      **Done 2026-11-26 (not deployed):** two steps, not one button (Bunny takes minutes and Publish can
+      email the client): the version's **Bunny Stream** block (Send to Bunny, Processing checked every 10 s,
+      Ready with Bunny's thumbnail, Failed with the reason, Old cut with Republish… only before the client has
+      it), then Publish, disabled until it's ready. The server holds it too: with Bunny on, a video's publish
+      answers 409 `bunny_not_ready` or `bunny_stale`; photo libraries aren't held; Bunny off holds nothing.
+      `reviewOf` gives `{ type:'hls', url, poster }` for a ready row only (built when the portal answers);
+      no row, processing, failed or Bunny off keep the NAS link. Portal cards and `#asset-video` take the
+      poster (the dashboard has no media cards). Player contract 1-6 passed on HLS in Chromium, desktop and
+      375 px, against a fake Bunny and a public test stream; desktop Safari and the iPhone are Slice 5's.
+      `test-bunny-review.js` (6) + a portal page check; 1149/1149.
 
 - [ ] Slice 5: Verify video end to end and deploy. **[USER]** Before deploying, check the
       NAS `.env` for the 8 `BUNNY_*` names (without them publishing answers 503; it no
-      longer stops the server). Deploy to the NAS. Real deliverable on the NAS → Publish →
+      longer stops the server). Also confirm the live `bunny_assets` and `bunny_collections` are
+      empty on the dry-run copy and on the live db (v33 stops on a row; DEPLOYMENT.md step 5).
+      **[USER]** In Bunny, set the library's webhook URL to
+      `https://hub-api.lsccreative.studio/hub/bunny-webhook` (Stream → library → Webhooks); without
+      it, status still arrives through the 30-minute lookup on each status read.
+      **[USER]** Bunny's HLS and poster links are public until Slice 9 signs them (the NAS
+      review route needed the client's session): in the library's Security settings, set
+      Allowed Referrers to `lsccreative.studio`, then check on the iPhone that playback still
+      works (native HLS sends the page as referrer; if it doesn't play, clear the setting). Deploy to the NAS. Real deliverable on the NAS → Publish →
       Ready → client signs in on another device → full player contract on desktop Chrome,
       desktop Safari and a **physical iPhone** → notes → approve. Also check a large master
       fetches through the Cloudflare Tunnel, and that an imported NAS-linked version still
       plays. **Decide `playsinline` with the user** (today every iPhone play goes fullscreen
       and the client must exit to comment); if adopted, re-run the contract on the iPhone.
       Log results in `scratchpad.md`. | Model: Opus 5.5 | Effort: Medium
+      **So far (2026-11-26/27):** NAS deployed at v33 with the 8 `BUNNY_*` set; webhook URL and
+      Allowed domains (`lsccreative.studio`, `app.lsccreative.studio`) set; a 369 MB real file went
+      through the Tunnel to Ready by the signed webhook in ~8 min; published; the live portal plays it
+      as Bunny HLS. Contract: desktop Chrome passed (View as client, then the user signed in); the
+      user's iPhone (Chrome for iOS, WebKit + native HLS) and Mac Chrome sent two notes on v3 as one set,
+      one stamped at the exact frame. **`playsinline` adopted** (the user, 2026-11-27), in the portal page,
+      so it ships with the Pages release. **Left:** after that release, re-run the contract on the iPhone
+      (inline now); desktop Safari was not checked; no imported NAS-linked version exists on the live db
+      to play (PTC9's were made here), so that check has nothing to run on.
 
 ### Part C — Photos & masters (merge task B3)
 

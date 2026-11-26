@@ -47,6 +47,9 @@ function registerDeliverableRoutes(app, db, opts = {}) {
   const nas = createDeliverables(opts.deliverablesDir);
 
   const refuse = (res, status, error, message) => res.status(status).json({ error, message });
+  /* Bunny Stream (bunny-publish.js): off, every video plays from the NAS as before. */
+  const bunnyPublisher = opts.bunnyPublisher || null;
+  const bunnyOn = Boolean(bunnyPublisher && bunnyPublisher.ready);
 
   /* The portal invite (C6) is part of every folder reply: portal-invite.js reads
      this environment for readFolder too. */
@@ -60,7 +63,13 @@ function registerDeliverableRoutes(app, db, opts = {}) {
   function answer(req, res, extra = {}) {
     const today = todayOf(req);
     if (!today) return res.status(400).json({ error: 'today_invalid' });
-    return res.json({ ok: true, ...readFolder(db, req.params.id, today), ...extra });
+    // A checklist write may finish the job (Mark approved, Not needed, a Drive link
+    // added): the files go if it's paid (C10). In the background, after this reply's read.
+    if (req.method !== 'GET' && req.app.locals.filesRelease) {
+      const projectId = req.params.id;
+      setImmediate(() => req.app.locals.filesRelease.check(projectId));
+    }
+    return res.json({ ok: true, ...readFolder(db, req.params.id, today), bunnyOn, ...extra });
   }
 
   const projectFor = (req, res) => {
@@ -327,9 +336,85 @@ function registerDeliverableRoutes(app, db, opts = {}) {
     return answer(req, res);
   });
 
+  /* Sends a video version to Bunny Stream (Bunny Slice 2, bunny-publish.js), body
+     { force? }. Its own route, beside the client's publish below: Bunny is where
+     the client watches it from, so the client's publish waits until this is ready.
+     Once per version unless force, which replaces a working video (a NAS file
+     changed since), and only before the client has the version. Answers the
+     publish's view, not the folder:
+     { status, error, sourceChanged, posterUrl, progress, refused }: refused is true
+     when Bunny said no (a 200 still: the admin reads any 5xx as the server down). */
+  const bunnyOff = (res) => refuse(res, 503, 'bunny_not_set_up', 'Publishing to Bunny isn’t set up on this server yet.');
+  app.post('/api/projects/:id/deliverables/:itemId/versions/:versionId/bunny', async (req, res, next) => {
+    try {
+      const p = projectFor(req, res);
+      if (!p || !workable(res, p)) return undefined;
+      const d = itemFor(req, res, p);
+      const v = d && versionFor(req, res, d);
+      if (!v) return undefined;
+      if (d.not_needed_at) return refuse(res, 409, 'not_needed', 'This one is marked not needed. Mark it needed first.');
+      if (!bunnyPublisher || !bunnyPublisher.ready) return bunnyOff(res);
+      const force = (req.body || {}).force === true;
+      // A version the client has seen never changes (its notes and approval name it):
+      // a changed file is a new version, not a replaced video.
+      if (force && v.published_at) {
+        return refuse(res, 409, 'published', 'The client has seen this version, so its video stays. Add the new file as a new version.');
+      }
+      const checked = await bunnyPublisher.check(v);
+      if (checked.refusal) return refuse(res, ...checked.refusal);
+      // A version the client has is sent as it was given to them. Nothing records
+      // the file at publish, so a file written after it went out is taken as
+      // replaced: Bunny would show them a different cut under the same version.
+      if (v.published_at && checked.file.stat.mtimeMs > Date.parse(v.published_at)) {
+        return refuse(res, 409, 'changed_since_published',
+          `The NAS file changed after v${v.n} went to the client, so it isn’t the cut they have. Add it as a new version.`);
+      }
+      const { httpStatus, body } = await bunnyPublisher.publish(p, v, checked.file, { force });
+      return res.status(httpStatus).json(body);
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  /* How the version's Bunny publish stands, looked up on Bunny while it is still
+     processing (the webhook, Slice 3, is the quick path). Status 'none' before any
+     publish. Needs no NAS file: a published video can outlive it. */
+  app.get('/api/projects/:id/deliverables/:itemId/versions/:versionId/bunny', async (req, res, next) => {
+    try {
+      const p = projectFor(req, res);
+      if (!p) return undefined;
+      const d = itemFor(req, res, p);
+      const v = d && versionFor(req, res, d);
+      if (!v) return undefined;
+      if (!bunnyPublisher || !bunnyPublisher.ready) return bunnyOff(res);
+      return res.json(await bunnyPublisher.status(v));
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  /* Why a video can't go to the client yet, as [code, message], or null. With Bunny
+     on, the client watches from Bunny Stream, so the video waits until it's ready
+     there, and until Bunny has the file the NAS holds now (a file replaced after it
+     was sent would show the client the old cut). Photo libraries aren't held: they
+     go to Bunny in a later slice. A status read also asks Bunny about one still
+     processing, so a publish clicked the moment it's ready isn't refused. */
+  async function bunnyHold(v) {
+    if (!bunnyOn || v.kind !== 'video') return null;
+    const bunny = await bunnyPublisher.status(v);
+    if (bunny.status === 'ready' && bunny.sourceChanged) {
+      return ['bunny_stale', 'The NAS file changed after it went to Bunny, so Bunny has the old cut. Republish it to Bunny first.'];
+    }
+    if (bunny.status === 'ready') return null;
+    return ['bunny_not_ready', {
+      none: 'Send it to Bunny first: the client watches it from there.',
+      processing: 'Bunny is still processing it. Publish once it’s ready.',
+      failed: 'Bunny couldn’t take it. Send it to Bunny again first.',
+    }[bunny.status] || 'Send it to Bunny first: the client watches it from there.'];
+  }
+
   /* Puts the newest version in front of the client. Publishing one that already
-     is changes nothing. Bunny (Slice 2) attaches here: this route gains the fetch
-     and its status, and a version isn't offered until its publish is ready. */
+     is changes nothing. Bunny's fetch is its own route, above. */
   app.post('/api/projects/:id/deliverables/:itemId/versions/:versionId/publish', async (req, res, next) => {
     try {
       const p = projectFor(req, res);
@@ -346,6 +431,8 @@ function registerDeliverableRoutes(app, db, opts = {}) {
       if (source.error) {
         return refuse(res, 409, 'file_missing', `${v.file_name || 'That file'} can’t be published. ${source.message}`);
       }
+      const held = await bunnyHold(v);
+      if (held) return refuse(res, 409, ...held);
       const now = nowIso();
       let first = false;
       let published = false;

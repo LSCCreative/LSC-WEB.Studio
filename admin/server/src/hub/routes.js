@@ -11,25 +11,18 @@
    and answers its own 404s and errors in JSON, as the hub's server did, so it
    is mounted before billing's body parser. */
 
-const { basename, extname, posix } = require('path');
+const { posix } = require('path');
 const express = require('express');
 const cookie = require('cookie');
-const { createBackup } = require('../backup');
-const { sha256Hex, randomToken } = require('./tokens');
+const { sha256Hex } = require('./tokens');
 const { createHubCors } = require('./cors');
 const { createPortalAccess, CODE_FORMAT, SESSION_DAYS } = require('../portal-access');
 const { normEmail } = require('../clients');
 const { clientView, projectCard, projectView, noteView, itemStatus } = require('./views');
 const { newId, nowIso } = require('../db');
-const { createBunny, missingBunnySettings, statusFromVideo } = require('./bunny');
-const { createDeliverables, streamFile, VIDEO_EXTENSIONS } = require('./deliverables');
+const { createDeliverables, streamFile } = require('./deliverables');
 const { createAttemptThrottle } = require('./throttle');
 const { invoiceView, sydneyDay } = require('../public');
-
-/* How long a publish may wait for Bunny to list the fetched video before it is
-   reported as failed. Without it a lost fetch job stays "processing" forever. */
-const UNLISTED_VIDEO_LIMIT_MS = 30 * 60 * 1000;
-const VIDEO_LOOKUP_ATTEMPTS = 3;
 
 /* Client sign-in is an email and a short code, so it is limited twice: per
    address (billing's rate limit), and per email however many addresses try,
@@ -80,48 +73,40 @@ function normalizeDeliverablePath(value) {
   return trimmed ? posix.normalize(trimmed) : '';
 }
 
-function publishTag(seed) {
-  return `lsc-${sha256Hex(seed).slice(0, 16)}`;
-}
-
 /**
  * opts (config.hub, see config.js; its defaults live there, not here):
  *   signingSecret   required; the router won't build without the secret
  *   publicBaseUrl   required: this API's public address, used in the links it hands out
  *   deliverablesDir required: the read-only NAS deliverables folder
- *   backupDir       required: where the copy before each write goes (billing's backups)
  *   corsOrigins     origins allowed to send credentials
- *   bunny           Bunny settings; with any missing, publishing answers 503
+ *   bunnyPublisher  bunny-publish.js's publisher: GET /hub/source checks its signatures,
+ *                   the webhook is applied through it, and a ready video's HLS and
+ *                   poster links come from it. Absent or not set up, the source route
+ *                   answers 404 and every video plays from the NAS
  *   rateLimit       required: billing's per-address limiter (routes/public.js)
  *   clientIp        required: billing's client address (routes/public.js), so the
  *                   agreement's evidence reads what billing's does
- *   requireAdmin    required: billing's login check (auth.js requireAuth). The studio's
- *                   routes here are the Bunny publish pair, until Slice 2 moves them to /api
  *   cookieSecure    the session cookie's Secure flag (config.cookieSecure); on unless false
  *   appUrl          where the client's quote and invoice pages are (config.appUrl, with
  *                   its trailing slash): the portal links to `${appUrl}c/#e|i/<token>`
  *   limits          overrides LIMITS, for tests
- * Tests only: bunnyFetch swaps fetch for Bunny calls, videoLookupGapMs the wait
- * between looking for a fetched video.
  */
 function createHubRouter(db, opts = {}) {
   if (!opts.signingSecret) throw new Error('The hub router needs signingSecret (HUB_SIGNING_SECRET); config.hub carries it.');
-  for (const [key, name] of [['publicBaseUrl', 'HUB_PUBLIC_BASE_URL'], ['deliverablesDir', 'DELIVERABLES_DIR'], ['backupDir', 'the backups folder']]) {
+  for (const [key, name] of [['publicBaseUrl', 'HUB_PUBLIC_BASE_URL'], ['deliverablesDir', 'DELIVERABLES_DIR']]) {
     if (!opts[key]) throw new Error(`The hub router needs ${key} (${name}); config.hub carries it.`);
   }
-  for (const key of ['rateLimit', 'clientIp', 'requireAdmin']) {
+  for (const key of ['rateLimit', 'clientIp']) {
     if (typeof opts[key] !== 'function') throw new Error(`The hub router needs ${key}, from billing's code; app.js passes it.`);
   }
-  const { publicBaseUrl, backupDir, clientIp, requireAdmin } = opts;
+  const { publicBaseUrl, clientIp } = opts;
   const limits = { ...LIMITS, ...(opts.limits || {}) };
   const limit = (name) => opts.rateLimit(limits[name]);
   const codeFailures = createAttemptThrottle({ limit: CODE_FAILURE_LIMIT, windowMs: CODE_FAILURE_WINDOW_MS });
-  const lookupGapMs = opts.videoLookupGapMs ?? 1000;
   const { credentialedCors, openCors } = createHubCors(opts.corsOrigins || []);
   const allowedOrigins = new Set(opts.corsOrigins || []);
   const deliverables = createDeliverables(opts.deliverablesDir);
-  const bunnyMissing = missingBunnySettings(opts.bunny);
-  const bunny = bunnyMissing.length ? null : createBunny(opts.bunny, { fetchImpl: opts.bunnyFetch });
+  const bunnyPublisher = opts.bunnyPublisher && opts.bunnyPublisher.ready ? opts.bunnyPublisher : null;
   const access = createPortalAccess(db, { secret: opts.signingSecret });
   const cookieSecure = opts.cookieSecure !== false;
   // Loaded here, not with the module: billing's project code reads its settings as it loads.
@@ -164,185 +149,56 @@ function createHubRouter(db, opts = {}) {
      WHERE v.id = ? AND v.project_id = ? AND v.published_at IS NOT NULL AND d.not_needed_at IS NULL
   `);
 
-  const insertDeliverableToken = db.prepare(`
-    INSERT INTO deliverable_tokens (token, relative_path, downloadable, created_at)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(relative_path, downloadable) DO NOTHING
-  `);
-  const findDeliverableTokenByPath = db.prepare('SELECT token FROM deliverable_tokens WHERE relative_path = ? AND downloadable = ?');
+  const getVersionSource = db.prepare('SELECT id, source_path FROM deliverable_versions WHERE id = ?');
   const findDeliverablePathByToken = db.prepare('SELECT relative_path, downloadable FROM deliverable_tokens WHERE token = ?');
 
 
-  const getBunnyAsset = db.prepare('SELECT * FROM bunny_assets WHERE relative_path = ? AND kind = ?');
-  const upsertBunnyAsset = db.prepare(`
-    INSERT INTO bunny_assets (
-      relative_path, kind, bunny_video_id, collection_id, publish_tag, status,
-      error, source_size, source_mtime, created_at, updated_at
-    ) VALUES (
-      @relative_path, @kind, @bunny_video_id, @collection_id, @publish_tag, @status,
-      @error, @source_size, @source_mtime, @now, @now
-    )
-    ON CONFLICT(relative_path, kind) DO UPDATE SET
-      bunny_video_id = excluded.bunny_video_id,
-      collection_id  = excluded.collection_id,
-      publish_tag    = excluded.publish_tag,
-      status         = excluded.status,
-      error          = excluded.error,
-      source_size    = excluded.source_size,
-      source_mtime   = excluded.source_mtime,
-      updated_at     = excluded.updated_at
-  `);
-  const setBunnyAssetVideo = db.prepare(`
-    UPDATE bunny_assets SET bunny_video_id = ?, status = ?, updated_at = ?
-    WHERE relative_path = ? AND kind = ?
-  `);
-  const failBunnyAsset = db.prepare(`
-    UPDATE bunny_assets SET status = 'failed', error = ?, updated_at = ?
-    WHERE relative_path = ? AND kind = ?
-  `);
-  const getBunnyCollection = db.prepare('SELECT collection_id FROM bunny_collections WHERE folder_name = ?');
-  const insertBunnyCollection = db.prepare(`
-    INSERT INTO bunny_collections (folder_name, collection_id, created_at) VALUES (?, ?, ?)
-    ON CONFLICT(folder_name) DO UPDATE SET collection_id = excluded.collection_id
-  `);
-
-  /* One Node process, so these maps are enough to stop a double click, or a
-     whole folder published at once, from creating duplicates on Bunny. */
-  const publishesInFlight = new Map();
-  const collectionsInFlight = new Map();
-
-  function tokenFor(path, downloadable) {
-    insertDeliverableToken.run(randomToken(16), path, downloadable, new Date().toISOString());
-    return findDeliverableTokenByPath.get(path, downloadable).token;
-  }
-
-  function collectionFor(folderName) {
-    const row = getBunnyCollection.get(folderName);
-    if (row) return Promise.resolve(row.collection_id);
-    if (collectionsInFlight.has(folderName)) return collectionsInFlight.get(folderName);
-    const pending = bunny.findOrCreateCollection(folderName)
-      .then((collectionId) => {
-        insertBunnyCollection.run(folderName, collectionId, new Date().toISOString());
-        return collectionId;
-      })
-      .finally(() => collectionsInFlight.delete(folderName));
-    collectionsInFlight.set(folderName, pending);
-    return pending;
-  }
-
-  function bunnyAssetResponse(row, stat) {
-    const id = row.bunny_video_id;
-    return {
-      status: row.status,
-      videoId: id || null,
-      hlsUrl: id ? bunny.hlsUrl(id) : null,
-      posterUrl: id ? bunny.posterUrl(id) : null,
-      ...(row.error ? { error: row.error } : {}),
-      // The NAS file was replaced after publishing, so Bunny still has the old
-      // cut. Only force:true republishes it, so the editor needs telling.
-      sourceChanged: Boolean(stat)
-        && (stat.size !== row.source_size || Math.round(stat.mtimeMs) !== row.source_mtime),
-    };
-  }
-
-  /* Bunny may list a fetched video a moment after accepting the job, so a row
-     can have no id yet. A failed lookup leaves the row for the next poll. */
-  async function resolveVideoId(row) {
-    if (row.bunny_video_id || row.status === 'failed') return row;
-    try {
-      const video = await bunny.findVideoByTag(row.publish_tag, row.collection_id);
-      if (video) {
-        setBunnyAssetVideo.run(video.guid, statusFromVideo(video), new Date().toISOString(), row.relative_path, row.kind);
-      } else if (Date.now() - new Date(row.updated_at).getTime() > UNLISTED_VIDEO_LIMIT_MS) {
-        failBunnyAsset.run('Bunny never listed the fetched video. Publish again.', new Date().toISOString(), row.relative_path, row.kind);
-      }
-    } catch (err) {
-      console.error('[hub/publish-asset] video lookup failed:', err.message);
-    }
-    return getBunnyAsset.get(row.relative_path, row.kind);
-  }
-
-  async function publishVideo(path, resolved, force) {
-    const existing = getBunnyAsset.get(path, 'video');
-    // A failed row has nothing playable, so publishing again retries it.
-    if (existing && !force && existing.status !== 'failed') return resolveVideoId(existing);
-
-    const source = { source_size: resolved.stat.size, source_mtime: Math.round(resolved.stat.mtimeMs) };
-    const base = { relative_path: path, kind: 'video', ...source, error: null };
-
-    try {
-      const collectionId = await collectionFor(path.split('/')[0]);
-
-      // A repeat publish gets its own tag so the lookup can't find the video it
-      // replaces. The older video stays on Bunny, because a client's published
-      // record may still point at it.
-      const tag = publishTag(existing ? `${path}\n${Date.now()}` : path);
-
-      // First publish only: a crash after an earlier fetch left a video on
-      // Bunny but no row here. Adopt it rather than pulling the file again.
-      let video = existing ? null : await bunny.findVideoByTag(tag, collectionId);
-      if (!video) {
-        await bunny.fetchVideo({
-          url: `${publicBaseUrl}/hub/files/${tokenFor(path, 0)}`,
-          title: `${basename(path)} [${tag}]`,
-          collectionId,
-        });
-        for (let attempt = 0; !video && attempt < VIDEO_LOOKUP_ATTEMPTS; attempt += 1) {
-          await new Promise((done) => setTimeout(done, lookupGapMs));
-          video = await bunny.findVideoByTag(tag, collectionId);
-        }
-      }
-
-      upsertBunnyAsset.run({
-        ...base,
-        bunny_video_id: video?.guid || null,
-        collection_id: collectionId,
-        publish_tag: tag,
-        status: video ? statusFromVideo(video) : 'processing',
-        now: new Date().toISOString(),
-      });
-    } catch (err) {
-      console.error('[hub/publish-asset] publish failed:', err.message);
-      // A failed force must not overwrite a video that's still working.
-      if (existing && existing.status !== 'failed') {
-        const kept = new Error(err.message);
-        kept.keptExisting = true;
-        throw kept;
-      }
-      upsertBunnyAsset.run({
-        ...base,
-        bunny_video_id: null,
-        collection_id: existing?.collection_id || null,
-        publish_tag: existing?.publish_tag || null,
-        status: 'failed',
-        error: err.message,
-        now: new Date().toISOString(),
-      });
-    }
-    return getBunnyAsset.get(path, 'video');
-  }
-
-  function requireBunny(req, res, next) {
-    if (!bunny) return res.status(503).json({ error: 'bunny not set up' });
-    next();
-  }
-
-  /* The copy before a write, as billing's /api writes get (backup.js). Taken
-     after a request is checked, so a stranger's bad request can't push real
-     recovery points out of the ten kept. A failed copy is logged, not fatal,
-     as for /api. */
-  async function backupBeforeWrite() {
-    try {
-      await createBackup(db, backupDir, 'prewrite');
-    } catch (err) {
-      console.error('[hub] pre-write snapshot failed:', err.message);
-    }
-  }
 
   const router = express.Router();
 
-  // Raw-body routes (the Bunny webhook, task B1) go above this line: they need
-  // the exact bytes for their signature check (merge safeguard S20).
+  // Raw-body routes go above this line: they need the exact bytes for their
+  // signature check (merge safeguard S20).
+
+  // ── POST /hub/bunny-webhook: Bunny Stream telling us a video's state (Bunny
+  // Slice 3). Signed over the raw body (bunny-publish.js verifyWebhook), so it is
+  // read here as bytes; any parser ahead of it makes every webhook fail, which
+  // test-bunny-webhook.js catches. Unsigned or wrong is a 401, which Bunny doesn't
+  // retry. A good one is a 200 whatever it changed (an unknown id included), so
+  // Bunny stops; it is applied before answering, so a 200 means it is recorded.
+  const BAD_SIGNATURE_LOG_MS = 10 * 60 * 1000;
+  let lastBadSignatureLog = -Infinity;
+  router.post('/hub/bunny-webhook', express.raw({ type: () => true, limit: '64kb' }), async (req, res) => {
+    if (!bunnyPublisher) return res.status(503).json({ error: 'bunny not set up' });
+    if (!Buffer.isBuffer(req.body)) {
+      console.error('[hub/bunny-webhook] the body was already parsed: a JSON parser is mounted ahead of the webhook');
+      return res.status(401).json({ error: 'unsigned' });
+    }
+    if (!bunnyPublisher.verifyWebhook(req.body, req.headers)) {
+      // Bunny doesn't retry a 401, so a wrong key would stop every webhook without a
+      // trace. Only when it looks like Bunny's (its signature header), at most every
+      // 10 minutes, and never the key or the signature itself.
+      if (req.headers['x-bunnystream-signature'] && Date.now() - lastBadSignatureLog > BAD_SIGNATURE_LOG_MS) {
+        lastBadSignatureLog = Date.now();
+        console.warn('[hub/bunny-webhook] a webhook with Bunny\'s signature headers didn\'t verify: check BUNNY_STREAM_READ_KEY is the library\'s current read-only key');
+      }
+      return res.status(401).json({ error: 'unsigned' });
+    }
+    let event;
+    try {
+      event = JSON.parse(req.body.toString('utf8'));
+    } catch {
+      return res.status(400).json({ error: 'bad request' });
+    }
+    try {
+      const outcome = await bunnyPublisher.applyWebhook(event);
+      return res.json({ ok: true, outcome });
+    } catch (err) {
+      // A 5xx is retried by Bunny for about 4 hours: right for a database hiccup.
+      console.error('[hub/bunny-webhook] could not apply an event:', err.message);
+      return res.status(500).json({ error: 'server error' });
+    }
+  });
+
   router.use('/hub', express.json({ limit: '2mb' }));
 
   /* ── The client's side (C1) ──────────────────────────────────────────────
@@ -440,10 +296,16 @@ function createHubRouter(db, opts = {}) {
     byKey: new Map((deliverables.listDeliverableFolderImages(sourcePath) || []).map((name) => [photoKey(name), name])),
   }), (m) => key === undefined || m.byKey.has(key)).byKey;
 
-  /* A version's review copy, played from the NAS through the route below, until
-     Bunny's takes over (Slice 4). Addressed by ids, never by path or file name;
-     a photo library's images by their key, in the folder's sorted order. */
+  /* A version's review copy. A video ready on Bunny Stream plays from there as HLS,
+     with Bunny's thumbnail as its poster (Bunny Slice 4). Anything else plays from
+     the NAS through the route below, so a version published before Bunny, or one
+     whose publish is still processing or failed, plays as it always did. Addressed
+     by ids, never by path or file name; a photo library's images by their key, in
+     the folder's sorted order. */
   function reviewOf(projectId, v, preview) {
+    const bunnyReady = v.kind !== 'photos' && v.bunny && v.bunny.status === 'ready' && v.bunny.videoId;
+    const stream = bunnyReady && bunnyPublisher ? bunnyPublisher.playback(v.bunny.videoId) : null;
+    if (stream) return { type: 'hls', url: stream.url, poster: stream.poster };
     if (!v.sourcePath) return null;
     const url = `${publicBaseUrl}/hub/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(v.id)}/review`;
     // A preview's <video> and <img> can't add the marker themselves, so their links carry it (photo= stays last).
@@ -764,6 +626,10 @@ function createHubRouter(db, opts = {}) {
       if (/UNIQUE/.test(err.message)) return res.json(approvalReply(approvalOn.get(at.v.id)));
       throw err;
     }
+    // After the reply's data is saved, never holding it up: the files may be due now (C10).
+    if (typeof opts.onApproved === 'function') {
+      Promise.resolve().then(() => opts.onApproved({ projectId: at.p.id })).catch(() => {});
+    }
     return res.status(201).json(approvalReply(row));
   });
 
@@ -803,50 +669,21 @@ function createHubRouter(db, opts = {}) {
     streamFile(req, res, resolved.absolute, resolved.stat, Boolean(row.downloadable));
   });
 
-  // ── POST /hub/publish-asset (the studio): { path, kind: 'video', force? }. Once per
-  // NAS path unless force:true. Bunny pulls the file from its /hub/files link.
-  router.use('/hub/publish-asset', credentialedCors);
-  router.post('/hub/publish-asset', requireAdmin, requireBunny, async (req, res) => {
-    const path = normalizeDeliverablePath(req.body?.path);
-    if ((req.body?.kind ?? 'video') !== 'video') return res.status(400).json({ error: 'unsupported kind' });
-
-    const resolved = deliverables.resolveDeliverablePath(path);
-    if (!resolved) return res.status(404).json({ error: 'file not found' });
-    if (!path.includes('/')) return res.status(422).json({ error: 'file must be inside a project folder' });
-    if (!VIDEO_EXTENSIONS.has(extname(path).toLowerCase())) {
-      return res.status(422).json({ error: 'not a video file' });
-    }
-
-    let pending = publishesInFlight.get(path);
-    if (!pending) {
-      await backupBeforeWrite();
-      // Checked again: another request may have started it while the copy ran.
-      pending = publishesInFlight.get(path);
-    }
-    if (!pending) {
-      pending = publishVideo(path, resolved, req.body?.force === true)
-        .finally(() => publishesInFlight.delete(path));
-      publishesInFlight.set(path, pending);
-    }
-
-    try {
-      const row = await pending;
-      res.status(row.status === 'failed' ? 502 : 200).json(bunnyAssetResponse(row, resolved.stat));
-    } catch (err) {
-      if (!err.keptExisting) throw err;
-      res.status(502).json({ ...bunnyAssetResponse(getBunnyAsset.get(path, 'video'), resolved.stat), error: err.message });
-    }
-  });
-
-  // ── GET /hub/publish-status?path=&kind= (the studio). Doesn't need the NAS file:
-  // a published video can outlive it.
-  router.use('/hub/publish-status', credentialedCors);
-  router.get('/hub/publish-status', requireAdmin, requireBunny, async (req, res) => {
-    const path = normalizeDeliverablePath(req.query.path);
-    const row = getBunnyAsset.get(path, String(req.query.kind || 'video'));
-    if (!row) return res.status(404).json({ error: 'not published' });
-    const current = await resolveVideoId(row);
-    res.json(bunnyAssetResponse(current, deliverables.resolveDeliverablePath(path)?.stat));
+  // ── GET /hub/source/:versionId/:name?token&expires: where Bunny pulls a version's
+  // file from when it is published (bunny-publish.js). The signature names the
+  // version and runs out after 6 hours, so this mints nothing permanent; the name
+  // is only for Bunny's eyes and must be the file's own. Range, like /hub/files.
+  router.get('/hub/source/:versionId/:name', (req, res) => {
+    const notFound = () => res.status(404).json({ error: 'not_found' });
+    const { versionId, name } = req.params;
+    if (!bunnyPublisher || !bunnyPublisher.verifySource(versionId, String(req.query.token || ''), req.query.expires)) return notFound();
+    const v = getVersionSource.get(versionId);
+    if (!v || !v.source_path || posix.basename(v.source_path) !== name) return notFound();
+    const file = deliverables.resolveDeliverablePath(v.source_path);
+    if (!file) return notFound();
+    // What Bunny gets is what sourceChanged compares against.
+    bunnyPublisher.servedSource(v.id, file.stat);
+    return streamFile(req, res, file.absolute, file.stat, false, { cacheControl: 'no-store' });
   });
 
   /* The hub's server answered everything in JSON, and the portal reads every
