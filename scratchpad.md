@@ -313,7 +313,24 @@ repaints only on a change; Slice 5 gained a user step for Bunny's Allowed Referr
 Slice 9). Checked in the browser on the fake Bunny: a refusal shows Failed with no banner; leaving mid-send
 left the other project's block alone. 1150/1150.
 
-**Next: Slice 5 (verify video end to end and deploy) | Model: Opus 5.5 | Effort: Medium**. User steps first:
+**B2 Slice 5 in progress 2026-11-26.** NAS deployed at `bf7f9fd`, schema v33 (backup `pre-b2-20261126-154635.db`,
+image `lsc-admin:pre-b2`, folder `app.prev-b2`; dry run on a live copy first, copies deleted). m6-checks ALL PASS.
+The 8 `BUNNY_*` were piped from 1Password ("LSC Client Hub Bunny", mounted at `~/.config/lsc-billing/bunny.env`)
+into the NAS `.env` with grep, never printed (`.env.pre-bunny` kept); `up -d`; the boot warning is gone and an
+unsigned webhook gets 401. Bunny library 683470: webhook URL was already set; Allowed domains `lsccreative.studio`
+and `app.lsccreative.studio` (exact match: the bare domain doesn't cover `app`); Block direct url access left off,
+so no-referrer requests (native HLS) play; a foreign referrer gets 403.
+Real run on PTC9 Video 1: v3 = `Test Media/Online Video/Sheds Of Woollamia_V04_PVSFN07.mp4` (369 MB). Send took
+~11 s (collection `prj_cf6efa37 C9 Test` made, video listed at once); Bunny pulled it through the Tunnel and
+transcoded in ~8 min; Ready arrived by the signed webhook (last_event_at = the event's Timestamp). Published,
+no email. Live portal (Pages still the C9 page, so no card poster until the merge) plays Bunny HLS via hls.js;
+View as client in Chromium: contract 1, 2, 4, 5 pass, 3 refused as a preview should (text kept, no reload).
+**Left:** the user's iPhone + desktop Safari run signed in as the client (notes saved, approve); approving v3 sends
+C10's files update to lachlan@creativelsc.com (both invoices paid; v3 has no Drive link, so it's flagged);
+decide `playsinline`; then tick Slice 5. An imported NAS-linked version: none live (PTC9's v1/v2 were made here).
+
+**After Slice 5:** per ROADMAP/TASKS.md the order is payment next, then the remaining Bunny slices (Slice 6,
+photo libraries → Edge Storage, Opus 5.5 | High). Ask the user before any push or the merge to `main` (Pages). User steps first:
 the 8 `BUNNY_*` names in the NAS `.env`, the library's webhook URL, empty live bunny tables (v33).
 
 (C10 as planned:) New task (the user's call,
