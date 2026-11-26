@@ -1299,9 +1299,12 @@ function renderVideoCanvas(a){
       ${a.reviewLink ? `<button id="video-retry" class="btn">Try again</button>` : ''}
     </div>`;
   }
+  // playsinline (the user, 2026-11-27): on an iPhone the video plays in the page, not
+  // full screen, so the client can pause and tap COMMENT REVISIONS straight away.
+  // Full screen is still the player's own button.
   return `
     <div class="player">
-      <video id="asset-video" controls controlsList="nodownload" disablePictureInPicture oncontextmenu="return false" preload="metadata"${a.poster ? ` poster="${escapeAttr(a.poster)}"` : ''} data-src="${escapeAttr(a.reviewLink)}"></video>
+      <video id="asset-video" controls playsinline controlsList="nodownload" disablePictureInPicture oncontextmenu="return false" preload="metadata"${a.poster ? ` poster="${escapeAttr(a.poster)}"` : ''} data-src="${escapeAttr(a.reviewLink)}"></video>
     </div>
     <div id="pause-pill" class="timestamp-pill" ${state.pausedAt ? '' : 'style="display:none"'}>${icon('clock', 12)}<span id="pause-pill-time">${escapeHtml(state.pausedAt || '')}</span></div>
   `;

@@ -325,9 +325,13 @@ Real run on PTC9 Video 1: v3 = `Test Media/Online Video/Sheds Of Woollamia_V04_P
 transcoded in ~8 min; Ready arrived by the signed webhook (last_event_at = the event's Timestamp). Published,
 no email. Live portal (Pages still the C9 page, so no card poster until the merge) plays Bunny HLS via hls.js;
 View as client in Chromium: contract 1, 2, 4, 5 pass, 3 refused as a preview should (text kept, no reload).
-**Left:** the user's iPhone + desktop Safari run signed in as the client (notes saved, approve); approving v3 sends
-C10's files update to lachlan@creativelsc.com (both invoices paid; v3 has no Drive link, so it's flagged);
-decide `playsinline`; then tick Slice 5. An imported NAS-linked version: none live (PTC9's v1/v2 were made here).
+2026-11-26 21:22-21:25 UTC: the user signed in as the client on the iPhone (Chrome for iOS, `CriOS/158`) and the Mac
+(Chrome 158); two notes on v3 (one with no stamp, one at 121.088 s) sent as one set; no approval, so no C10 email.
+**`playsinline` adopted** (the user, 2026-11-27): `#asset-video` in `client-hub-app/index.html`, a page check in
+`test-portal-page.js`, feature-spec's Player decisions; 1151/1151. It's portal-side, so it ships with the Pages
+release (merge `merged-admin` → `main`, ask first). **Left before ticking Slice 5:** that release, then the iPhone
+contract again (inline); desktop Safari unchecked (no Safari session reached the server). An imported NAS-linked
+version: none live (PTC9's v1/v2 were made here), so that check has nothing to run on.
 
 **After Slice 5:** per ROADMAP/TASKS.md the order is payment next, then the remaining Bunny slices (Slice 6,
 photo libraries → Edge Storage, Opus 5.5 | High). Ask the user before any push or the merge to `main` (Pages). User steps first:

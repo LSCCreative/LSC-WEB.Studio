@@ -112,6 +112,11 @@ check('the portal signs in through the server’s session, holding no token of i
   assert.match(page, /attachReviewSource\(video, video\.dataset\.src, videoFailed\)/);
 });
 
+check('the review player plays inline on an iPhone (the user, 2026-11-27)', () => {
+  // Without playsinline every iPhone play goes full screen and the client must leave it to comment.
+  assert.match(fnBody('renderVideoCanvas'), /<video id="asset-video" controls playsinline /);
+});
+
 check('the player survives a revision: the <video> sits outside the partial repaint', () => {
   const interaction = fnBody('renderAssetInteraction');
   assert.doesNotMatch(interaction, /<video|asset-video|pause-pill/, 'the repainted part never builds the player');

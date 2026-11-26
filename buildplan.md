@@ -167,6 +167,15 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       plays. **Decide `playsinline` with the user** (today every iPhone play goes fullscreen
       and the client must exit to comment); if adopted, re-run the contract on the iPhone.
       Log results in `scratchpad.md`. | Model: Opus 5.5 | Effort: Medium
+      **So far (2026-11-26/27):** NAS deployed at v33 with the 8 `BUNNY_*` set; webhook URL and
+      Allowed domains (`lsccreative.studio`, `app.lsccreative.studio`) set; a 369 MB real file went
+      through the Tunnel to Ready by the signed webhook in ~8 min; published; the live portal plays it
+      as Bunny HLS. Contract: desktop Chrome passed (View as client, then the user signed in); the
+      user's iPhone (Chrome for iOS, WebKit + native HLS) and Mac Chrome sent two notes on v3 as one set,
+      one stamped at the exact frame. **`playsinline` adopted** (the user, 2026-11-27), in the portal page,
+      so it ships with the Pages release. **Left:** after that release, re-run the contract on the iPhone
+      (inline now); desktop Safari was not checked; no imported NAS-linked version exists on the live db
+      to play (PTC9's were made here), so that check has nothing to run on.
 
 ### Part C — Photos & masters (merge task B3)
 
