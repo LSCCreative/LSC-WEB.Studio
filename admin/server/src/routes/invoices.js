@@ -17,6 +17,7 @@ const {
 const { readFolder, logActivity, todayOf, isYmd, projectBriefs } = require('./projects');
 const { sendRequest, addSend, cancelPending, sydneyDate } = require('../sends');
 const { newToken } = require('../public');
+const { releaseView } = require('../files-release');
 
 const PAID_VIA = ['bank', 'card'];
 const LIST_LIMIT = 5;
@@ -125,7 +126,9 @@ function registerInvoiceRoutes(app, db, opts = {}) {
     // Its link and newest email (task 29) as the folder's row has them.
     const listed = folder.invoices.find((i) => i.id === row.id) || {};
     const invoice = { ...invoiceJson(db, row), publicToken: listed.publicToken || null, send: listed.send || null };
-    return res.json({ ok: true, invoice, project: folder.project, invoices: folder.invoices, ...(extra || {}) });
+    // Whether paying this one sends the client their files (C10): Mark paid's dialog says so.
+    const filesRelease = releaseView(db, row.project_id, req.app.locals.mailer);
+    return res.json({ ok: true, invoice, project: folder.project, invoices: folder.invoices, filesRelease, ...(extra || {}) });
   }
 
   /* The invoice behind an action, or null once a 404 has been sent. A bad
@@ -441,7 +444,15 @@ function registerInvoiceRoutes(app, db, opts = {}) {
     return reply(req, res, row.id);
   });
 
-  app.post('/api/invoices/:id/paid', (req, res) => {
+  app.post('/api/invoices/:id/paid', async (req, res, next) => {
+    try {
+      return await markPaid(req, res);
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  async function markPaid(req, res) {
     const row = invoiceFor(req, res);
     if (!row) return undefined;
     if (row.status === 'paid') return reply(req, res, row.id, { already: true });
@@ -472,8 +483,12 @@ function registerInvoiceRoutes(app, db, opts = {}) {
         invoiceId: row.id, number: row.number, paidAt, via, amount: invoiceJson(db, row).amountDue,
       }, now);
     })();
-    return reply(req, res, row.id);
-  });
+    // The whole job paid, and every item approved: the client's files go now (C10).
+    // Awaited, so the message says what happened, but only so long: past that it says
+    // "still sending" and the send carries on (a saved payment never looks failed).
+    const files = req.app.locals.filesRelease ? await req.app.locals.filesRelease.checkWithin(row.project_id) : null;
+    return reply(req, res, row.id, files ? { files } : undefined);
+  }
 
   app.post('/api/invoices/:id/void', (req, res) => {
     const row = invoiceFor(req, res);

@@ -1132,6 +1132,13 @@ const MIGRATIONS = [
       require('./migrations/v31-portal-previews').migrateV31(db);
     },
   },
+  {
+    version: 32,
+    name: 'files_releases: the client\'s files, emailed once the job is paid and approved (C10)',
+    up(db) {
+      require('./migrations/v32-files-releases').migrateV32(db);
+    },
+  },
 ];
 
 /**

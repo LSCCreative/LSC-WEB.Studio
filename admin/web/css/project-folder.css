@@ -513,6 +513,10 @@
 .pf-dialog .field + .field {
   margin-top: var(--space-6);
 }
+/* Mark paid's word on the client's files (C10), under the choices. */
+.pf-dialog .pfd-files {
+  margin-top: var(--space-6);
+}
 .pf-dialog .field label {
   display: block;
   margin-bottom: var(--space-3);

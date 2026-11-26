@@ -992,9 +992,49 @@ const InvoiceView = (() => {
     }
   }
 
+  /* What marking this invoice paid does about the client's files (C10), or '' when
+     it does nothing: they go by email once the whole job is paid and every item is
+     approved, with no question asked, so the dialog says so before the click. */
+  function filesNote(inv) {
+    const f = data.filesRelease;
+    // Only the last unpaid invoice finishes paying the job, and only a job with items sends.
+    if (!f || !f.hasClosing || !f.needed) return '';
+    if (f.unpaid.length !== 1 || f.unpaid[0] !== inv.id) return '';
+    if (f.delivered) {
+      return f.sentOn ? 'The client already has their files (emailed ' + when(f.sentOn) + ').' : 'The client already has their files.';
+    }
+    if (!f.approved) return 'Their files go to the client by email once every item is approved (' + f.open + ' still to go).';
+    // Everything approved was delivered by the old hub: nothing new to send.
+    if (f.nothingNew) return '';
+    if (!f.mail) return 'Email isn’t set up, so the client’s files won’t be emailed.';
+    if (f.badEmail) {
+      return 'The client’s email address (' + f.badEmail + ') isn’t a valid address, so their files can’t go yet. Fix it in their details and they go within the hour.';
+    }
+    if (!f.email) return 'The client has no email address, so their files can’t go yet. Add one in their details and they go within the hour.';
+    const missing = f.noLink.length
+      ? ' “' + f.noLink.join('”, “') + '” ' + (f.noLink.length === 1 ? 'has' : 'have') + ' no Drive link, so the email says it comes separately.'
+      : '';
+    return 'Marking it paid emails ' + f.email + ' their files, and you get a copy.' + missing;
+  }
+
+  /* After Mark paid: what happened to the files, in words that match it. */
+  function filesSaid(reply) {
+    const r = reply.files;
+    if (!r) return '';
+    if (r.sent) return ' ' + (r.update ? 'Updated files' : 'Files') + ' emailed to ' + r.to + '.';
+    if (r.reason === 'failed') return ' The files email didn’t go; it’ll try again within the hour.';
+    if (r.reason === 'gave_up') return ' The files email didn’t go. Send the client their files by hand.';
+    if (r.reason === 'sending') return ' The files email is still sending; the project’s Activity says when it has gone.';
+    if (r.reason === 'no_email') {
+      return r.badEmail ? ' The client’s email address isn’t valid, so their files haven’t gone.' : ' The client has no email address, so their files haven’t gone.';
+    }
+    return '';
+  }
+
   function openMarkPaid(opener) {
     const inv = data.invoice;
     const amount = fmt(inv.amountDue);
+    const files = filesNote(inv);
     ProjectFolder.dialog(opener, {
       title: 'Mark ' + (inv.number || 'invoice') + ' paid',
       body:
@@ -1004,7 +1044,8 @@ const InvoiceView = (() => {
         '<div class="field"><label for="pfd-paid">Paid on</label><input id="pfd-paid" type="date" value="' + today() + '" max="' + today() + '"></div>' +
         '<fieldset class="pfd-choice"><legend>Paid by</legend>' +
         '<label><input type="radio" name="pfd-via" value="bank" checked><span>Bank transfer</span></label>' +
-        '<label><input type="radio" name="pfd-via" value="card"><span>Card</span></label></fieldset>',
+        '<label><input type="radio" name="pfd-via" value="card"><span>Card</span></label></fieldset>' +
+        (files ? '<p class="pfd-text pfd-files">' + esc(files) + '</p>' : ''),
       describe: true,
       confirm: 'Mark paid',
       focus: 'pfd-paid',
@@ -1014,7 +1055,7 @@ const InvoiceView = (() => {
         if (paidAt > today()) throw fieldError('pfd-paid', 'The payment date can’t be after today.');
         const via = document.querySelector('input[name="pfd-via"]:checked').value;
         return write('paid', { paidAt, via }, b, 'Saving…', (reply) =>
-          reply.already ? 'It was already marked paid.' : 'Marked paid, ' + amount + ' on ' + when(paidAt) + '.');
+          reply.already ? 'It was already marked paid.' : 'Marked paid, ' + amount + ' on ' + when(paidAt) + '.' + filesSaid(reply));
       },
     });
   }

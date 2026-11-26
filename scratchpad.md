@@ -240,7 +240,17 @@ Step 5: the user ran test project PTC9 end to end on a phone; all six steps work
 `CORS_ORIGINS` from the NAS `.env` (then `docker compose up -d`, no --build); remove the old `lsc-billing` and `client-hub-api`
 containers on OK; reserve the NAS's address and update ~/.ssh/config. The local live-db copies were deleted.
 
-**Next: C10 Email the files once the job is paid | Model: Opus 5.5 | Effort: High.** New task (the user's call,
+**C10 done 2026-11-26 (not deployed).** Schema v32 `files_releases`, `server/src/files-release.js`, mail templates
+`filesReadyEmail` / `filesSentOwnerEmail` / `filesNotSentOwnerEmail`, Mark paid dialog note + toast, Activity labels.
+Code review (9 findings): 8 fixed, 1 not needed (a void always makes an unpaid replacement). v32 baselines every job
+already paid and approved, so old jobs never email on their own. 1106/1106 pass (14 in `test-files-release.js`).
+Seen on the dev server (stub mail): dialog wording, client email, toast, and a baselined job's "already has their files".
+Deploy is NAS only (schema v32; the portal page is unchanged), after the usual dry run on a live-db copy. Check
+`MAIL_REPLY_TO` is set on the NAS, or the studio's copies don't go.
+
+**Next: B2 Publish video through Bunny | Model: Opus 5.5 | Effort: High** (after C10 is deployed).
+
+(C10 as planned:) New task (the user's call,
 2026-11-26, spec in TASKS.md): whole job paid + every item approved → client emailed each approved Final's Drive link, owner
 copied, no confirmation; Bunny links join at B3. Then B2 Publish video through Bunny (Opus 5.5 | High). Merge `merged-admin` to `main`, redeploy (NAS before Pages),
 one real job start to finish with a test client on a real phone. Payment stays off. Ask the user before any push or deploy.

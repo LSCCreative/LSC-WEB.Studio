@@ -253,6 +253,11 @@ const ProjectCard = (() => {
       case 'deemed_approved': return 'Marked v' + d.n + ' of “' + (d.title || 'a deliverable') + '” as deemed approved (no reply in 14 business days)';
       case 'deemed_reminder_sent': return 'Reminder emailed to ' + (d.to || 'the client') + ' about v' + d.n + ' of “' + (d.title || 'a deliverable') + '”';
       case 'deemed_reminder_failed': return 'The reminder email to ' + (d.to || 'the client') + ' about v' + d.n + ' didn’t go' + (d.error ? ': ' + d.error : '');
+      case 'files_sent': return (d.update ? 'Updated files' : 'Files') + ' emailed to ' + (d.to || 'the client') +
+        (d.missing && d.missing.length ? ' (no Drive link: ' + d.missing.join(', ') + ')' : '');
+      case 'files_failed': return 'The files email to ' + (d.to || 'the client') + ' didn’t go' + (d.error ? ': ' + d.error : '') +
+        (d.gaveUp ? '. It won’t be tried again' : '');
+      case 'files_not_sent': return 'The files couldn’t be emailed: ' + (d.badEmail ? 'the client’s email address (' + d.badEmail + ') isn’t valid' : 'the client has no email address');
       case 'no_deliverables': return 'Said no deliverables are expected';
       case 'deliverables_expected': return 'Said deliverables are expected after all';
       case 'archived': return 'Archived';

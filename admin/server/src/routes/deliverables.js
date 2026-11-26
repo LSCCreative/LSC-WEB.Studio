@@ -60,6 +60,12 @@ function registerDeliverableRoutes(app, db, opts = {}) {
   function answer(req, res, extra = {}) {
     const today = todayOf(req);
     if (!today) return res.status(400).json({ error: 'today_invalid' });
+    // A checklist write may finish the job (Mark approved, Not needed, a Drive link
+    // added): the files go if it's paid (C10). In the background, after this reply's read.
+    if (req.method !== 'GET' && req.app.locals.filesRelease) {
+      const projectId = req.params.id;
+      setImmediate(() => req.app.locals.filesRelease.check(projectId));
+    }
     return res.json({ ok: true, ...readFolder(db, req.params.id, today), ...extra });
   }
 

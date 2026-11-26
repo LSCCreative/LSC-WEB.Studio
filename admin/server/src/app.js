@@ -29,6 +29,7 @@ const { createGoogleSync } = require('./google-sync');
 const { createMailer } = require('./mail');
 const { notesSubmitted } = require('./owner-notices');
 const { createDeemedReminders } = require('./deemed-reminders');
+const { createFilesRelease } = require('./files-release');
 const { createOutbox } = require('./sends');
 const { createHnry } = require('./hnry');
 const { createHnryPusher } = require('./hnry-push');
@@ -153,6 +154,8 @@ function createApp(db, opts = {}) {
     onNotesSubmitted: (ev) => notesSubmitted(db, {
       mailer: app.locals.mailer, appUrl: appUrlOf(opts.appUrl !== undefined ? opts.appUrl : config.appUrl),
     }, ev),
+    // The client's approval may be the last thing the job waited on: their files go (C10).
+    onApproved: (ev) => app.locals.filesRelease && app.locals.filesRelease.check(ev.projectId),
   });
 
   app.use(portalHostOnly(hub ? hostnameOf(hub.publicBaseUrl) : ''));
@@ -201,6 +204,13 @@ function createApp(db, opts = {}) {
     mailer,
     appUrl: appUrlOf(opts.appUrl !== undefined ? opts.appUrl : config.appUrl),
     portalUrl: (hub && hub.signingSecret && ((hub && hub.portalUrl) || config.hub.portalUrl)) || '',
+  });
+  // The client's files once the job is paid and approved (C10): checked when either
+  // happens, and an hourly pass for retries (index.js starts it).
+  app.locals.filesRelease = createFilesRelease(db, {
+    mailer,
+    appUrl: appUrlOf(opts.appUrl !== undefined ? opts.appUrl : config.appUrl),
+    waitMs: opts.filesWaitMs,
   });
 
   // Hnry (hnry-invoicing): an accepted project's deposit or single invoice is

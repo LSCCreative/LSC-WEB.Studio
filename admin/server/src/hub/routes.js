@@ -764,6 +764,10 @@ function createHubRouter(db, opts = {}) {
       if (/UNIQUE/.test(err.message)) return res.json(approvalReply(approvalOn.get(at.v.id)));
       throw err;
     }
+    // After the reply's data is saved, never holding it up: the files may be due now (C10).
+    if (typeof opts.onApproved === 'function') {
+      Promise.resolve().then(() => opts.onApproved({ projectId: at.p.id })).catch(() => {});
+    }
     return res.status(201).json(approvalReply(row));
   });
 
