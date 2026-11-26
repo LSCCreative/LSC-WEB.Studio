@@ -192,3 +192,16 @@ check('no download anywhere on the portal, and notes are saved on the server as 
   // Approve is off while notes are unsent.
   assert.match(fnBody('renderAssetInteraction'), /unsent\.length \? 'disabled/);
 });
+
+check('a video on Bunny Stream shows its poster and plays through the same player (Bunny Slice 4)', () => {
+  // The poster comes only with an HLS review, and the review link is the reply's url either way.
+  assert.match(fnBody('portalProject'), /poster: \(!photo && review && review\.type === 'hls' && review\.poster\) \|\| ''/);
+  assert.match(fnBody('portalProject'), /reviewLink: \(!photo && review && review\.url\) \|\| ''/);
+  // A card shows the poster as an <img>: no card pulls a playlist or a segment.
+  const thumb = fnBody('renderAssetThumb');
+  assert.ok(thumb.indexOf('if(a.poster)') < thumb.indexOf('isHlsUrl(a.reviewLink)'));
+  assert.match(thumb, /<img src="\$\{escapeAttr\(a\.poster\)\}"[^>]*onerror="this\.remove\(\)"/);
+  // The review player is still the one <video id="asset-video">, fed by attachReviewSource.
+  assert.match(fnBody('renderVideoCanvas'), /<video id="asset-video"[^>]*\$\{a\.poster \? ` poster="\$\{escapeAttr\(a\.poster\)\}"` : ''\}/);
+  assert.match(page, /attachReviewSource\(video, video\.dataset\.src, videoFailed\)/);
+});

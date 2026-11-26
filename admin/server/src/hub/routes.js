@@ -79,8 +79,10 @@ function normalizeDeliverablePath(value) {
  *   publicBaseUrl   required: this API's public address, used in the links it hands out
  *   deliverablesDir required: the read-only NAS deliverables folder
  *   corsOrigins     origins allowed to send credentials
- *   bunnyPublisher  bunny-publish.js's publisher: GET /hub/source checks its signatures.
- *                   Absent or not set up, that route answers 404
+ *   bunnyPublisher  bunny-publish.js's publisher: GET /hub/source checks its signatures,
+ *                   the webhook is applied through it, and a ready video's HLS and
+ *                   poster links come from it. Absent or not set up, the source route
+ *                   answers 404 and every video plays from the NAS
  *   rateLimit       required: billing's per-address limiter (routes/public.js)
  *   clientIp        required: billing's client address (routes/public.js), so the
  *                   agreement's evidence reads what billing's does
@@ -294,10 +296,16 @@ function createHubRouter(db, opts = {}) {
     byKey: new Map((deliverables.listDeliverableFolderImages(sourcePath) || []).map((name) => [photoKey(name), name])),
   }), (m) => key === undefined || m.byKey.has(key)).byKey;
 
-  /* A version's review copy, played from the NAS through the route below, until
-     Bunny's takes over (Slice 4). Addressed by ids, never by path or file name;
-     a photo library's images by their key, in the folder's sorted order. */
+  /* A version's review copy. A video ready on Bunny Stream plays from there as HLS,
+     with Bunny's thumbnail as its poster (Bunny Slice 4). Anything else plays from
+     the NAS through the route below, so a version published before Bunny, or one
+     whose publish is still processing or failed, plays as it always did. Addressed
+     by ids, never by path or file name; a photo library's images by their key, in
+     the folder's sorted order. */
   function reviewOf(projectId, v, preview) {
+    const bunnyReady = v.kind !== 'photos' && v.bunny && v.bunny.status === 'ready' && v.bunny.videoId;
+    const stream = bunnyReady && bunnyPublisher ? bunnyPublisher.playback(v.bunny.videoId) : null;
+    if (stream) return { type: 'hls', url: stream.url, poster: stream.poster };
     if (!v.sourcePath) return null;
     const url = `${publicBaseUrl}/hub/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(v.id)}/review`;
     // A preview's <video> and <img> can't add the marker themselves, so their links carry it (photo= stays last).

@@ -244,6 +244,10 @@ const ROUNDS_INCLUDED = 2;
 
 /* An approval as the readers see it (C5): the record, whoever reads it decides how
    much of it they show (the client sees when, the studio sees all of it). */
+/* A version's Bunny Stream row as the checklist carries it. Only a ready row with
+   an id plays; anything else leaves the version on its NAS link. */
+const bunnyStateOf = (b) => (b ? { status: b.status, error: b.error || null, videoId: b.bunny_video_id || null } : null);
+
 const approvalOf = (a) => (a ? {
   kind: a.kind,
   approvedAt: a.approved_at,
@@ -261,7 +265,8 @@ const approvalOf = (a) => (a ? {
    client's, sent or not (each reader decides what it shows: the studio sees a
    note once it's sent). `approvals` (C5) are each version's, if it has one.
    `roundsUsed` counts the sets sent on Final versions: a Draft Cut's never count. */
-function checklistOf(items, versions, { submissions = [], notes = [], approvals = [] } = {}) {
+function checklistOf(items, versions, { submissions = [], notes = [], approvals = [], bunny = [] } = {}) {
+  const bunnyOf = new Map(bunny.map((b) => [b.version_id, b]));
   const sentAt = new Map(submissions.map((s) => [s.version_id, s.submitted_at]));
   const sentById = new Map(submissions.map((s) => [s.id, s.submitted_at]));
   const approvalAt = new Map(approvals.map((a) => [a.version_id, a]));
@@ -289,6 +294,9 @@ function checklistOf(items, versions, { submissions = [], notes = [], approvals 
       publishedAt: v.published_at || null,
       submittedAt: sentAt.get(v.id) || null,
       approval: approvalOf(approvalAt.get(v.id)),
+      // Its video on Bunny Stream (bunny-publish.js), or null: where the client will
+      // watch it from. Studio-only: the portal's reply builds its review from it.
+      bunny: bunnyStateOf(bunnyOf.get(v.id)),
     })),
     roundsUsed: submissions.filter((s) => s.deliverable_id === d.id && s.stage === 'final').length,
     roundsIncluded: ROUNDS_INCLUDED,
@@ -332,6 +340,7 @@ function readChecklist(db, projectId) {
       submissions: db.prepare('SELECT * FROM client_submissions WHERE project_id = ?').all(projectId),
       notes: db.prepare('SELECT * FROM client_notes WHERE project_id = ? ORDER BY created_at, id').all(projectId),
       approvals: db.prepare('SELECT * FROM client_approvals WHERE project_id = ?').all(projectId),
+      bunny: db.prepare("SELECT version_id, status, error, bunny_video_id FROM bunny_assets WHERE project_id = ? AND kind = 'video'").all(projectId),
     },
   );
 }

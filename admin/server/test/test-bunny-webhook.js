@@ -207,7 +207,7 @@ test('events out of order or twice: the newest wins, and progress never undoes r
   assert.equal(p.video().status, 'ready');
 
   assert.equal((await webhook(eventBody(id, 32, at('2026-11-26T05:00:00Z')))).body.outcome, 'applied');
-  assert.deepEqual([p.video().status, p.video().error], ['failed', 'The video was deleted on Bunny. Publish again.']);
+  assert.deepEqual([p.video().status, p.video().error], ['failed', 'The video was deleted on Bunny. Send it to Bunny again.']);
 });
 
 test('codes that say nothing about playing, another library and a live stream are ignored', async () => {
@@ -248,7 +248,7 @@ test('Needs you shows Publish failed for the newest version, and it leaves when 
   const item = (await needs()).find((n) => n.id === `publish_failed:${p.version}`);
   assert.ok(item, 'listed');
   assert.deepEqual([item.kind, item.itemId, item.title, item.n, item.error],
-    ['publish_failed', p.item, 'Hero film', 1, 'Bunny couldn’t transcode the file. Check it plays, then publish again.']);
+    ['publish_failed', p.item, 'Hero film', 1, 'Bunny couldn’t transcode the file. Check it plays, then send it to Bunny again.']);
 
   await webhook(eventBody(id, 3, at('2026-11-26T08:10:00Z')));
   assert.equal((await needs()).some((n) => n.id === `publish_failed:${p.version}`), false, 'gone once ready');

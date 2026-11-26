@@ -108,7 +108,7 @@ function readNeeds(db, { today, briefs, rows }) {
 
   // Publish failed (Bunny Slice 3): Bunny gave up on the newest version of a needed item,
   // so the client can't be given it. Leaves when a publish of it goes through (or a newer
-  // version replaces it); the row opens the item, where Publish again is.
+  // version replaces it); the row opens the item, where Send to Bunny again is.
   db.prepare(`
     SELECT b.version_id, b.error, b.updated_at, v.n, d.id AS item_id, d.title,
            p.id AS project_id, p.client_id, p.upid, p.name

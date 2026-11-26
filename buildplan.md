@@ -127,7 +127,7 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       computed: a failed row on a needed item's newest version, gone once ready or replaced. 8 tests in
       `test-bunny-webhook.js`; 1137/1137.
 
-- [ ] Slice 4: **[ADMIN + API + PORTAL]** Publish from the Deliverables tab, play in the portal.
+- [x] Slice 4: **[ADMIN + API + PORTAL]** Publish from the Deliverables tab, play in the portal.
       - Admin (R3's deliverable item): a **Publish to Bunny** action beside the version's
         file, polling status: Processing / Ready / Failed with the reason / "The NAS file
         changed since publishing" with Republish. Poster thumbnail when ready. A version
@@ -139,6 +139,16 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       - Portal: the review player takes `review.url` through `attachReviewSource`; landing
         and dashboard cards use `poster` as an `<img>`. Update any publish help copy.
       - Player guardrail applies. | Model: Opus 5.5 | Effort: High
+      **Done 2026-11-26 (not deployed):** two steps, not one button (Bunny takes minutes and Publish can
+      email the client): the version's **Bunny Stream** block (Send to Bunny, Processing checked every 10 s,
+      Ready with Bunny's thumbnail, Failed with the reason, Old cut with Republish… only before the client has
+      it), then Publish, disabled until it's ready. The server holds it too: with Bunny on, a video's publish
+      answers 409 `bunny_not_ready` or `bunny_stale`; photo libraries aren't held; Bunny off holds nothing.
+      `reviewOf` gives `{ type:'hls', url, poster }` for a ready row only (built when the portal answers);
+      no row, processing, failed or Bunny off keep the NAS link. Portal cards and `#asset-video` take the
+      poster (the dashboard has no media cards). Player contract 1-6 passed on HLS in Chromium, desktop and
+      375 px, against a fake Bunny and a public test stream; desktop Safari and the iPhone are Slice 5's.
+      `test-bunny-review.js` (6) + a portal page check; 1149/1149.
 
 - [ ] Slice 5: Verify video end to end and deploy. **[USER]** Before deploying, check the
       NAS `.env` for the 8 `BUNNY_*` names (without them publishing answers 503; it no

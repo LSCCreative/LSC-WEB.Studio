@@ -284,9 +284,29 @@ Slice 3 review (6) fixed: a webhook with Bunny's headers that fails verification
 15 s; a zoneless Timestamp is UTC. Publish failed row seen in the browser on the scratch admin (desktop and
 375 px, links to the item). **The scratch db is now at v33** (portal-api restarted). 1142/1142.
 
-**Next: Slice 4 (Publish from the Deliverables tab, play in the portal) | Model: Opus 5.5 | Effort: High**.
-Frontend task (admin + portal), with the player guardrail. Decide there: one button or two (Bunny publish,
-then the client's publish), and never offer Republish on a version the client has (the API refuses force).
+**B2 Slice 4 done 2026-11-26 (committed, not pushed, not deployed).** Two steps, not one button: the version
+panel's **Bunny Stream** block (Not sent / Processing / Ready + poster / Failed + reason / Old cut + Republish…,
+never on a published version) above the client's Publish, which is disabled (aria-describedby the note) until
+Bunny is ready with the file the NAS holds now. The server enforces it: with Bunny on, `…/publish` of a video
+answers 409 `bunny_not_ready` / `bunny_stale` (its status read also asks Bunny, so a just-finished one passes).
+Photo libraries aren't held. A published video with no row can be sent too (old projects move over). The
+block checks `GET …/bunny` on open and every 10 s while processing (stops on any redraw). Folder replies carry
+`bunnyOn` and each version's `bunny` {status, error, videoId} (readChecklist); the portal's allow-list drops it
+and `reviewOf` builds `{ type:'hls', url, poster }` for a ready row only, everything else keeps the NAS link.
+Portal: cards and `#asset-video` take `poster`; playback unchanged through `attachReviewSource`. The dashboard
+has no media cards, so only the project page's deliverable cards changed. Bunny's stored reasons now say
+"send it to Bunny again". Tests: `test-bunny-review.js` (6) + a page check; 1149/1149 (re-run after the last focus fix).
+Browser (scratch, fake Bunny via `portal-api-fakebunny` in launch.json, script in this session's scratchpad,
+public Mux test HLS stream): admin Not sent → Processing → Ready by itself → Old cut (touched the file) →
+Republish → Publish, desktop and 375 px; portal card poster; **player contract on HLS in Chromium desktop and
+375 px: 1-6 pass** (no pill before Comment revisions; rounds notice → Continue stamps 00:43 at 43.258 s; pause
+re-stamps 01:15, play clears; Add note saved 75.858015 s = currentTime, box empty, same <video>, no reload;
+Approve absent while open; two fatal hls errors → fallback card → Try again plays). **Not checked: desktop
+Safari and a physical iPhone (native HLS)** — Slice 5's real-device run. Scratch db: C2-0001 Hero film v6 is
+published with a ready row on fake `vid-2` (plays from the NAS under plain portal-api, Bunny off).
+
+**Next: Slice 5 (verify video end to end and deploy) | Model: Opus 5.5 | Effort: Medium**. User steps first:
+the 8 `BUNNY_*` names in the NAS `.env`, the library's webhook URL, empty live bunny tables (v33).
 
 (C10 as planned:) New task (the user's call,
 2026-11-26, spec in TASKS.md): whole job paid + every item approved → client emailed each approved Final's Drive link, owner

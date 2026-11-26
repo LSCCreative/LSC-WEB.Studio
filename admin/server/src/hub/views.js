@@ -102,9 +102,11 @@ function invoiceCard(inv) {
 /* One project, with what the client has been given on its checklist: items the
    studio marked not needed, and versions not yet published, aren't theirs to see.
    `reviewOf(version)` gives each version's review copy, built at reply time and
-   never stored (C2): { type: 'file', url } for a video, { type: 'photos', urls }
-   for a photo library, or null when there's no file to show (an old hub link).
-   Bunny's { type: 'hls', url } joins it in Slice 4. Nothing here offers a download.
+   never stored (C2): { type: 'hls', url, poster } for a video ready on Bunny Stream
+   (Bunny Slice 4), { type: 'file', url } for one played from the NAS, { type:
+   'photos', urls } for a photo library, or null when there's no file to show (an old
+   hub link). Nothing here offers a download. A version's `bunny` row stays here:
+   only what reviewOf builds from it goes out.
    `invoices` (C3): the ones actually sent, through invoiceCard. `agreement`: the
    signed quote's page and when it was signed, or null when it wasn't signed here.
    `hourlyRate` (C5): the rate as the signed agreement wrote it ("$63.00"), for the

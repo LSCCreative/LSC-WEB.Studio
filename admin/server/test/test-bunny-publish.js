@@ -248,13 +248,13 @@ test('a video Bunny fails to transcode, or no longer has, is failed with a reaso
   const video = bunny.state.videos.find((x) => x.guid === rowOf(v).bunny_video_id);
   video.status = 5;
   const failed = await statusOf(p, v);
-  assert.deepEqual([failed.body.status, failed.body.error], ['failed', 'Bunny couldn’t transcode the file. Check it plays, then publish again.']);
+  assert.deepEqual([failed.body.status, failed.body.error], ['failed', 'Bunny couldn’t transcode the file. Check it plays, then send it to Bunny again.']);
 
   bunny.state.statusOnFetch = 3;
   await publish(p, v);
   bunny.state.videos = bunny.state.videos.filter((x) => x.guid !== rowOf(v).bunny_video_id);
   const gone = await statusOf(p, v);
-  assert.deepEqual([gone.body.status, gone.body.error], ['failed', 'Bunny no longer has this video. Publish again.']);
+  assert.deepEqual([gone.body.status, gone.body.error], ['failed', 'Bunny no longer has this video. Send it to Bunny again.']);
 });
 
 test('a video still unlisted after 30 minutes is failed', async () => {
@@ -267,7 +267,7 @@ test('a video still unlisted after 30 minutes is failed', async () => {
   assert.equal((await statusOf(p, v)).body.status, 'processing', 'still inside the limit');
   clock += 2 * 60_000;
   const late = await statusOf(p, v);
-  assert.deepEqual([late.body.status, late.body.error], ['failed', 'Bunny never listed the fetched video. Publish again.']);
+  assert.deepEqual([late.body.status, late.body.error], ['failed', 'Bunny never listed the fetched video. Send it to Bunny again.']);
 });
 
 test('a crash after the fetch adopts that video instead of pulling the file again', async () => {
@@ -417,7 +417,7 @@ test('a video Bunny gives up on before listing it says why at once, not after 30
   assert.equal((await publish(p, v)).body.status, 'processing');
   bunny.state.videos[bunny.state.videos.length - 1].listAfter = 0;
   const read = await statusOf(p, v);
-  assert.deepEqual([read.body.status, read.body.error], ['failed', 'Bunny couldn’t transcode the file. Check it plays, then publish again.']);
+  assert.deepEqual([read.body.status, read.body.error], ['failed', 'Bunny couldn’t transcode the file. Check it plays, then send it to Bunny again.']);
 
   // A crash adoption still never picks up a failed attempt.
   bunny.state.statusOnFetch = 4;

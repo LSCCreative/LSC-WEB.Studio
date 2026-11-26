@@ -54,10 +54,10 @@ function publishTag(seed) {
 
 /* Why Bunny gave up on a video, from its REST status: 6 is the pull itself
    failing (the NAS or the tunnel unreachable from Bunny), 5 the transcode. */
-const TRANSCODE_FAILED = 'Bunny couldn’t transcode the file. Check it plays, then publish again.';
-const PULL_FAILED = 'Bunny couldn’t fetch the file from the NAS. Check hub-api is reachable, then publish again.';
+const TRANSCODE_FAILED = 'Bunny couldn’t transcode the file. Check it plays, then send it to Bunny again.';
+const PULL_FAILED = 'Bunny couldn’t fetch the file from the NAS. Check hub-api is reachable, then send it to Bunny again.';
 const failReasonOf = (video) => (video.status === 6 ? PULL_FAILED : TRANSCODE_FAILED);
-const DELETED_ON_BUNNY = 'The video was deleted on Bunny. Publish again.';
+const DELETED_ON_BUNNY = 'The video was deleted on Bunny. Send it to Bunny again.';
 
 /* A webhook's Status (Bunny's docs, "Webhooks"), which is NOT the REST enum
    statusFromVideo reads: here 3 is finished and 4 one resolution done. What it
@@ -252,6 +252,13 @@ function createBunnyPublisher(db, opts = {}) {
     };
   }
 
+  /* Where the client plays a ready video from, built when the portal answers and
+     never stored (Slice 9 signs these in one place). Null when Bunny is off. */
+  function playback(videoId) {
+    if (!bunny || !videoId) return null;
+    return { url: bunny.hlsUrl(videoId), poster: bunny.posterUrl(videoId) };
+  }
+
   /* Brings a row up to date with Bunny: finds a video it hasn't listed yet, or
      reads a known one's transcoding state. A failed lookup leaves the row for the
      next read. The webhook (Slice 3) is the quick path; this is the fallback. */
@@ -268,12 +275,12 @@ function createBunnyPublisher(db, opts = {}) {
           const status = statusFromVideo(video);
           markVideo(video.guid, status, status === 'ready' ? 1 : 0, row.version_id, row.kind);
         } else if (now() - new Date(row.updated_at).getTime() > UNLISTED_VIDEO_LIMIT_MS) {
-          markFailed('Bunny never listed the fetched video. Publish again.', row.version_id, row.kind);
+          markFailed('Bunny never listed the fetched video. Send it to Bunny again.', row.version_id, row.kind);
         }
       } else {
         const video = await bunny.getVideo(row.bunny_video_id);
         if (!video) {
-          markFailed('Bunny no longer has this video. Publish again.', row.version_id, row.kind);
+          markFailed('Bunny no longer has this video. Send it to Bunny again.', row.version_id, row.kind);
         } else {
           const status = statusFromVideo(video);
           if (status === 'failed') {
@@ -489,7 +496,7 @@ function createBunnyPublisher(db, opts = {}) {
   }
 
   return {
-    ready, missing, check, publish, status, verifySource, servedSource, refresh, view, verifyWebhook, applyWebhook,
+    ready, missing, check, publish, status, playback, verifySource, servedSource, refresh, view, verifyWebhook, applyWebhook,
     adopted: () => adopting,
   };
 }

@@ -232,6 +232,9 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   `/hub/files` token for Bunny. Bunny's REST status (3 transcoding, 4 finished) is not the webhook's.
   The webhook (`/hub/bunny-webhook`) verifies over the raw body: nothing may parse JSON ahead of it
   (`test-bunny-webhook.js` fails if anything does). Webhook 3 is finished, 4 one resolution.
+  With Bunny on, a video's client publish waits for a ready row with the NAS file unchanged (Slice 4);
+  only a ready row with an id plays as HLS, anything else falls back to the NAS link. The row reaches the
+  portal only as the links `reviewOf` builds: keep `bunny` off `projectView`'s allow-list.
 
 ## Frontend traps
 
