@@ -34,6 +34,7 @@ const { createOutbox } = require('./sends');
 const { createHnry } = require('./hnry');
 const { createHnryPusher } = require('./hnry-push');
 const { createHubRouter } = require('./hub/routes');
+const { createBunnyPublisher } = require('./bunny-publish');
 const { createWebRouter, WEB_DIR } = require('./web');
 
 const underPath = (req, prefix) => req.path === prefix || req.path.startsWith(`${prefix}/`);
@@ -118,7 +119,7 @@ function buildPortal(db, hub, appUrl, hooks = {}) {
   }
   // Billing's limiter and client address, so both halves count and record visitors alike.
   const portal = createHubRouter(db, {
-    rateLimit, clientIp, cookieSecure: config.cookieSecure, ...hub, requireAdmin: requireAuth(db), appUrl, ...hooks,
+    rateLimit, clientIp, cookieSecure: config.cookieSecure, ...hub, appUrl, ...hooks,
   });
   portal.deliverablesHealth().then((h) => {
     if (!h.ok) console.warn(`[hub] the deliverables folder can't be read (${h.error}); file links and publishing will fail`);
@@ -150,7 +151,23 @@ function createApp(db, opts = {}) {
   const hub = opts.hub !== undefined ? opts.hub : (config.isTest ? null : config.hub);
   // The client's quote and invoice pages, which the portal links to (C3).
   // The studio's emails about what a client did go through the mailer built further down, so they look it up when they fire.
+  // Publishing to Bunny (Bunny Slice 2): the studio's /api routes start it, and the
+  // portal's router serves the signed file Bunny pulls. Not set up, it answers 503.
+  const bunnyPublisher = createBunnyPublisher(db, {
+    bunny: hub ? hub.bunny : {},
+    signingSecret: hub ? hub.signingSecret : '',
+    publicBaseUrl: hub ? hub.publicBaseUrl : '',
+    deliverablesDir: opts.deliverablesDir || (hub || config.hub).deliverablesDir,
+    // Tests only: a fake Bunny, a short wait between lookups, a clock.
+    bunnyFetch: opts.bunnyFetch,
+    videoLookupGapMs: opts.videoLookupGapMs,
+    now: opts.bunnyNow,
+  });
+  if (hub && !bunnyPublisher.ready) {
+    console.warn(`[bunny] publishing to Bunny is off until these are set: ${bunnyPublisher.missing.join(', ')}`);
+  }
   const portal = buildPortal(db, hub, appUrlOf(opts.appUrl !== undefined ? opts.appUrl : config.appUrl), {
+    bunnyPublisher,
     onNotesSubmitted: (ev) => notesSubmitted(db, {
       mailer: app.locals.mailer, appUrl: appUrlOf(opts.appUrl !== undefined ? opts.appUrl : config.appUrl),
     }, ev),
@@ -327,6 +344,7 @@ function createApp(db, opts = {}) {
   registerProjectRoutes(app, db, { ...stageD, hnryPush });
   registerDeliverableRoutes(app, db, {
     deliverablesDir: opts.deliverablesDir || (hub || config.hub).deliverablesDir,
+    bunnyPublisher,
     // The portal invite carries a Client code, so it's sent from the request that issues it (portal-invite.js).
     portal: {
       portalSecret: hub ? hub.signingSecret : '',

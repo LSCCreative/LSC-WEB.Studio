@@ -817,8 +817,43 @@ test('the v9 steps leave their inputs alone', () => {
   assert.equal(neg.notes.length, 1);
 });
 
-test('the schema knows it is at v32', () => {
-  assert.equal(LATEST_VERSION, 32);
+test('the schema knows it is at v33', () => {
+  assert.equal(LATEST_VERSION, 33);
+});
+
+/**
+ * MIGRATION v33 — Bunny rows per deliverable version, collections per project
+ * (Bunny Slice 2). The two tables are rebuilt empty; any other table reads as it
+ * did. A row left in the old ones stops it with nothing changed: it names a video
+ * on Bunny nobody would find again.
+ */
+test('v33 rebuilds the Bunny tables per version and project, and touches nothing else', () => {
+  const db = openDatabase(tempDbPath('v33-upgrade'), { migrate: false });
+  migrate(db, { to: 32 });
+  const tables = everyTableBut(db, ['schema_version', 'bunny_assets', 'bunny_collections']);
+  const before = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+  migrate(db);
+  for (const t of tables) assert.deepEqual(dump(db, t), before[t], t);
+  const cols = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
+  assert.deepEqual(cols('bunny_assets'), ['version_id', 'kind', 'project_id', 'item_id', 'source_path', 'source_size',
+    'source_mtime', 'bunny_video_id', 'collection_id', 'publish_tag', 'storage_path', 'status', 'error',
+    'progress_done', 'progress_total', 'created_at', 'updated_at']);
+  assert.deepEqual(cols('bunny_collections'), ['project_id', 'collection_id', 'name', 'created_at']);
+  const row = "INSERT INTO bunny_assets (version_id, kind, project_id, item_id, source_path, status, created_at, updated_at) VALUES ('v1', 'video', 'p1', 'd1', 'A/x.mp4', 'processing', 'x', 'x')";
+  db.prepare(row).run();
+  assert.throws(() => db.prepare(row).run(), /UNIQUE|PRIMARY/, 'one row per version and kind');
+  assert.throws(() => db.prepare(row.replace("'video'", "'audio'").replace("'v1'", "'v2'")).run(), /CHECK/);
+  db.close();
+});
+
+test('v33 stops, with nothing changed, if the old Bunny tables hold a row', () => {
+  const db = openDatabase(tempDbPath('v33-refuse'), { migrate: false });
+  migrate(db, { to: 32 });
+  db.prepare("INSERT INTO bunny_collections (folder_name, collection_id, created_at) VALUES ('Acme', 'col-1', 'x')").run();
+  assert.throws(() => migrate(db), /bunny_collections.*1 row/);
+  assert.equal(db.prepare('SELECT MAX(version) FROM schema_version').pluck().get(), 32);
+  assert.deepEqual(db.prepare('SELECT folder_name FROM bunny_collections').pluck().all(), ['Acme']);
+  db.close();
 });
 
 /**

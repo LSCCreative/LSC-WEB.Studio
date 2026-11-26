@@ -226,6 +226,11 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   `payment-due` list is wider than the badge: anything live with a sent invoice unpaid, so Outstanding invoices' link
   isn't empty mid-job. Archive is Complete only; a new list goes in `LISTS` (routes/projects.js).
 
+- **Bunny (Bunny Slice 2 on):** one `bunny_assets` row per (version, kind), with no foreign keys on purpose: it
+  points at something Bunny bills for, so it must outlive a deleted version until cleanup removes the video.
+  Bunny pulls from `/hub/source/<versionId>/<name>`, signed over the version id for 6 hours: never mint a
+  `/hub/files` token for Bunny. Bunny's REST status (3 transcoding, 4 finished) is not the webhook's.
+
 ## Frontend traps
 
 - Menus (`menu.js`): a scripted `el.click()` on an item does nothing; dispatch a bubbling

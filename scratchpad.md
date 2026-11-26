@@ -255,7 +255,17 @@ mail connected, `m6-checks.sh` ALL PASS. `MAIL_REPLY_TO` is set. Local live-db c
 makes the job fully paid, and C10 then emails PTC9's test client their files. A fine first live check.
 `merged-admin` is ahead of origin with C10 and these notes (not pushed; `main` doesn't need it for the NAS).
 
-**Next: B2 Publish video through Bunny | Model: Opus 5.5 | Effort: High**.
+**B2 Slice 2 done 2026-11-26 (committed, not pushed, not deployed).** Schema v33 rebuilds `bunny_assets`
+(per version + kind, no FKs on purpose) and `bunny_collections` (per project, named "<projectId> <name>", found
+again by the id prefix). `src/bunny-publish.js` holds the logic; the old `/hub/publish-asset` / `-status` and the
+hub router's `requireAdmin`/`backupDir` options are gone. **Route change from the plan:** the Bunny fetch is
+`POST`/`GET /api/projects/:id/deliverables/:itemId/versions/:versionId/bunny`, beside R3's client publish (which
+already owned `…/publish`). Slice 4 must decide: chain them on one button, or two steps, and hold the client's
+publish of a video until Bunny is ready. Bunny pulls from `/hub/source/<versionId>/<name>?token&expires` (6 h).
+1123/1123 (16 new in `test-bunny-publish.js`, fake in `test/fake-bunny.js`). **The NAS `.env` has no `BUNNY_*`
+names at all** (checked by name only): add them before Slice 5's deploy, or publishing answers 503.
+
+**Next: Slice 3 (the Bunny webhook) | Model: Sonnet 5.5 | Effort: High**.
 
 (C10 as planned:) New task (the user's call,
 2026-11-26, spec in TASKS.md): whole job paid + every item approved → client emailed each approved Final's Drive link, owner

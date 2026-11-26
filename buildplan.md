@@ -69,7 +69,7 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
 
 ### Part B — Video publishing (merge task B2)
 
-- [ ] Slice 2: **[API]** Publish a deliverable version's video.
+- [x] Slice 2: **[API]** Publish a deliverable version's video.
       - New numbered migration: rebuild `bunny_assets` keyed by `(version_id, kind)` with
         `project_id`, `item_id`, `source_path` (NAS relative path), `source_size`,
         `source_mtime`, `bunny_video_id`, `collection_id`, `publish_tag`, `storage_path`,
@@ -93,6 +93,16 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
         idempotency, 3 simultaneous publishes, force, failure keeps the old video, late
         listing, adoption, timeout, restart, signed source URL expires, another project's
         version id is a 404, no key in any log line. | Model: Opus 5.5 | Effort: High
+      **Done 2026-11-26 (not deployed):** schema v33 (both tables rebuilt; it stops if the old ones
+      hold a row, and the live ones are empty). `src/bunny-publish.js`; `GET /hub/source/<versionId>/<name>`
+      signed per version for 6 hours. **One change from the plan:** R3's `…/publish` already means
+      "show it to the client", so the Bunny fetch is its own pair, `POST`/`GET …/versions/:versionId/bunny`;
+      Slice 4 decides how the Deliverables tab chains them. A status read also asks Bunny about a known
+      video still transcoding (`getVideo`), so a row turns ready without the webhook. Rows have no foreign
+      keys on purpose (they point at what Bunny bills for, so cleanup must find them). The hub import now
+      skips empty hub Bunny tables and refuses a row. 16 tests in `test-bunny-publish.js` (fake Bunny in
+      `test/fake-bunny.js`); 1123/1123. Not checked against real Bunny again (the 2026-11-03 live test
+      still stands for the calls). The NAS `.env` has no `BUNNY_*` yet (checked 2026-11-26).
 
 - [ ] Slice 3: **[API]** `POST /hub/bunny-webhook` on `hub-api`, mounted in `app.js`'s
       raw-body slot (or above the hub router's `express.json`) with `express.raw()`, so the

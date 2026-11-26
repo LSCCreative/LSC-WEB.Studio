@@ -333,9 +333,51 @@ function registerDeliverableRoutes(app, db, opts = {}) {
     return answer(req, res);
   });
 
+  /* Sends a video version to Bunny Stream (Bunny Slice 2, bunny-publish.js), body
+     { force? }. Its own route, beside the client's publish below: Bunny is where
+     the client will watch it from, and Slice 4 holds the client's publish until
+     this is ready. Once per version unless force, which replaces a working video
+     (a NAS file changed since). Answers the publish's view, not the folder:
+     { status, error, sourceChanged, posterUrl, progress }, 502 when Bunny refused. */
+  const bunnyPublisher = opts.bunnyPublisher || null;
+  const bunnyOff = (res) => refuse(res, 503, 'bunny_not_set_up', 'Publishing to Bunny isn’t set up on this server yet.');
+  app.post('/api/projects/:id/deliverables/:itemId/versions/:versionId/bunny', async (req, res, next) => {
+    try {
+      const p = projectFor(req, res);
+      if (!p || !workable(res, p)) return undefined;
+      const d = itemFor(req, res, p);
+      const v = d && versionFor(req, res, d);
+      if (!v) return undefined;
+      if (d.not_needed_at) return refuse(res, 409, 'not_needed', 'This one is marked not needed. Mark it needed first.');
+      if (!bunnyPublisher || !bunnyPublisher.ready) return bunnyOff(res);
+      const checked = await bunnyPublisher.check(v);
+      if (checked.refusal) return refuse(res, ...checked.refusal);
+      const { httpStatus, body } = await bunnyPublisher.publish(p, v, checked.file, { force: (req.body || {}).force === true });
+      return res.status(httpStatus).json(body);
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  /* How the version's Bunny publish stands, looked up on Bunny while it is still
+     processing (the webhook, Slice 3, is the quick path). Status 'none' before any
+     publish. Needs no NAS file: a published video can outlive it. */
+  app.get('/api/projects/:id/deliverables/:itemId/versions/:versionId/bunny', async (req, res, next) => {
+    try {
+      const p = projectFor(req, res);
+      if (!p) return undefined;
+      const d = itemFor(req, res, p);
+      const v = d && versionFor(req, res, d);
+      if (!v) return undefined;
+      if (!bunnyPublisher || !bunnyPublisher.ready) return bunnyOff(res);
+      return res.json(await bunnyPublisher.status(v));
+    } catch (err) {
+      return next(err);
+    }
+  });
+
   /* Puts the newest version in front of the client. Publishing one that already
-     is changes nothing. Bunny (Slice 2) attaches here: this route gains the fetch
-     and its status, and a version isn't offered until its publish is ready. */
+     is changes nothing. Bunny's fetch is its own route, above. */
   app.post('/api/projects/:id/deliverables/:itemId/versions/:versionId/publish', async (req, res, next) => {
     try {
       const p = projectFor(req, res);

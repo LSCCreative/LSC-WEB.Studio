@@ -2,7 +2,8 @@
 
 /* The only file that talks to Bunny. Native fetch, no SDK. Keys arrive in
    `settings` at startup and only travel in the AccessKey header, so they can't
-   reach an error message or a log line. Publishing logic lives in routes.js. */
+   reach an error message or a log line. Publishing logic lives in
+   ../bunny-publish.js. */
 
 const STREAM_API = 'https://video.bunnycdn.com';
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -58,16 +59,19 @@ function createBunny(settings, { fetchImpl = fetch } = {}) {
     return data;
   }
 
-  /* The list filter is a substring match, so an exact-name check is still
-     needed: "Acme" also returns "Acme Winter". Adopting an existing collection
-     is what stops a lost row from creating a second one. */
-  async function findOrCreateCollection(name) {
-    const params = new URLSearchParams({ search: name, itemsPerPage: '1000' });
+  /* The list filter is a substring match, so the caller's own check is still
+     needed: "Acme" also returns "Acme Winter". `key` is what the search looks
+     for and `owns(name)` which listed name is really it (bunny-publish.js: the
+     project's id, so a renamed project still finds its collection). Adopting an
+     existing collection is what stops a lost row from creating a second one.
+     Returns { id, name }: the name Bunny has, found or made. */
+  async function findOrCreateCollection(name, { key = name, owns = (n) => n === name } = {}) {
+    const params = new URLSearchParams({ search: key, itemsPerPage: '1000' });
     const { items } = await streamRequest(`/collections?${params}`);
-    const existing = (items || []).find((c) => c.name === name);
-    if (existing) return existing.guid;
+    const existing = (items || []).find((c) => owns(String(c.name || '')));
+    if (existing) return { id: existing.guid, name: existing.name };
     const created = await streamRequest('/collections', { method: 'POST', body: { name } });
-    return created.guid;
+    return { id: created.guid, name };
   }
 
   /* Bunny pulls the file itself. Its response has no video id, so the caller
@@ -88,10 +92,21 @@ function createBunny(settings, { fetchImpl = fetch } = {}) {
     return matches[0] || null;
   }
 
+  /* One video by its id, for a row still transcoding. Null once Bunny has no
+     such video (deleted in the dashboard), so the caller can say so. */
+  async function getVideo(videoId) {
+    try {
+      return await streamRequest(`/videos/${encodeURIComponent(videoId)}`);
+    } catch (err) {
+      if (/\(404\)/.test(err.message)) return null;
+      throw err;
+    }
+  }
+
   const hlsUrl = (videoId) => `https://${streamCdnHost}/${videoId}/playlist.m3u8`;
   const posterUrl = (videoId) => `https://${streamCdnHost}/${videoId}/thumbnail.jpg`;
 
-  return { findOrCreateCollection, fetchVideo, findVideoByTag, statusFromVideo, hlsUrl, posterUrl };
+  return { findOrCreateCollection, fetchVideo, findVideoByTag, getVideo, statusFromVideo, hlsUrl, posterUrl };
 }
 
 module.exports = { createBunny, missingBunnySettings, statusFromVideo };
