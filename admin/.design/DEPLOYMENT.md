@@ -4,7 +4,7 @@ Read this only when deploying or redoing infrastructure. Logins and keys: `.cred
 (gitignored; the repo is public). The long original with the 2026-09-22 incident write-up is in
 `Project build archive/tracks/nas-hosted-billing/DEPLOYMENT_full.md`.
 
-## What is live (since the M6 cutover, 2026-11-07; the merged admin and new portal since C9, 2026-11-26; schema v32 since C10, the same day)
+## What is live (since the M6 cutover, 2026-11-07; the merged admin and new portal since C9, 2026-11-26; schema v33 and Bunny video since B2, 2026-11-27)
 
 The NAS is at **192.168.1.46** on the LAN since 2026-11-26 (it was .45; same host keys). Until the router reserves it and
 `~/.ssh/config` says so: `ssh -o HostName=192.168.1.46 -o HostKeyAlias=192.168.1.45 lsc-nas`. A rebuild takes ~10 minutes
@@ -20,7 +20,9 @@ The NAS is at **192.168.1.46** on the LAN since 2026-11-26 (it was .45; same hos
 ## Deploying
 
 Ask the user first. `git fetch` and diff `origin/main` before any copy or push. Pushing `main` here
-deploys the marketing site (its allow-list), never the admin.
+deploys the marketing site (its allow-list), never the admin. A failed Pages run is retried with a
+fresh run (`gh workflow run deploy-pages.yml --ref main`), not "Re-run": a re-run uploads a second
+artifact into the same run and deploy refuses two.
 
 **NAS (the admin):**
 1. Back up the live DB: `sqlite3 -readonly /volume4/lsc-admin/data/billing.db ".backup <dest>"`.
