@@ -14,12 +14,14 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+# Two jobs, as GitHub's starter workflow has it: deploy-pages run in the same job
+# as the upload can look for the artifact before it is listed and find none
+# (actions/deploy-pages#451; it failed three times in a row on 2026-11-27). By the
+# time a second job starts, the upload is always there. Re-running a failed run
+# doesn't help either: it uploads a second artifact, and deploy refuses two.
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -39,5 +41,12 @@ jobs:
         with:
           path: _site
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
