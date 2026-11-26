@@ -245,10 +245,17 @@ containers on OK; reserve the NAS's address and update ~/.ssh/config. The local 
 Code review (9 findings): 8 fixed, 1 not needed (a void always makes an unpaid replacement). v32 baselines every job
 already paid and approved, so old jobs never email on their own. 1106/1106 pass (14 in `test-files-release.js`).
 Seen on the dev server (stub mail): dialog wording, client email, toast, and a baselined job's "already has their files".
-Deploy is NAS only (schema v32; the portal page is unchanged), after the usual dry run on a live-db copy. Check
-`MAIL_REPLY_TO` is set on the NAS, or the studio's copies don't go.
+**C10 deployed 2026-11-26 (NAS only, `af74649`).** NAS code checksummed against `5853094` first (180/180 match). Live
+backup `data/backups/pre-c10-20261126-115830.db`; dry run on a copy: every existing table identical, `files_releases`
+0 rows (no job was paid and approved, so no baselines). Rollback image `lsc-admin:pre-c10` (`178549010c2b`), previous
+folder `/volume4/lsc-admin/app.prev-c10`; new image `302e7892ab62`, migrated v31→v32 on boot (premigrate copy taken),
+mail connected, `m6-checks.sh` ALL PASS. `MAIL_REPLY_TO` is set. Local live-db copies deleted.
+**Rollback:** as C9's, with `app.prev-c10`, `lsc-admin:pre-c10` and the pre-c10 db.
+**Heads-up:** PTC9's Final is paid and approved but its deposit is still a live draft; voiding it (or marking it paid)
+makes the job fully paid, and C10 then emails PTC9's test client their files. A fine first live check.
+`merged-admin` is ahead of origin with C10 and these notes (not pushed; `main` doesn't need it for the NAS).
 
-**Next: B2 Publish video through Bunny | Model: Opus 5.5 | Effort: High** (after C10 is deployed).
+**Next: B2 Publish video through Bunny | Model: Opus 5.5 | Effort: High**.
 
 (C10 as planned:) New task (the user's call,
 2026-11-26, spec in TASKS.md): whole job paid + every item approved → client emailed each approved Final's Drive link, owner

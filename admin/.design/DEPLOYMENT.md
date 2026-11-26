@@ -4,7 +4,7 @@ Read this only when deploying or redoing infrastructure. Logins and keys: `.cred
 (gitignored; the repo is public). The long original with the 2026-09-22 incident write-up is in
 `Project build archive/tracks/nas-hosted-billing/DEPLOYMENT_full.md`.
 
-## What is live (since the M6 cutover, 2026-11-07; the merged admin and new portal since C9, 2026-11-26, schema v31)
+## What is live (since the M6 cutover, 2026-11-07; the merged admin and new portal since C9, 2026-11-26; schema v32 since C10, the same day)
 
 The NAS is at **192.168.1.46** on the LAN since 2026-11-26 (it was .45; same host keys). Until the router reserves it and
 `~/.ssh/config` says so: `ssh -o HostName=192.168.1.46 -o HostKeyAlias=192.168.1.45 lsc-nas`. A rebuild takes ~10 minutes
