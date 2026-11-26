@@ -1146,6 +1146,13 @@ const MIGRATIONS = [
       require('./migrations/v33-bunny-versions').migrateV33(db);
     },
   },
+  {
+    version: 34,
+    name: 'client_logins.code_chosen_at: the client\'s own PIN, set at their first sign-in',
+    up(db) {
+      require('./migrations/v34-client-pins').migrateV34(db);
+    },
+  },
 ];
 
 /**

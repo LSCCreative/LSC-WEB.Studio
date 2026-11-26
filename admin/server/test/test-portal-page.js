@@ -213,3 +213,28 @@ check('a video on Bunny Stream shows its poster and plays through the same playe
   assert.match(fnBody('renderVideoCanvas'), /<video id="asset-video"[^>]*\$\{a\.poster \? ` poster="\$\{escapeAttr\(a\.poster\)\}"` : ''\}/);
   assert.match(page, /attachReviewSource\(video, video\.dataset\.src, videoFailed\)/);
 });
+
+check('their own PIN: asked after sign-in, typed twice, outside the page, never in a preview', () => {
+  const dialog = fnBody('renderPinDialog');
+  assert.match(dialog, /field\('pin-new'/);
+  assert.match(dialog, /field\('pin-again'/);
+  assert.match(dialog, /inputmode="numeric"/);
+  assert.match(dialog, /aria-modal="true"/);
+  const ask = fnBody('askForPin');
+  assert.match(ask, /!state\.preview/, 'a preview never asks');
+  assert.match(ask, /\.inert = on/, 'the page behind waits');
+  assert.match(page, /<div id="pin-host"><\/div>/, 'outside #app, so a repaint keeps it');
+  const save = fnBody('savePin');
+  assert.match(save, /one\.value !== two\.value/, 'the two must match');
+  assert.match(save, /api\('\/hub\/pin'/);
+  assert.match(fnBody('signedOut'), /askForPin\(false\)/);
+  assert.match(fnBody('submitSignIn'), /askForPin\(r\.choosePin\)/);
+  assert.match(fnBody('boot'), /askForPin\(session\.choosePin\)/);
+  // Six digits, and the same obvious ones the server refuses.
+  assert.match(page, /const PIN_FORMAT = \/\^\\d\{6\}\$\/;/);
+  const pageObvious = new Function(`${fnBody('obviousPin')}; return obviousPin;`)();
+  const { obviousPin } = require('../src/portal-access');
+  for (const pin of ['000000', '123456', '987654', '012345', '482619', '112233', '135791', '909090']) {
+    assert.equal(pageObvious(pin), obviousPin(pin), pin);
+  }
+});

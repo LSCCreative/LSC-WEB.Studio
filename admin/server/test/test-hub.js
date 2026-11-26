@@ -295,7 +295,7 @@ test('the client signs in with email and Client code, and the server checks the 
 
   const ok = await hub.signIn('  PRIYA@salt.example ', priya.code);
   assert.equal(ok.status, 200);
-  assert.deepEqual(Object.keys(ok.body).sort(), ['client', 'ok']);
+  assert.deepEqual(Object.keys(ok.body).sort(), ['choosePin', 'client', 'ok']);
   assert.match(ok.setCookie, /^lsc_portal=[\w-]{43}; Max-Age=2592000; Path=\/hub; HttpOnly; Secure; SameSite=Lax$/);
   assert.ok(!ok.text.includes(ok.session.split('=')[1]), 'the token is in the cookie only, never the reply');
   const stored = hub.db.prepare('SELECT id, via FROM client_sessions WHERE client_id = ?').get(priya.id);

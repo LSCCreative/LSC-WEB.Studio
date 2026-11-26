@@ -189,7 +189,11 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
 - Portal sign-in (C1, `src/portal-access.js`): one Client code per client (6 digits, `client_logins`), signed in by email; the
   session is an HttpOnly cookie `lsc_portal` (path `/hub`, Lax) checked against `client_sessions` on every client route. Codes and
   session ids are HMACs under `HUB_SIGNING_SECRET`, so rotating it signs everyone out and voids every code. Old 4-digit per-project
-  codes (`private_auth`) sign the client in until they're issued a code. A client's projects are found through the session's client,
+  codes (`private_auth`) sign the client in until they're issued a code. Their own PIN (schema v34, `POST /hub/pin`): while
+  `code_chosen_at` is NULL the portal asks for one (6 digits, not an obvious run, typed twice) after sign-in; it replaces the
+  code's HMAC and ends their other sessions. Once only (409 `pin_set`): a session can never change a chosen PIN. A studio reset
+  (new code) clears it, so they're asked again; a chosen PIN also stops a failed invite being offered for retry. The PIN boxes are
+  text fields masked with `-webkit-text-security`, never `type=password` (Safari's strong-password fill would "match" both). A client's projects are found through the session's client,
   so anyone else's is the same 404. Portal replies are built in `src/hub/views.js` only; `test-portal-sessions.js` holds them to
   their keys, so a new field goes in both.
 - The portal page (`client-hub-app/index.html`, C2) reads only tokens: `css/tokens.css` is a copy of `web/css/tokens.css` made by

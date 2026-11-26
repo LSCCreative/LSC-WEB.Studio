@@ -817,8 +817,22 @@ test('the v9 steps leave their inputs alone', () => {
   assert.equal(neg.notes.length, 1);
 });
 
-test('the schema knows it is at v33', () => {
-  assert.equal(LATEST_VERSION, 33);
+test('the schema knows it is at v34', () => {
+  assert.equal(LATEST_VERSION, 34);
+});
+
+/**
+ * MIGRATION v34 — the client's own PIN. A login row already there is a code the
+ * studio issued, so it starts with none chosen; running it twice changes nothing.
+ */
+test('v34 adds code_chosen_at to client logins, empty, and runs twice safely', () => {
+  const { migrateV34 } = require('../src/migrations/v34-client-pins');
+  const mem = openDatabase(tempDbPath('v34'));
+  const cols = () => mem.prepare('PRAGMA table_info(client_logins)').all().map((c) => c.name);
+  assert.ok(cols().includes('code_chosen_at'));
+  migrateV34(mem);
+  assert.equal(cols().filter((c) => c === 'code_chosen_at').length, 1);
+  mem.close();
 });
 
 /**

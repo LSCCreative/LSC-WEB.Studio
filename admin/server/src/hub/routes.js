@@ -35,6 +35,7 @@ const LIMITS = {
   read: { max: 300, windowMs: 10 * 60 * 1000 },
   media: { max: 3000, windowMs: 10 * 60 * 1000 },
   note: { max: 300, windowMs: 10 * 60 * 1000 },
+  pin: { max: 20, windowMs: 10 * 60 * 1000 },
 };
 /* A note's length cap: a long paragraph, not a document (the table holds 4000). */
 const NOTE_MAX = 4000;
@@ -237,6 +238,7 @@ function createHubRouter(db, opts = {}) {
   const readLimit = limit('read');
   const mediaLimit = limit('media');
   const noteLimit = limit('note');
+  const pinLimit = limit('pin');
 
   /* A preview (C8) applies only to a request that says it comes from the preview's
      page (`?preview=1`, which that page adds to every call and the server to every
@@ -335,7 +337,20 @@ function createHubRouter(db, opts = {}) {
       userAgent: req.headers['user-agent'] || '', ip: clientIp(req),
     });
     res.setHeader('Set-Cookie', sessionCookie(token, SESSION_DAYS * 24 * 60 * 60));
-    return res.json({ ok: true, client: clientView(getClient.get(who.clientId)) });
+    return res.json({ ok: true, client: clientView(getClient.get(who.clientId)), choosePin: access.needsPin(who.clientId) });
+  });
+
+  // ── POST /hub/pin: { pin } → the client's own PIN in place of their Client code.
+  // The portal asks for it at their first sign-in (`choosePin` on /hub/auth and
+  // /hub/session) and checks it twice there. Once only: a PIN already chosen is
+  // refused (409 pin_set), so a session alone can never change it. Every other
+  // session of theirs ends. A preview's write is refused in signedIn, as all are.
+  router.use('/hub/pin', credentialedCors);
+  router.post('/hub/pin', pinLimit, fromThePortal, signedIn, (req, res) => {
+    const { client, session } = req.portal;
+    const refused = access.choosePin(client.id, (req.body || {}).pin, { keepSessionId: session.id });
+    if (refused) return res.status(refused === 'pin_set' ? 409 : 400).json({ error: refused });
+    return res.json({ ok: true });
   });
 
   // ── POST /hub/invite: { token } from `#/invite/<token>` → whose sign-in it is
@@ -351,7 +366,9 @@ function createHubRouter(db, opts = {}) {
   // ── GET /hub/session: who is signed in, or 401.
   router.use('/hub/session', credentialedCors);
   router.get('/hub/session', readLimit, signedIn, (req, res) => {
-    res.json({ ok: true, client: clientView(req.portal.client), preview: previewView(req.portal.preview) });
+    // A preview never asks: the studio isn't the client, and couldn't save one anyway.
+    const choosePin = !req.portal.preview && access.needsPin(req.portal.client.id);
+    res.json({ ok: true, client: clientView(req.portal.client), preview: previewView(req.portal.preview), choosePin });
   });
 
   // ── POST /hub/sign-out: ends this session, signed in or not, and any preview on this browser.
