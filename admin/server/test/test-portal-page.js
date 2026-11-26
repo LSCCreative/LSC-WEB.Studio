@@ -114,7 +114,10 @@ check('the portal signs in through the server’s session, holding no token of i
 
 check('the review player plays inline on an iPhone (the user, 2026-11-27)', () => {
   // Without playsinline every iPhone play goes full screen and the client must leave it to comment.
-  assert.match(fnBody('renderVideoCanvas'), /<video id="asset-video" controls playsinline /);
+  // The attribute, wherever it sits in the tag: reordering the tag mustn't fail this.
+  const tag = (/<video id="asset-video"[^>]*>/.exec(fnBody('renderVideoCanvas')) || [''])[0];
+  assert.ok(tag, 'the review player is built in renderVideoCanvas');
+  assert.match(tag, /\splaysinline(?=[\s>])/);
 });
 
 check('the player survives a revision: the <video> sits outside the partial repaint', () => {

@@ -4,7 +4,7 @@ Read this only when deploying or redoing infrastructure. Logins and keys: `.cred
 (gitignored; the repo is public). The long original with the 2026-09-22 incident write-up is in
 `Project build archive/tracks/nas-hosted-billing/DEPLOYMENT_full.md`.
 
-## What is live (since the M6 cutover, 2026-11-07; the merged admin and new portal since C9, 2026-11-26; schema v33 and Bunny video since B2, 2026-11-27)
+## What is live (since the M6 cutover, 2026-11-07; the merged admin and new portal since C9, 2026-11-26; schema v33 and Bunny publishing on the NAS since 2026-11-26, the portal's Bunny poster and inline iPhone play since 2026-11-27)
 
 The NAS is at **192.168.1.46** on the LAN since 2026-11-26 (it was .45; same host keys). Until the router reserves it and
 `~/.ssh/config` says so: `ssh -o HostName=192.168.1.46 -o HostKeyAlias=192.168.1.45 lsc-nas`. A rebuild takes ~10 minutes
@@ -20,9 +20,9 @@ The NAS is at **192.168.1.46** on the LAN since 2026-11-26 (it was .45; same hos
 ## Deploying
 
 Ask the user first. `git fetch` and diff `origin/main` before any copy or push. Pushing `main` here
-deploys the marketing site (its allow-list), never the admin. A failed Pages run is retried with a
-fresh run (`gh workflow run deploy-pages.yml --ref main`), not "Re-run": a re-run uploads a second
-artifact into the same run and deploy refuses two.
+deploys the marketing site (its allow-list), never the admin. Pages builds in one job and deploys in
+another; a failed deploy job is retried with **Re-run failed jobs** (it reuses the build's artifact).
+Not **Re-run all jobs**: that uploads a second artifact into the run, and deploy refuses two.
 
 **NAS (the admin):**
 1. Back up the live DB: `sqlite3 -readonly /volume4/lsc-admin/data/billing.db ".backup <dest>"`.
@@ -55,8 +55,18 @@ ZAPIER_CREDENTIALS_CLIENT_ID=         # Hnry: 1Password Environment "ZAPIER_CRED
 ZAPIER_CREDENTIALS_CLIENT_SECRET=
 HUB_SIGNING_SECRET=
 HUB_CORS_ORIGINS=https://lsccreative.studio
+BUNNY_STREAM_LIBRARY_ID=  BUNNY_STREAM_API_KEY=  BUNNY_STREAM_READ_KEY=  BUNNY_STREAM_CDN_HOST=
+BUNNY_STORAGE_ZONE=  BUNNY_STORAGE_PASSWORD=  BUNNY_STORAGE_HOST=  BUNNY_STORAGE_CDN_HOST=
+                                      # 1Password Environment "LSC Client Hub Bunny"; without all 8 the boot
+                                      # log says publishing to Bunny is off, Send to Bunny answers 503 and no
+                                      # video is held for Bunny (it plays from the NAS)
 CORS_ORIGINS=https://app.lsccreative.studio   # only until 2026-11-14 (the switch from Pages), then remove
 ```
+
+Bunny's side (dash.bunny.net, Stream library "Client Deliverables", 683470): API → Webhook URL
+`https://hub-api.lsccreative.studio/hub/bunny-webhook`; Security → General → Allowed domains
+`lsccreative.studio` and `app.lsccreative.studio` (each host exactly: the bare domain doesn't cover `app`),
+Block direct url file access off (an iPhone's native HLS may send no referrer).
 
 `DATA_DIR`, `PORT`, `DELIVERABLES_DIR` and `IMPORT_PROBE_HOSTS` are set in the compose file. `APP_ORIGIN`
 stays unset. **Never set `GOOGLE_CALENDAR_WRITE=0` on the NAS**: that is the dev-server switch and would
