@@ -156,7 +156,11 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       empty on the dry-run copy and on the live db (v33 stops on a row; DEPLOYMENT.md step 5).
       **[USER]** In Bunny, set the library's webhook URL to
       `https://hub-api.lsccreative.studio/hub/bunny-webhook` (Stream → library → Webhooks); without
-      it, status still arrives through the 30-minute lookup on each status read. Deploy to the NAS. Real deliverable on the NAS → Publish →
+      it, status still arrives through the 30-minute lookup on each status read.
+      **[USER]** Bunny's HLS and poster links are public until Slice 9 signs them (the NAS
+      review route needed the client's session): in the library's Security settings, set
+      Allowed Referrers to `lsccreative.studio`, then check on the iPhone that playback still
+      works (native HLS sends the page as referrer; if it doesn't play, clear the setting). Deploy to the NAS. Real deliverable on the NAS → Publish →
       Ready → client signs in on another device → full player contract on desktop Chrome,
       desktop Safari and a **physical iPhone** → notes → approve. Also check a large master
       fetches through the Cloudflare Tunnel, and that an imported NAS-linked version still

@@ -146,7 +146,7 @@ test('a video version goes to Bunny once: its project’s collection, a tagged t
   assert.deepEqual(first.body, {
     status: 'ready', error: null, sourceChanged: false,
     posterUrl: `https://${FAKE_BUNNY_SETTINGS.streamCdnHost}/${rowOf(v).bunny_video_id}/thumbnail.jpg`,
-    progress: { done: 1, total: 1 },
+    progress: { done: 1, total: 1 }, refused: false,
   });
   assert.equal(bunny.fetches(), fetchesBefore + 1);
 
@@ -195,7 +195,7 @@ test('force replaces a working video and leaves the old one on Bunny; a refused 
 
   bunny.state.failFetch = true;
   const refused = await publish(p, v, { force: true });
-  assert.equal(refused.status, 502);
+  assert.deepEqual([refused.status, refused.body.refused], [200, true]);
   assert.equal(refused.body.status, 'ready');
   assert.match(refused.body.error, /refused the republish, so the published video stays: .*fetch refused/);
   assert.deepEqual(rowOf(v), now, 'the working row is untouched');
@@ -207,7 +207,7 @@ test('a refused first publish is failed, and publishing again retries it', async
   const v = await addVersion(p, 'Acme/Hero.mp4');
   bunny.state.failFetch = true;
   const failed = await publish(p, v);
-  assert.deepEqual([failed.status, failed.body.status], [502, 'failed']);
+  assert.deepEqual([failed.status, failed.body.status, failed.body.refused], [200, 'failed', true]);
   assert.match(failed.body.error, /Bunny refused the publish: .*fetch refused/);
 
   bunny.state.failFetch = false;
@@ -408,7 +408,7 @@ test('a video Bunny gives up on before listing it says why at once, not after 30
   const v = await addVersion(p, 'Acme/Hero.mp4');
   bunny.state.statusOnFetch = 6;
   const pulled = await publish(p, v);
-  assert.deepEqual([pulled.status, pulled.body.status], [502, 'failed']);
+  assert.deepEqual([pulled.status, pulled.body.status, pulled.body.refused], [200, 'failed', true]);
   assert.match(pulled.body.error, /couldn’t fetch the file from the NAS/);
 
   // Listed late, and failed by then: the next status read says so.

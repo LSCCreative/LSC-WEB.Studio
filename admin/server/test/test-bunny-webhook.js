@@ -255,6 +255,11 @@ test('Needs you shows Publish failed for the newest version, and it leaves when 
 
   await webhook(eventBody(id, 5, at('2026-11-26T08:20:00Z')));
   assert.ok((await needs()).some((n) => n.id === `publish_failed:${p.version}`));
+  // A version the client already has still plays from the NAS: nothing waits on it.
+  db.prepare('UPDATE deliverable_versions SET published_at = ? WHERE id = ?').run(nowIso(), p.version);
+  assert.equal((await needs()).some((n) => n.id === `publish_failed:${p.version}`), false, 'not for a published version');
+  db.prepare('UPDATE deliverable_versions SET published_at = NULL WHERE id = ?').run(p.version);
+  assert.ok((await needs()).some((n) => n.id === `publish_failed:${p.version}`));
   await api('POST', `/api/projects/${p.id}/deliverables/${p.item}/versions`, { path: 'Acme/Hero.mp4' });
   assert.equal((await needs()).some((n) => n.id === `publish_failed:${p.version}`), false, 'a newer version replaces it');
 });

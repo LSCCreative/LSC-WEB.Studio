@@ -242,12 +242,12 @@ function deliveryState(input) {
 /* Revision rounds per Final deliverable (brief, Revision rounds; contract clause 4). */
 const ROUNDS_INCLUDED = 2;
 
-/* An approval as the readers see it (C5): the record, whoever reads it decides how
-   much of it they show (the client sees when, the studio sees all of it). */
 /* A version's Bunny Stream row as the checklist carries it. Only a ready row with
    an id plays; anything else leaves the version on its NAS link. */
 const bunnyStateOf = (b) => (b ? { status: b.status, error: b.error || null, videoId: b.bunny_video_id || null } : null);
 
+/* An approval as the readers see it (C5): the record, whoever reads it decides how
+   much of it they show (the client sees when, the studio sees all of it). */
 const approvalOf = (a) => (a ? {
   kind: a.kind,
   approvedAt: a.approved_at,

@@ -505,7 +505,8 @@ const ProjectDeliverables = (() => {
       note = sent ? 'The client watches it from Bunny.' : 'The client will watch it from Bunny once you publish ' + n + '.';
     } else {
       note = sent
-        ? 'The client watches this from the NAS. Send it to Bunny and they’ll watch it from there once it’s ready.'
+        ? 'The client watches this from the NAS. Send it to Bunny and they’ll watch it from there once it’s ready, ' +
+          'as long as the NAS file is still the one they were given.'
         : 'The client watches videos from Bunny Stream, so send it there before you publish. Bunny fetches it from the NAS and transcodes it, which takes a few minutes.';
       if (can) act = button('Send to Bunny');
     }
@@ -551,8 +552,25 @@ const ProjectDeliverables = (() => {
     block.focus();
   }
 
+  /* The item and version as the screen holds them now, if it is still that
+     version's page: a reply that lands after the studio moved on (another item,
+     another project, a redraw from another write) must not paint there
+     (web/README.md, "A write's outcome must not touch a screen the user has
+     left"). Null otherwise. */
+  function stillOn(projectId, itemId, versionId) {
+    if (!ctx || !box || !box.isConnected || ctx.itemId !== itemId || ctx.folder.project.id !== projectId) return null;
+    const item = ctx.folder.deliverables.find((d) => d.id === itemId);
+    const v = item && newestOf(item);
+    if (!v || v.id !== versionId || !$('dlv-bunny')) return null;
+    return { item, v };
+  }
+
+  const sameView = (a, b) => Boolean(a && b) && a.status === b.status && a.error === b.error &&
+    a.sourceChanged === b.sourceChanged && a.posterUrl === b.posterUrl;
+
   /* Reads where the publish stands, and again every 10 seconds while Bunny is
-     processing it. Stops once the screen has moved on. */
+     processing it. Stops once the screen has moved on. Repaints only when
+     something changed, so focus and the status note are left alone otherwise. */
   async function checkBunny(item, v) {
     stopBunnyChecks();
     const block = $('dlv-bunny');
@@ -560,8 +578,9 @@ const ProjectDeliverables = (() => {
     try {
       const view = await LSCApi.get(versionUrl(item, v, '/bunny'));
       if (!block.isConnected) return;
-      keepBunny(v, view);
-      paintBunny(item, v);
+      const before = bunnyOf(v);
+      const kept = keepBunny(v, view);
+      if (!sameView(before, kept)) paintBunny(item, v);
     } catch (err) {
       if (!(err instanceof LSCApi.ApiError)) throw err;
       if (err.kind === 'auth') return ctx.authLost();
@@ -577,28 +596,30 @@ const ProjectDeliverables = (() => {
     return undefined;
   }
 
-  /* Sends the version to Bunny, or with force replaces the video it has there. The
-     reply is the publish's state; a 502 (Bunny refused) carries it too, with why. */
+  /* Sends the version to Bunny, or with force replaces the video it has there.
+     The reply is the publish's state, with `refused` when Bunny said no (a 200:
+     the server is fine). What Bunny answered is kept whatever screen is up;
+     `live` is the screen to show it on, or null when the studio has moved on. */
   async function postBunny(item, v, force) {
+    const at = [ctx.folder.project.id, item.id, v.id];
     try {
       const view = await LSCApi.post(versionUrl(item, v, '/bunny'), force ? { force: true } : {});
       keepBunny(v, view);
-      return { view };
+      const live = stillOn(...at);
+      if (live) keepBunny(live.v, view);
+      return { view, live, refused: view.refused ? view.error || 'Bunny refused it.' : null };
     } catch (err) {
       if (!(err instanceof LSCApi.ApiError)) throw err;
       if (err.kind === 'auth') {
         ctx.authLost();
         return null;
       }
+      const live = stillOn(...at);
       if (err.code === 'not_found') {
-        ctx.missing();
+        if (live) ctx.missing();
         return null;
       }
-      if (err.data && err.data.status) {
-        keepBunny(v, err.data);
-        return { view: err.data, refused: err.data.error || 'Bunny refused it.' };
-      }
-      return { refused: failureText(err) };
+      return { live, refused: failureText(err) };
     }
   }
 
@@ -609,10 +630,13 @@ const ProjectDeliverables = (() => {
     const send = $('dlv-bunny-send');
     if (!send) return;
     const settle = (result) => {
-      if (!result || !$('dlv-bunny')) return;
-      paintBunny(item, v);
+      if (!result || !result.live) return;
+      const { item: liveItem, v: liveV } = result.live;
+      paintBunny(liveItem, liveV);
+      // A failed row says why in the block; anything else refused (a kept video, a
+      // file gone) goes in the panel's error line.
       if (result.refused && (!result.view || result.view.status !== 'failed')) showError(result.refused);
-      if (bunnyOf(v).status === 'processing') checkBunny(item, v);
+      if (bunnyOf(liveV).status === 'processing') checkBunny(liveItem, liveV);
     };
     if (send.hasAttribute('data-force')) {
       send.addEventListener('click', () => ctx.confirm(send, {
@@ -623,10 +647,11 @@ const ProjectDeliverables = (() => {
         run: async () => {
           clearError();
           const result = await postBunny(item, v, true);
+          // Refused with nothing to show (the file gone, say): the dialog says why.
           if (result && result.refused && !result.view) throw new Error(result.refused);
           settle(result);
           // The dialog hands focus back to the button it came from, which settle replaced.
-          setTimeout(focusBunny, 0);
+          if (result && result.live) setTimeout(focusBunny, 0);
         },
       }));
       return;
@@ -636,6 +661,7 @@ const ProjectDeliverables = (() => {
       Toast.working('Sending to Bunny…');
       const result = await postBunny(item, v, false);
       if (result && !result.refused) Toast.ok(result.view.status === 'ready' ? 'Ready on Bunny.' : 'Sent. Bunny is processing it.');
+      else if (result && result.refused && !result.live) Toast.error('Bunny didn’t take v' + v.n + ' of ' + item.title + ': ' + result.refused);
       else Toast.hide();
       settle(result);
     }));

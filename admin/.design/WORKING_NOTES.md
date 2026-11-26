@@ -235,6 +235,8 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   With Bunny on, a video's client publish waits for a ready row with the NAS file unchanged (Slice 4);
   only a ready row with an id plays as HLS, anything else falls back to the NAS link. The row reaches the
   portal only as the links `reviewOf` builds: keep `bunny` off `projectView`'s allow-list.
+  A new route never answers an outside service's refusal (Bunny saying no) with a 5xx: the admin's
+  connection banner reads any 5xx as the server down and blocks every write.
 
 ## Frontend traps
 

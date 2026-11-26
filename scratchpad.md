@@ -305,6 +305,14 @@ Approve absent while open; two fatal hls errors → fallback card → Try again 
 Safari and a physical iPhone (native HLS)** — Slice 5's real-device run. Scratch db: C2-0001 Hero film v6 is
 published with a ready row on fake `vid-2` (plays from the NAS under plain portal-api, Bunny off).
 
+Slice 4 review (7) fixed: a Bunny refusal answers 200 with `refused: true`, not 502 (the admin read any 5xx as
+the server down and blocked every write); a Send to Bunny reply that lands after the studio left the item is
+kept but not painted (stillOn); Send on a published version is refused (409 `changed_since_published`) when
+the NAS file's mtime is after its publish; Needs you's Publish failed skips published versions; the 10 s check
+repaints only on a change; Slice 5 gained a user step for Bunny's Allowed Referrers (links are public until
+Slice 9). Checked in the browser on the fake Bunny: a refusal shows Failed with no banner; leaving mid-send
+left the other project's block alone. 1150/1150.
+
 **Next: Slice 5 (verify video end to end and deploy) | Model: Opus 5.5 | Effort: Medium**. User steps first:
 the 8 `BUNNY_*` names in the NAS `.env`, the library's webhook URL, empty live bunny tables (v33).
 

@@ -338,9 +338,12 @@ function registerDeliverableRoutes(app, db, opts = {}) {
 
   /* Sends a video version to Bunny Stream (Bunny Slice 2, bunny-publish.js), body
      { force? }. Its own route, beside the client's publish below: Bunny is where
-     the client watches it from, so the client's publish waits until this is ready. Once per version unless force, which replaces a working video
-     (a NAS file changed since), and only before the client has the version. Answers the publish's view, not the folder:
-     { status, error, sourceChanged, posterUrl, progress }, 502 when Bunny refused. */
+     the client watches it from, so the client's publish waits until this is ready.
+     Once per version unless force, which replaces a working video (a NAS file
+     changed since), and only before the client has the version. Answers the
+     publish's view, not the folder:
+     { status, error, sourceChanged, posterUrl, progress, refused }: refused is true
+     when Bunny said no (a 200 still: the admin reads any 5xx as the server down). */
   const bunnyOff = (res) => refuse(res, 503, 'bunny_not_set_up', 'Publishing to Bunny isn’t set up on this server yet.');
   app.post('/api/projects/:id/deliverables/:itemId/versions/:versionId/bunny', async (req, res, next) => {
     try {
@@ -359,6 +362,13 @@ function registerDeliverableRoutes(app, db, opts = {}) {
       }
       const checked = await bunnyPublisher.check(v);
       if (checked.refusal) return refuse(res, ...checked.refusal);
+      // A version the client has is sent as it was given to them. Nothing records
+      // the file at publish, so a file written after it went out is taken as
+      // replaced: Bunny would show them a different cut under the same version.
+      if (v.published_at && checked.file.stat.mtimeMs > Date.parse(v.published_at)) {
+        return refuse(res, 409, 'changed_since_published',
+          `The NAS file changed after v${v.n} went to the client, so it isn’t the cut they have. Add it as a new version.`);
+      }
       const { httpStatus, body } = await bunnyPublisher.publish(p, v, checked.file, { force });
       return res.status(httpStatus).json(body);
     } catch (err) {

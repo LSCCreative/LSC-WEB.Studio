@@ -363,7 +363,9 @@ function createBunnyPublisher(db, opts = {}) {
 
   /**
    * Publishes one version's video. Resolves to { httpStatus, body }: 200 with the
-   * row's view, 502 when Bunny refused (a kept video says so in `error`).
+   * row's view, and `refused: true` when Bunny refused (a kept video says so in
+   * `error`). Never a 5xx for that: Bunny saying no is an answer, not this server
+   * failing, and the admin reads any 5xx as the server being down (connection.js).
    * The caller has already checked the version is this project's and passed check().
    */
   async function publish(project, version, file, { force = false } = {}) {
@@ -383,11 +385,14 @@ function createBunnyPublisher(db, opts = {}) {
     }
     try {
       const row = await entry.promise;
-      return { httpStatus: row.status === 'failed' ? 502 : 200, body: view(row, file.stat) };
+      return { httpStatus: 200, body: { ...view(row, file.stat), refused: row.status === 'failed' } };
     } catch (err) {
       if (!err.keptExisting) throw err;
       const kept = getAsset.get(version.id, 'video');
-      return { httpStatus: 502, body: { ...view(kept, file.stat), error: `Bunny refused the republish, so the published video stays: ${err.message}` } };
+      return {
+        httpStatus: 200,
+        body: { ...view(kept, file.stat), refused: true, error: `Bunny refused the republish, so the published video stays: ${err.message}` },
+      };
     }
   }
 

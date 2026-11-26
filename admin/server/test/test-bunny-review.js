@@ -181,7 +181,7 @@ test('a failed Bunny publish holds the client publish until it is sent again', a
   const v = await j.addVersion('Hero.mp4');
   bunny.state.statusOnFetch = 5; // the transcode failed
   const failed = await j.toBunny(v.id);
-  assert.deepEqual([failed.status, failed.body.status], [502, 'failed']);
+  assert.deepEqual([failed.status, failed.body.status, failed.body.refused], [200, 'failed', true]);
   const held = await j.publish(v.id);
   assert.deepEqual([held.status, held.body.error], [409, 'bunny_not_ready']);
   assert.match(held.body.message, /Send it to Bunny again/);
@@ -239,6 +239,26 @@ test('a video published before Bunny plays from the NAS until its Bunny copy is 
 
   db.prepare("UPDATE bunny_assets SET status = 'ready', error = NULL WHERE version_id = ?").run(v.id);
   assert.equal((await j.review()).version.review.type, 'hls');
+});
+
+test('a published version whose NAS file changed since is not sent to Bunny', async () => {
+  reset();
+  const j = await job();
+  const v = await j.addVersion('Hero.mp4', off);
+  assert.equal((await j.publish(v.id, off)).status, 200);
+  // The editor overwrites the file the client was given (a minute later, to be clear of the publish).
+  fs.writeFileSync(j.file(), 'a different edit');
+  const later = new Date(Date.now() + 60 * 1000);
+  fs.utimesSync(j.file(), later, later);
+  const fetchesBefore = bunny.fetches();
+
+  const refused = await j.toBunny(v.id);
+  assert.equal(refused.status, 409);
+  assert.equal(refused.body.error, 'changed_since_published');
+  assert.match(refused.body.message, /isn’t the cut they have\. Add it as a new version\./);
+  assert.equal(bunny.fetches(), fetchesBefore, 'nothing was pulled');
+  assert.equal(rowOf(v.id), undefined);
+  assert.equal((await j.review()).version.review.type, 'file');
 });
 
 test('with Bunny off nothing is held, and even a ready row plays from the NAS', async () => {
