@@ -5,11 +5,11 @@
 
 ## BUILD: merged admin + paid delivery. On branch `merged-admin`, P1-P4 and M1-M6 done, live
 
-**Client PIN (side feature, 2026-11-27, uncommitted on `merged-admin`, NOT deployed; review fixes in: 6 digits, no obvious ones, once only, no password fields, no invite retry after a PIN).** Schema **v34**
+**Client PIN (side feature) LIVE 2026-11-27:** NAS at `cd81652` (v34, ALL PASS; rollback `lsc-admin:pre-pin`, `app.prev-pin`, backup `backups/pre-pin-20261127-102917.db`), Pages from PR #4 (`e227f3d`). Review fixes in: 6 digits, no obvious ones, once only, no password fields, no invite retry after a PIN. Not yet checked on a real iPhone. Schema **v34**
 (`client_logins.code_chosen_at`), `POST /hub/pin`, `choosePin` on `/hub/auth` and `/hub/session`; the portal's
 PIN dialog lives in `#pin-host` (outside `#app`, page inert behind it, no skip, never in a preview). Tests:
 `test-portal-pin.js` (own file: its sign-ins would use up `test-portal-sessions.js`'s rate limit). Checked on scratch
-at 375 px and desktop. Deploy: NAS first (migration), then Pages. B2 Slice 5 is still open (iPhone note on PTC9 v4).
+at 375 px and desktop. B2 Slice 5 is still open (iPhone note on PTC9 v4): the PTC9 client will be asked for a PIN first.
 
 **M3 done 2026-11-06 (local, not pushed).** The portal is mounted in billing's `app.js`: trust proxy always 1
 hop; `hub-api` serves `/hub/*` and `/health` only (Host header); billing's CORS skips `/hub` and ignores portal
