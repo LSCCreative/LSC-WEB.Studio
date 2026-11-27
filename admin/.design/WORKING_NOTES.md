@@ -189,8 +189,8 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
 - Portal sign-in (C1, `src/portal-access.js`): one Client code per client (6 digits, `client_logins`), signed in by email; the
   session is an HttpOnly cookie `lsc_portal` (path `/hub`, Lax) checked against `client_sessions` on every client route. Codes and
   session ids are HMACs under `HUB_SIGNING_SECRET`, so rotating it signs everyone out and voids every code. Old 4-digit per-project
-  codes (`private_auth`) sign the client in until they're issued a code. Their own PIN (schema v34, `POST /hub/pin`): while
-  `code_chosen_at` is NULL the portal asks for one (4 digits, the user's call: easier to remember, guessable in days under the 10-per-15-minutes throttle; not an obvious run, typed twice) after sign-in; it replaces the
+  codes (`private_auth`) sign the client in until they're issued a code. Wrong codes per address are kept in `portal_code_failures` (v35, `hub/throttle.js`): 10 in 15 minutes (`too_many_attempts`), 30 a day (`too_many_today`), so a 4-digit PIN takes about a year to guess; a restart keeps the count, a right code or a studio reset clears it. Their own PIN (schema v34, `POST /hub/pin`): while
+  `code_chosen_at` is NULL the portal asks for one (4 digits, the user's call; not obvious: repeats, runs, ABAB, AABB, years 1900-2099, `COMMON_PINS`, the page's copy held to the server's by a test; typed twice) after sign-in. `POST /hub/pin` also takes 6 (`PIN_ACCEPTED`) only for pages loaded before the change: narrow it to `PIN_FORMAT` later. Four digits typed then a 900 ms pause sign in without a tap (not on the invitation's welcome; once per load if wrong); it replaces the
   code's HMAC and ends their other sessions. Once only (409 `pin_set`): a session can never change a chosen PIN. A studio reset
   (new code) clears it, so they're asked again; a chosen PIN also stops a failed invite being offered for retry. The PIN boxes are
   text fields masked with `-webkit-text-security`, never `type=password` (Safari's strong-password fill would "match" both). A client's projects are found through the session's client,

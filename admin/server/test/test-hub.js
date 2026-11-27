@@ -456,19 +456,46 @@ test('unknown /hub paths and bad bodies answer in JSON, as the hub’s server di
   assert.deepEqual([res.status, await res.json()], [400, { error: 'bad request' }]);
 });
 
-test('the throttle lets go of keys that have stopped trying', () => {
+test('the throttle counts every window, survives a restart, and lets go of old tries', () => {
   let t = 1_000_000_000_000;
-  const throttle = createAttemptThrottle({ limit: 5, windowMs: 15 * 60 * 1000, now: () => t });
-  for (let i = 0; i < 600; i += 1) throttle.record(`someone-${i}`);
-  assert.equal(throttle.size(), 600);
+  const db = openDatabase(path.join(TMP, `throttle-${crypto.randomBytes(4).toString('hex')}.db`));
+  const windows = [{ name: 'burst', limit: 3, windowMs: 15 * 60 * 1000 }, { name: 'day', limit: 5, windowMs: 24 * 60 * 60 * 1000 }];
+  const make = () => createAttemptThrottle(db, { windows, now: () => t });
+  let throttle = make();
+  for (let i = 0; i < 3; i += 1) throttle.record('k');
+  assert.equal(throttle.limitedBy('k'), 'burst');
   t += 16 * 60 * 1000;
-  throttle.record('still-here');
-  assert.equal(throttle.size(), 1, 'the stale ones are swept on the next attempt');
-  for (let i = 0; i < 5; i += 1) throttle.record('still-here');
-  assert.equal(throttle.isLimited('still-here'), true, 'sweeping never frees a live key');
-  t += 16 * 60 * 1000;
-  assert.equal(throttle.isLimited('still-here'), false);
+  assert.equal(throttle.limitedBy('k'), null, 'the burst passes');
+  throttle = make(); // a restart: the count is in the database, not the process
+  for (let i = 0; i < 2; i += 1) throttle.record('k');
+  assert.equal(throttle.limitedBy('k'), 'day', 'five in the day, however spread');
+  assert.equal(throttle.limitedBy('other'), null, 'each key its own count');
+  t += 24 * 60 * 60 * 1000;
+  assert.equal(throttle.limitedBy('k'), null, 'a day on, free again');
+  throttle.record('fresh');
+  assert.equal(throttle.size(), 1, 'tries older than a day are pruned on the next one');
+  throttle.clear('fresh');
   assert.equal(throttle.size(), 0);
+  assert.throws(() => createAttemptThrottle(db, { windows: [] }));
+  db.close();
+});
+
+test('an address stops for the day after 30 wrong tries, and a new code from the studio frees it', async () => {
+  const fresh = await startHub();
+  try {
+    const kim = fresh.seedClient('kim@salt.example', ['p_cf']);
+    const hash = crypto.createHash('sha256').update('kim@salt.example').digest('hex');
+    // 30 wrong tries spread over the day (none in the last 15 minutes), as a patient guesser would.
+    const add = fresh.db.prepare('INSERT INTO portal_code_failures (email_hash, at) VALUES (?, ?)');
+    for (let i = 0; i < 30; i += 1) add.run(hash, Date.now() - (20 + i * 30) * 60 * 1000);
+    const tryCode = (code) => fresh.call('/hub/auth', { method: 'POST', body: { email: 'kim@salt.example', code } });
+    const locked = await tryCode(kim.code);
+    assert.deepEqual([locked.status, locked.body], [429, { error: 'too_many_today' }], 'even the right code, until tomorrow');
+    // The studio issues a new code ("Forgot your code?"): its count starts again.
+    const { code } = fresh.access.issue(kim.id);
+    assert.equal(fresh.db.prepare('SELECT COUNT(*) FROM portal_code_failures WHERE email_hash = ?').pluck().get(hash), 0);
+    assert.equal((await tryCode(code)).status, 200);
+  } finally { await fresh.close(); fresh.db.close(); }
 });
 
 test('the real data folder was never touched', () => {

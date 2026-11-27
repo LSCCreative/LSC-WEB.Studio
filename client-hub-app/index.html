@@ -528,6 +528,8 @@ let state = {
   client: null,            // { businessName, contactName } of whoever is signed in
   choosePin: false,        // the PIN dialog is up: their first sign-in, still on the studio's code
   pinBusy: false,          // the new PIN is on its way to the server
+  pinAuto: false,          // this sign-in was sent by the 4-digit pause, not a tap
+  pinAutoMissed: false,    // one of those was wrong: no more until a reload
   email: '',
   code: '',
   loginError: false,       // shake/red state on the code field
@@ -817,10 +819,16 @@ async function signOut(){
    a reload of the project) never takes it or what's typed in it away. A preview never
    asks: the server says so, and the studio couldn't save one for the client anyway. */
 const PIN_FORMAT = /^\d{4}$/;
-/* The server's obviousPin: one digit repeated, or a straight run up or down. */
+/* The server's obviousPin, kept the same (a test compares them): one digit repeated or
+   a straight run; a pair twice or two doubles; a year 1900-2099; a common keypad pick. */
+const COMMON_PINS = new Set(['1004', '2580', '0852', '1478', '3698', '6969', '1590', '0007', '4200']);
 function obviousPin(pin){
-  const steps = new Set([...pin].slice(1).map((n, i) => n - pin[i]));
-  return steps.size === 1 && [0, 1, -1].includes([...steps][0]);
+  const d = [...pin].map(Number);
+  const steps = new Set(d.slice(1).map((n, i) => n - d[i]));
+  if(steps.size === 1 && [0, 1, -1].includes([...steps][0])) return true;
+  if(d.length !== 4) return false;
+  return (d[0] === d[2] && d[1] === d[3]) || (d[0] === d[1] && d[2] === d[3])
+    || /^(?:19|20)\d\d$/.test(pin) || COMMON_PINS.has(pin);
 }
 
 function askForPin(on){
@@ -864,7 +872,7 @@ function bindPinDialog(){
   const one = document.getElementById('pin-new');
   const two = document.getElementById('pin-again');
   [one, two].forEach(el => el.addEventListener('input', () => {
-    const digits = el.value.replace(/\D/g, '').slice(0, 6);
+    const digits = el.value.replace(/\D/g, '').slice(0, 4);
     if(digits !== el.value) el.value = digits;
     el.classList.remove('invalid');
     pinHint();
@@ -919,7 +927,7 @@ async function savePin(){
   } catch(e){
     busy(false);
     if(e.status === 401) return signedOut('You were signed out. Sign in again with your Client code.');
-    if(e.status === 400) return fail(e.code === 'obvious_pin' ? 'That PIN is too easy to guess. Pick another.' : 'Use 6 numbers.', one);
+    if(e.status === 400) return fail(e.code === 'obvious_pin' ? 'That PIN is too easy to guess. Pick another.' : 'Use 4 numbers.', one);
     // Already chosen (another tab, or a reload that raced): nothing to ask for any more.
     if(e.status === 409){ askForPin(false); return; }
     if(e.status === 429) return fail('Too many tries just now. Wait a few minutes, then try again.');
@@ -997,14 +1005,20 @@ async function submitSignIn(){
     if(landing && parseRoute(location.hash).name === 'dashboard') return go(projectHash(landing));
     return route();
   } catch(e){
+    if(e.status === 401 && state.pinAuto) state.pinAutoMissed = true;
     if(e.status === 401) return failLogin('That email and code didn’t match. Check your PIN or invitation and try again.', true);
-    // Two limits: wrong codes for this email (15 minutes), and requests from this connection (a few).
+    // Limits: wrong codes for this email (15 minutes, then a day), and requests from this connection (a few).
     if(e.status === 429 && e.code === 'too_many_attempts') return failLogin('Too many wrong codes for this email. Wait 15 minutes, then try again.', false, 'code');
+    if(e.status === 429 && e.code === 'too_many_today') return failLogin('Too many wrong codes for this email today. Try again tomorrow, or ask the studio for a new invitation.', false, 'code');
     if(e.status === 429) return failLogin('Too many tries from this connection. Wait a few minutes, then try again.', false, 'code');
     if(e.status === 400) return failLogin('Enter your email and the Client code from your invitation.', false);
     return failLogin('Can’t reach the studio’s server. Check your connection and try again.', false);
   }
 }
+
+/* How long four digits sit still before the sign-in goes as a PIN. */
+const PIN_AUTO_MS = 900;
+let pinAutoTimer = null;
 
 function bindSignIn(){
   const form = document.getElementById('signin-form');
@@ -1015,7 +1029,20 @@ function bindSignIn(){
     codeEl.addEventListener('input', () => {
       state.code = codeEl.value.replace(/\D/g, '').slice(0, 6);
       codeEl.value = state.code; // reflect the stripped value without a render()
-      if(state.code.length === 6) submitSignIn();
+      clearTimeout(pinAutoTimer);
+      state.pinAuto = false;
+      if(state.code.length === 6) return submitSignIn();
+      // Four digits and a pause: their PIN (an iPhone's number pad has no return key).
+      // Not on the invitation's welcome (that's the studio's 6-digit code), and only
+      // once a page load, so a slow hand on a 6-digit code is caught short at most once.
+      if(state.code.length === 4 && !state.invite && !state.pinAutoMissed){
+        const typed = state.code;
+        pinAutoTimer = setTimeout(() => {
+          if(state.code !== typed || state.loginBusy) return;
+          state.pinAuto = true;
+          submitSignIn();
+        }, PIN_AUTO_MS);
+      }
     });
   }
   if(form) form.onsubmit = (e) => { e.preventDefault(); submitSignIn(); };

@@ -105,12 +105,12 @@ test('at their first sign-in the client is asked for a PIN, which replaces their
   assert.equal((await call('/hub/session', { cookie: first.session })).body.choosePin, true, 'asked again after a reload');
   const other = await signIn('pin@salt.example', code); // the same client on another device
 
-  // Four digits only: not the studio's six, not three, not a number or letters.
-  for (const bad of ['', '482619', '482', '48a6', 4826, null]) {
+  // Four digits (or six, from a page loaded before the change): not three, five or seven, not a number or letters.
+  for (const bad of ['', '48261', '482', '48a6', 4826]) {
     const r = await choosePin(first.session, bad);
     assert.deepEqual([r.status, r.body], [400, { error: 'bad_pin' }], JSON.stringify(bad));
   }
-  for (const obvious of ['0000', '1234', '9876', '0123']) {
+  for (const obvious of ['1234', '1212', '1990']) { // the rest: the obviousPin test below
     const r = await choosePin(first.session, obvious);
     assert.deepEqual([r.status, r.body], [400, { error: 'obvious_pin' }], obvious);
   }
@@ -196,4 +196,30 @@ test('a client who chose a PIN is never offered a retried invite, which would re
   assert.equal((await choosePin(signed.session, '4826')).status, 200);
   await call('/hub/sign-out', { method: 'POST', cookie: signed.session }); // no session left, as after 30 days away
   assert.equal(inviteOffer(db, row(), ENV).state, 'has_access', 'their PIN shows they got in');
+});
+
+test('obvious PINs: repeats, runs, pairs, doubles, years and keypad lines, at four digits', () => {
+  const { obviousPin } = require('../src/portal-access');
+  for (const pin of ['0000', '7777', '1234', '9876', '0123', '1212', '9090', '1122', '3344', '1900', '1990', '2024', '2099',
+    '2580', '0852', '1004', '6969', '111111', '123456', '987654']) assert.equal(obviousPin(pin), true, pin);
+  for (const pin of ['4826', '9021', '5520', '7391', '1899', '2100', '1213', '482619', '902104']) assert.equal(obviousPin(pin), false, pin);
+});
+
+test('a PIN from a portal page loaded before the change (6 digits) is still taken, and signs in', async () => {
+  const id = client('sixpin@salt.example');
+  const { code } = (await issue(id)).body;
+  const first = await signIn('sixpin@salt.example', code);
+  // An open tab or cached copy of the old page: its dialog can't be skipped and sends 6.
+  assert.deepEqual((await choosePin(first.session, '482619')).status, 200);
+  assert.equal((await signIn('sixpin@salt.example', '482619')).status, 200);
+});
+
+test('a 6-digit PIN chosen before the change keeps signing its client in', async () => {
+  const id = client('oldsix@salt.example');
+  await issue(id);
+  // Written as v34 saved one: the PIN's HMAC in place of the code, and when.
+  const hash = crypto.createHmac('sha256', hub.signingSecret).update(`client-code\n${id}\n731946`).digest('hex');
+  db.prepare('UPDATE client_logins SET code_hash = ?, code_chosen_at = ? WHERE client_id = ?').run(hash, nowIso(), id);
+  const r = await signIn('oldsix@salt.example', '731946');
+  assert.deepEqual([r.status, r.body.choosePin], [200, false]);
 });

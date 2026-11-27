@@ -1153,6 +1153,13 @@ const MIGRATIONS = [
       require('./migrations/v34-client-pins').migrateV34(db);
     },
   },
+  {
+    version: 35,
+    name: 'portal_code_failures: wrong portal sign-in codes, kept across restarts (10 in 15 minutes, 30 a day)',
+    up(db) {
+      require('./migrations/v35-code-failures').migrateV35(db);
+    },
+  },
 ];
 
 /**
