@@ -11,7 +11,7 @@
  * sessions, and retires their old per-project codes.
  *
  * THEIR OWN PIN. At their first sign-in the portal asks the client to choose a
- * PIN (6 digits, not an obvious one) to use instead (choosePin). Only once: a
+ * PIN (4 digits, not an obvious one) to use instead (choosePin). Only once: a
  * session can't change a PIN already chosen, so someone left signed in on the
  * client's computer can't swap it for one of their own. It is kept exactly as the code
  * is and replaces it; `code_chosen_at` says they have one. The studio issuing a
@@ -35,18 +35,32 @@ const { sha256Hex, randomToken, hmacSign, safeEqual } = require('./hub/tokens');
 const { normEmail, LOGIN_IDS } = require('./clients');
 
 const CODE_DIGITS = 6;
-/* What the sign-in form may send: a Client code or their own PIN (6), or an old 4-digit code. */
+/* What the sign-in form may send: a Client code (6), their own PIN (4), or an old 4-digit code. */
 const CODE_FORMAT = /^(?:\d{4}|\d{6})$/;
-/* A PIN the client chooses for themselves at their first sign-in. Six digits, as the
-   code it replaces: under the sign-in throttle (10 wrong per email per 15 minutes) a
-   4-digit one would fall to patient guessing within days. */
-const PIN_FORMAT = /^\d{6}$/;
+/* A PIN the client chooses for themselves at their first sign-in: four digits, easy to
+   remember (the user's call, 2026-11-27). The trade: under the sign-in throttle (10 wrong
+   per email per 15 minutes) someone patient could guess one in days, not years. */
+const PIN_FORMAT = /^\d{4}$/;
+/* What POST /hub/pin takes for now: the 4 digits above, or 6 from a portal page loaded
+   before the change (an open tab, a cached copy), whose dialog can't be skipped and
+   only sends 6. Narrow it to PIN_FORMAT once that page is long gone (ROADMAP). */
+const PIN_ACCEPTED = /^(?:\d{4}|\d{6})$/;
+/* Four-digit PINs people pick most that no pattern below catches: phone-keypad
+   lines and a few favourites. */
+const COMMON_PINS = new Set(['1004', '2580', '0852', '1478', '3698', '6969', '1590', '0007', '4200']);
 
-/** A PIN anyone would try first: one digit six times, or a straight run up or down (123456, 987654). */
+/**
+ * A PIN anyone would try first. Any length: one digit repeated or a straight run
+ * up or down (1111, 1234, 9876). Four digits, also: a pair twice (1212) or two
+ * doubles (1122), a year from 1900 to 2099, or one of COMMON_PINS.
+ */
 function obviousPin(pin) {
   const d = [...pin].map(Number);
   const steps = new Set(d.slice(1).map((n, i) => n - d[i]));
-  return steps.size === 1 && [0, 1, -1].includes([...steps][0]);
+  if (steps.size === 1 && [0, 1, -1].includes([...steps][0])) return true;
+  if (d.length !== 4) return false;
+  return (d[0] === d[2] && d[1] === d[3]) || (d[0] === d[1] && d[2] === d[3])
+    || /^(?:19|20)\d\d$/.test(pin) || COMMON_PINS.has(pin);
 }
 const SESSION_DAYS = 30;
 const TOUCH_INTERVAL_MS = 5 * 60 * 1000;
@@ -88,6 +102,10 @@ function createPortalAccess(db, { secret } = {}) {
       `).run(clientId, codeHash(clientId, code), sha256Hex(invite), projectId, now, now);
       // A new code is a reset: whoever was signed in with the old one signs in again.
       db.prepare('DELETE FROM client_sessions WHERE client_id = ?').run(clientId);
+      // And the address's wrong tries are forgotten: the studio's answer to a client
+      // locked out for the day ("Forgot your code?") is a new code they can use now.
+      const email = normEmail(db.prepare('SELECT email FROM clients WHERE id = ?').pluck().get(clientId));
+      if (email) db.prepare('DELETE FROM portal_code_failures WHERE email_hash = ?').run(sha256Hex(email));
     })();
     return { code, invite };
   }
@@ -103,12 +121,13 @@ function createPortalAccess(db, { secret } = {}) {
    * `keepSessionId` is the session that set it: every other session of theirs ends,
    * as a new password would end them. A client still on an old per-project code gets
    * a login row here, which retires those codes and their old invite, as a reset does.
-   * Returns null when saved, or why not: `bad_pin` (not 6 digits), `obvious_pin`, or
+   * Returns null when saved, or why not: `bad_pin` (not 4 digits, or 6 from an older
+   * page: PIN_ACCEPTED), `obvious_pin`, or
    * `pin_set` (they already chose one; only a reset by the studio lets them choose again).
    */
   function choosePin(clientId, rawPin, { keepSessionId = null, now = new Date().toISOString() } = {}) {
     const pin = typeof rawPin === 'string' ? rawPin : '';
-    if (!PIN_FORMAT.test(pin)) return 'bad_pin';
+    if (!PIN_ACCEPTED.test(pin)) return 'bad_pin';
     if (obviousPin(pin)) return 'obvious_pin';
     let refused = null;
     db.transaction(() => {
@@ -287,4 +306,4 @@ function accessStatus(db, clientId) {
   };
 }
 
-module.exports = { createPortalAccess, accessStatus, obviousPin, CODE_FORMAT, PIN_FORMAT, CODE_DIGITS, SESSION_DAYS, PREVIEW_LINK_MS, PREVIEW_MS };
+module.exports = { createPortalAccess, accessStatus, obviousPin, CODE_FORMAT, PIN_FORMAT, PIN_ACCEPTED, CODE_DIGITS, SESSION_DAYS, PREVIEW_LINK_MS, PREVIEW_MS };

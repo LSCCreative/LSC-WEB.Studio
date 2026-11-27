@@ -817,8 +817,28 @@ test('the v9 steps leave their inputs alone', () => {
   assert.equal(neg.notes.length, 1);
 });
 
-test('the schema knows it is at v34', () => {
-  assert.equal(LATEST_VERSION, 34);
+test('the schema knows it is at v35', () => {
+  assert.equal(LATEST_VERSION, 35);
+});
+
+/**
+ * MIGRATION v35 — wrong portal sign-in codes in the database, so a restart never
+ * hands a guesser a fresh count. A new, empty table; every other table reads as it
+ * did; running it twice changes nothing.
+ */
+test('v35 adds an empty table of wrong sign-in codes, touches nothing else, and runs twice safely', () => {
+  const { migrateV35 } = require('../src/migrations/v35-code-failures');
+  const db = openDatabase(tempDbPath('v35-upgrade'), { migrate: false });
+  migrate(db, { to: 34 });
+  const tables = everyTableBut(db, ['schema_version']);
+  const before = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+  migrate(db);
+  for (const t of tables) assert.deepEqual(dump(db, t), before[t], t);
+  assert.equal(db.prepare('SELECT COUNT(*) FROM portal_code_failures').pluck().get(), 0);
+  migrateV35(db);
+  const cols = db.prepare('PRAGMA table_info(portal_code_failures)').all().map((c) => c.name);
+  assert.deepEqual(cols, ['email_hash', 'at']);
+  db.close();
 });
 
 /**

@@ -230,11 +230,25 @@ check('their own PIN: asked after sign-in, typed twice, outside the page, never 
   assert.match(fnBody('signedOut'), /askForPin\(false\)/);
   assert.match(fnBody('submitSignIn'), /askForPin\(r\.choosePin\)/);
   assert.match(fnBody('boot'), /askForPin\(session\.choosePin\)/);
-  // Six digits, and the same obvious ones the server refuses.
-  assert.match(page, /const PIN_FORMAT = \/\^\\d\{6\}\$\/;/);
-  const pageObvious = new Function(`${fnBody('obviousPin')}; return obviousPin;`)();
+  // Four digits, and the same obvious ones the server refuses.
+  assert.match(page, /const PIN_FORMAT = \/\^\\d\{4\}\$\/;/);
+  const commonPins = /const COMMON_PINS = new Set\(\[[^\]]*\]\);/.exec(page);
+  assert.ok(commonPins, 'the page lists the common PINs');
+  const pageObvious = new Function(`${commonPins[0]} ${fnBody('obviousPin')}; return obviousPin;`)();
+  const serverSrc = fs.readFileSync(path.join(__dirname, '../src/portal-access.js'), 'utf8');
+  assert.equal(/const COMMON_PINS = new Set\(\[[^\]]*\]\);/.exec(serverSrc)[0], commonPins[0], 'the same list as the server’s');
   const { obviousPin } = require('../src/portal-access');
-  for (const pin of ['000000', '123456', '987654', '012345', '482619', '112233', '135791', '909090']) {
+  for (const pin of ['0000', '1234', '9876', '0123', '4826', '1122', '1357', '9090', '5555', '7890', '1212', '3344', '1990', '2024', '1899', '2580', '6969', '9021', '482619', '123456', '111111']) {
     assert.equal(pageObvious(pin), obviousPin(pin), pin);
   }
+  assert.doesNotMatch(page, /6 numbers/, 'no copy left from the 6-digit PIN');
+  assert.match(fnBody('bindPinDialog'), /slice\(0, 4\)/);
+});
+
+check('a 4-digit PIN signs in after a pause, but never on the welcome screen and only once if wrong', () => {
+  const bind = fnBody('bindSignIn');
+  assert.match(bind, /state\.code\.length === 4 && !state\.invite && !state\.pinAutoMissed/);
+  assert.match(bind, /setTimeout\([\s\S]*PIN_AUTO_MS\)/);
+  assert.match(fnBody('submitSignIn'), /state\.pinAuto\) state\.pinAutoMissed = true;\s*if\(e\.status === 401\) return/, 'marked before the 401 returns');
+  assert.match(fnBody('submitSignIn'), /too_many_today/, 'the day’s cap has its own message');
 });

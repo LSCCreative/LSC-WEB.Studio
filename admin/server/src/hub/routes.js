@@ -54,8 +54,13 @@ function rateIn(text) {
   const m = RATE_IN_AGREEMENT.exec(String(text || ''));
   return m ? m[1].replace(/\s+/g, '') : null;
 }
-const CODE_FAILURE_LIMIT = 10;
-const CODE_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+/* Wrong codes or PINs per address, however many connections guess: a burst stops at
+   10 in 15 minutes, and patient guessing at 30 a day (a 4-digit PIN would otherwise
+   fall in days). Kept in the database, so a restart starts nobody's count again. */
+const CODE_FAILURE_WINDOWS = [
+  { name: 'too_many_attempts', limit: 10, windowMs: 15 * 60 * 1000 },
+  { name: 'too_many_today', limit: 30, windowMs: 24 * 60 * 60 * 1000 },
+];
 
 /* The client's session cookie (C1). Host-only on hub-api, so no other host is
    sent it; `/hub` only, so billing's routes never see it; Lax, which a fetch from
@@ -103,7 +108,7 @@ function createHubRouter(db, opts = {}) {
   const { publicBaseUrl, clientIp } = opts;
   const limits = { ...LIMITS, ...(opts.limits || {}) };
   const limit = (name) => opts.rateLimit(limits[name]);
-  const codeFailures = createAttemptThrottle({ limit: CODE_FAILURE_LIMIT, windowMs: CODE_FAILURE_WINDOW_MS });
+  const codeFailures = createAttemptThrottle(db, { windows: CODE_FAILURE_WINDOWS });
   const { credentialedCors, openCors } = createHubCors(opts.corsOrigins || []);
   const allowedOrigins = new Set(opts.corsOrigins || []);
   const deliverables = createDeliverables(opts.deliverablesDir);
@@ -326,7 +331,8 @@ function createHubRouter(db, opts = {}) {
     if (!email || email.length > 254 || !CODE_FORMAT.test(code)) return res.status(400).json({ error: 'bad_request' });
 
     const emailHash = sha256Hex(email);
-    if (codeFailures.isLimited(emailHash)) return res.status(429).json({ error: 'too_many_attempts' });
+    const limited = codeFailures.limitedBy(emailHash);
+    if (limited) return res.status(429).json({ error: limited });
     const who = access.signIn(email, code);
     if (!who) {
       codeFailures.record(emailHash);
