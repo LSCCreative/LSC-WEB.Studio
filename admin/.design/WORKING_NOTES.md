@@ -190,7 +190,7 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   session is an HttpOnly cookie `lsc_portal` (path `/hub`, Lax) checked against `client_sessions` on every client route. Codes and
   session ids are HMACs under `HUB_SIGNING_SECRET`, so rotating it signs everyone out and voids every code. Old 4-digit per-project
   codes (`private_auth`) sign the client in until they're issued a code. Their own PIN (schema v34, `POST /hub/pin`): while
-  `code_chosen_at` is NULL the portal asks for one (6 digits, not an obvious run, typed twice) after sign-in; it replaces the
+  `code_chosen_at` is NULL the portal asks for one (4 digits, the user's call: easier to remember, guessable in days under the 10-per-15-minutes throttle; not an obvious run, typed twice) after sign-in; it replaces the
   code's HMAC and ends their other sessions. Once only (409 `pin_set`): a session can never change a chosen PIN. A studio reset
   (new code) clears it, so they're asked again; a chosen PIN also stops a failed invite being offered for retry. The PIN boxes are
   text fields masked with `-webkit-text-security`, never `type=password` (Safari's strong-password fill would "match" both). A client's projects are found through the session's client,

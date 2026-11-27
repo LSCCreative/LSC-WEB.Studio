@@ -11,7 +11,7 @@
  * sessions, and retires their old per-project codes.
  *
  * THEIR OWN PIN. At their first sign-in the portal asks the client to choose a
- * PIN (6 digits, not an obvious one) to use instead (choosePin). Only once: a
+ * PIN (4 digits, not an obvious one) to use instead (choosePin). Only once: a
  * session can't change a PIN already chosen, so someone left signed in on the
  * client's computer can't swap it for one of their own. It is kept exactly as the code
  * is and replaces it; `code_chosen_at` says they have one. The studio issuing a
@@ -35,14 +35,14 @@ const { sha256Hex, randomToken, hmacSign, safeEqual } = require('./hub/tokens');
 const { normEmail, LOGIN_IDS } = require('./clients');
 
 const CODE_DIGITS = 6;
-/* What the sign-in form may send: a Client code or their own PIN (6), or an old 4-digit code. */
+/* What the sign-in form may send: a Client code (6), their own PIN (4), or an old 4-digit code. */
 const CODE_FORMAT = /^(?:\d{4}|\d{6})$/;
-/* A PIN the client chooses for themselves at their first sign-in. Six digits, as the
-   code it replaces: under the sign-in throttle (10 wrong per email per 15 minutes) a
-   4-digit one would fall to patient guessing within days. */
-const PIN_FORMAT = /^\d{6}$/;
+/* A PIN the client chooses for themselves at their first sign-in: four digits, easy to
+   remember (the user's call, 2026-11-27). The trade: under the sign-in throttle (10 wrong
+   per email per 15 minutes) someone patient could guess one in days, not years. */
+const PIN_FORMAT = /^\d{4}$/;
 
-/** A PIN anyone would try first: one digit six times, or a straight run up or down (123456, 987654). */
+/** A PIN anyone would try first: one digit repeated, or a straight run up or down (1234, 9876). */
 function obviousPin(pin) {
   const d = [...pin].map(Number);
   const steps = new Set(d.slice(1).map((n, i) => n - d[i]));
@@ -103,7 +103,7 @@ function createPortalAccess(db, { secret } = {}) {
    * `keepSessionId` is the session that set it: every other session of theirs ends,
    * as a new password would end them. A client still on an old per-project code gets
    * a login row here, which retires those codes and their old invite, as a reset does.
-   * Returns null when saved, or why not: `bad_pin` (not 6 digits), `obvious_pin`, or
+   * Returns null when saved, or why not: `bad_pin` (not 4 digits), `obvious_pin`, or
    * `pin_set` (they already chose one; only a reset by the studio lets them choose again).
    */
   function choosePin(clientId, rawPin, { keepSessionId = null, now = new Date().toISOString() } = {}) {

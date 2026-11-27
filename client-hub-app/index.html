@@ -339,7 +339,7 @@ const HUB = {
 };
 
 const isHlsUrl = (v) => /\.m3u8(?:[?#]|$)/i.test(v || '');
-/* A Client code or the client's own PIN (6 digits), or an old per-project code (4). */
+/* A Client code (6 digits), the client's own PIN (4), or an old per-project code (4). */
 const CODE_FORMAT = /^(?:\d{4}|\d{6})$/;
 
 /* ---------------- the API ----------------
@@ -809,15 +809,15 @@ async function signOut(){
 
 /* ================= THEIR OWN PIN =================
    At their first sign-in (the server says `choosePin` while they still use the code
-   the studio emailed), the client picks a 6-number PIN and types it twice. The server
+   the studio emailed), the client picks a 4-number PIN and types it twice. The server
    takes it once (a session can't change it after) and refuses an obvious one.
    It replaces the code, so next time they sign in with their email and the PIN and
    don't need the email. It can't be skipped: the page behind it is inert until it's
    saved. It lives in #pin-host, outside #app, so the page repainting under it (a route,
    a reload of the project) never takes it or what's typed in it away. A preview never
    asks: the server says so, and the studio couldn't save one for the client anyway. */
-const PIN_FORMAT = /^\d{6}$/;
-/* The server's obviousPin: one digit six times, or a straight run up or down. */
+const PIN_FORMAT = /^\d{4}$/;
+/* The server's obviousPin: one digit repeated, or a straight run up or down. */
 function obviousPin(pin){
   const steps = new Set([...pin].slice(1).map((n, i) => n - pin[i]));
   return steps.size === 1 && [0, 1, -1].includes([...steps][0]);
@@ -843,17 +843,17 @@ function renderPinDialog(){
         <div class="pin-label">
           <label for="${id}" class="eyebrow">${label}</label>${extra}
         </div>
-        <input id="${id}" class="field field-code pin-field ${gap}" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" autocorrect="off" spellcheck="false" aria-describedby="pin-msg">`;
+        <input id="${id}" class="field field-code pin-field ${gap}" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" aria-describedby="pin-msg">`;
   return `
   <div class="modal-scrim pin-scrim">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pin-title" aria-describedby="pin-what">
       <p class="eyebrow mb-3">${first ? `Welcome, ${escapeHtml(first)}` : 'Welcome'}</p>
       <h2 id="pin-title" class="display title-lg mb-3">Choose your own PIN</h2>
-      <p id="pin-what" class="text-sm muted mb-6">Pick 6 numbers you’ll remember. Next time, sign in with your email and this PIN, so you won’t need to find our email again.</p>
+      <p id="pin-what" class="text-sm muted mb-6">Pick 4 numbers you’ll remember. Next time, sign in with your email and this PIN, so you won’t need to find our email again.</p>
       <form id="pin-form" novalidate>
         ${field('pin-new', 'New PIN', '<button id="pin-show" type="button" class="pin-show" aria-pressed="false">Show</button>', 'mb-6')}
         ${field('pin-again', 'Type it again')}
-        <p id="pin-msg" class="pin-msg login-msg mt-4 mb-6" role="status">6 numbers</p>
+        <p id="pin-msg" class="pin-msg login-msg mt-4 mb-6" role="status">4 numbers</p>
         <button id="pin-save" type="submit" class="btn btn-primary btn-block btn-lg">Confirm PIN</button>
       </form>
     </div>
@@ -889,7 +889,7 @@ function pinMsg(text, kind = ''){
 function pinHint(){
   const a = document.getElementById('pin-new').value, b = document.getElementById('pin-again').value;
   if(PIN_FORMAT.test(a) && obviousPin(a)) return pinMsg('Too easy to guess. Pick another.', 'error');
-  if(!b || b.length < a.length) return pinMsg('6 numbers');
+  if(!b || b.length < a.length) return pinMsg('4 numbers');
   if(PIN_FORMAT.test(a) && a === b) return pinMsg('The PINs match', 'match');
   return pinMsg('These don’t match yet', 'error');
 }
@@ -902,7 +902,7 @@ async function savePin(){
     pinMsg(text, 'error');
     if(el){ el.classList.add('invalid', 'shake'); setTimeout(() => el.classList.remove('shake'), 400); el.focus(); }
   };
-  if(!PIN_FORMAT.test(one.value)) return fail('Use 6 numbers.', one);
+  if(!PIN_FORMAT.test(one.value)) return fail('Use 4 numbers.', one);
   if(obviousPin(one.value)) return fail('That PIN is too easy to guess. Pick another.', one);
   if(one.value !== two.value){ two.value = ''; return fail('The two PINs don’t match. Type it again.', two); }
   const btn = document.getElementById('pin-save');

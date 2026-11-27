@@ -231,10 +231,10 @@ check('their own PIN: asked after sign-in, typed twice, outside the page, never 
   assert.match(fnBody('submitSignIn'), /askForPin\(r\.choosePin\)/);
   assert.match(fnBody('boot'), /askForPin\(session\.choosePin\)/);
   // Six digits, and the same obvious ones the server refuses.
-  assert.match(page, /const PIN_FORMAT = \/\^\\d\{6\}\$\/;/);
+  assert.match(page, /const PIN_FORMAT = \/\^\\d\{4\}\$\/;/);
   const pageObvious = new Function(`${fnBody('obviousPin')}; return obviousPin;`)();
   const { obviousPin } = require('../src/portal-access');
-  for (const pin of ['000000', '123456', '987654', '012345', '482619', '112233', '135791', '909090']) {
+  for (const pin of ['0000', '1234', '9876', '0123', '4826', '1122', '1357', '9090', '5555', '7890']) {
     assert.equal(pageObvious(pin), obviousPin(pin), pin);
   }
 });
