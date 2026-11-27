@@ -253,6 +253,10 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   storageUrl), as a reply is built; never store or compare a signed link (the email's set key uses `masterKey`).
   HLS needs the path form with a folder token, or segments 403. An emailed link is never a Bunny link: it is
   `/hub/download/…` (90 days, checked per click by `downloadRefusal`, which F3 extends).
+  Token Authentication is ON in both pull zones (2026-11-28): an unsigned Bunny link now 403s, so a key
+  missing from `.env` breaks playback and photos. Two storage zones exist: the old `clienthubdata`
+  (main host) and `lsc-client-media` (Sydney, `syd.storage.bunnycdn.com`); `BUNNY_STORAGE_PASSWORD` must be the
+  latter's, or every upload gets a 401.
   A new route never answers an outside service's refusal (Bunny saying no) with a 5xx: the admin's
   connection banner reads any 5xx as the server down and blocks every write.
 

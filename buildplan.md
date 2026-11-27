@@ -254,7 +254,7 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
 
 ### Part D — Lock it down (merge task B4; payment can't start until this is done)
 
-- [ ] Slice 9: **[USER + API + PORTAL]** Signed, expiring media URLs. The user turns on
+- [x] Slice 9: **[USER + API + PORTAL]** Signed, expiring media URLs. The user turns on
       token auth for the Stream pull zone and the storage pull zone and adds
       `BUNNY_CDN_TOKEN_KEY` to 1Password and the NAS `.env`. The portal's project reply
       signs every Bunny URL as it goes out (HLS with a path token covering `/<videoId>/` so
@@ -293,6 +293,14 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       so nothing re-sends; still true only if no master is sent before this deploys). 1186. Checked on
       scratch: early renewal mid-note (9.96 s, paused, pill, draft kept), Try again after the card, an
       expired photo tile going fresh link then NAS.
+      **Live test PASSED 2026-11-28:** both keys in the NAS `.env`, Token Authentication on in both pull zones
+      (Stream 6014428, storage `lscclientmedia` 6833812; IP validation off). Stream: signed playlist, quality
+      playlist and poster 200, unsigned 403. Storage (a test file uploaded, checked and deleted): signed 200,
+      unsigned, wrong-token and expired 403. **Found and fixed on the way:** `BUNNY_STORAGE_PASSWORD` (NAS and
+      1Password) was the OLD `clienthubdata` zone's password, so every photo/master upload to `lsc-client-media`
+      would have got a 401; the user put the right one in 1Password, it's on the NAS now (backup
+      `.env.pre-storagepw`) and the Sydney host takes it. **Still to see once real work goes through:** the first
+      real photo send and master upload, a paid-email download redirecting, renewal while playing, desktop Safari.
 
 ### Part E — Desktop publisher (merge task B5)
 
