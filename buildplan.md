@@ -266,7 +266,7 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       instance on the same element). Also: Slice 2's `/hub/source/` links expire, and NAS
       `/hub/files/` links are left for F3. Test with a forced short TTL. Player guardrail
       applies. | Model: Opus 5.5 | Effort: High
-      **Built 2026-11-27 (not deployed, not committed; waits on the user's Bunny steps):** signing is
+      **Code live 2026-11-27 (`46bf5f9`, NAS + Pages #7), links unsigned until the user's Bunny steps; not ticked until the live test:** signing is
       `src/hub/bunny-tokens.js` (Bunny's advanced HMAC-SHA256 token, `HS256-…`, after Bunny's Node reference),
       applied in one place, `hub/bunny.js`'s URL builders, so every reply signs as it answers and the DB keeps
       nothing signed. **Two keys, not one:** the Stream library and the storage zone are separate pull zones,
