@@ -150,7 +150,7 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       375 px, against a fake Bunny and a public test stream; desktop Safari and the iPhone are Slice 5's.
       `test-bunny-review.js` (6) + a portal page check; 1149/1149.
 
-- [ ] Slice 5: Verify video end to end and deploy. **[USER]** Before deploying, check the
+- [x] Slice 5: Verify video end to end and deploy. **[USER]** Before deploying, check the
       NAS `.env` for the 8 `BUNNY_*` names (without them publishing answers 503; it no
       longer stops the server). Also confirm the live `bunny_assets` and `bunny_collections` are
       empty on the dry-run copy and on the live db (v33 stops on a row; DEPLOYMENT.md step 5).
@@ -174,9 +174,10 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       user's iPhone (Chrome for iOS, WebKit + native HLS) and Mac Chrome sent two notes on v3 as one set,
       one stamped at the exact frame. **`playsinline` adopted** (the user, 2026-11-27), in the portal page,
       so it ships with the Pages release (live 2026-11-27, `49f43fc` + the workflow fix `4b9e11a`).
-      **Left:** re-run the contract on the iPhone
-      (inline now); desktop Safari was not checked; no imported NAS-linked version exists on the live db
-      to play (PTC9's were made here), so that check has nothing to run on.
+      **Done 2026-11-27:** on the user's iPhone (Chrome for iOS), after choosing their 4-digit PIN, PTC9
+      Video 1 v4 (Bunny, ready) played inline and a note was added and sent as a set (`cs_4702defe`, stage
+      final, 1 note, no timestamp on it). **Not checked, carried to Slice 12:** desktop Safari; an imported
+      NAS-linked version (none exists on the live db: PTC9's were made here).
 
 ### Part C — Photos & masters (merge task B3)
 
