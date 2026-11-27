@@ -266,6 +266,33 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       instance on the same element). Also: Slice 2's `/hub/source/` links expire, and NAS
       `/hub/files/` links are left for F3. Test with a forced short TTL. Player guardrail
       applies. | Model: Opus 5.5 | Effort: High
+      **Built 2026-11-27 (not deployed, not committed; waits on the user's Bunny steps):** signing is
+      `src/hub/bunny-tokens.js` (Bunny's advanced HMAC-SHA256 token, `HS256-…`, after Bunny's Node reference),
+      applied in one place, `hub/bunny.js`'s URL builders, so every reply signs as it answers and the DB keeps
+      nothing signed. **Two keys, not one:** the Stream library and the storage zone are separate pull zones,
+      so `BUNNY_STREAM_TOKEN_KEY` and `BUNNY_STORAGE_TOKEN_KEY` (each unset = that zone's links go unsigned,
+      which works until its token auth is on). A video's playlist and poster carry a folder token
+      (`token_path=/<videoId>/`) in the path (`/bcdn_token=…/<videoId>/playlist.m3u8`) so segments load;
+      photos a per-file token; 6 h, rounded up to the hour so the browser's cache keeps working
+      (`BUNNY_SIGNED_TTL_SECONDS` forces a short one for testing). **Emailed masters (the user's call):** the paid
+      email links to `GET /hub/download/<versionId>/<name>` on hub-api, signed by `HUB_SIGNING_SECRET` for 90 days;
+      each click is checked (`downloadRefusal`: a Final video, item needed, project not download-locked: the
+      hook F3/F4 extend) and redirected to the master signed for 24 h. The email's set key names the upload
+      (`masterKey`), never the link. Portal: a video that fails asks for the project again and, for the same
+      version, puts the fresh link on the SAME `<video>` at the same time, paused or playing as it was (no
+      render: pill, panel and draft untouched; once per link, then the card as before); hls.js now hands the
+      playhead over instead of tearing the element down. Photos that fail still fall back to the NAS link.
+      Tests: `test-bunny-signing.js` 3, page rules; 1185. Checked in the browser on scratch: a fatal 403 on
+      hls.js mid-review renewed in place at 8.88 s, paused, pill 00:08, draft and focus kept. **Not checked:**
+      the playing case (the pane's page is hidden, so Chromium pauses media) and Bunny accepting the tokens
+      (only possible once token auth is on). `/hub/source/` links already expire (6 h, Slice 2).
+      Review fixes (all 4): the open video's link is renewed 5 minutes before it runs out (an iPhone's
+      own player can stall on an expired segment without an error; a phone that slept renews on waking);
+      Try again reads the project first; an expired photo link is renewed once (one read for a burst of
+      tiles) before the NAS copy; the paid email's key change was checked live (no master rows on the NAS,
+      so nothing re-sends; still true only if no master is sent before this deploys). 1186. Checked on
+      scratch: early renewal mid-note (9.96 s, paused, pill, draft kept), Try again after the card, an
+      expired photo tile going fresh link then NAS.
 
 ### Part E — Desktop publisher (merge task B5)
 

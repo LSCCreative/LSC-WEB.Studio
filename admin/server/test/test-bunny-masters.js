@@ -166,7 +166,8 @@ test('a Final sent to Bunny also sends its untouched master, in the background; 
   const status = await j.status();
   assert.deepEqual(status.body.master, { status: 'ready', error: null, progress: { done: size * 2, total: size * 2 } });
   assert.deepEqual((await j.folder()).master, { status: 'ready', error: null, progress: { done: size * 2, total: size * 2 } });
-  assert.equal(on.publisher.masterLink(j.versionId), `${CDN}/${j.base}/master-${row.publish_tag}/Hero%204K.mov`);
+  assert.equal(on.publisher.downloadTarget(j.versionId), `${CDN}/${j.base}/master-${row.publish_tag}/Hero%204K.mov`, 'unsigned: no token key here');
+  assert.equal(on.publisher.masterForEmail(j.versionId).key, `master:${j.versionId}:${row.publish_tag}`);
 
   // Publishing again changes nothing: the master is there.
   const before = bunny.puts().length;
@@ -193,7 +194,7 @@ test('a Draft Cut never sends a master', async () => {
   assert.equal(masterRow(j.versionId), undefined);
   assert.deepEqual(masterPuts(before), []);
   assert.equal((await j.folder()).master, null);
-  assert.equal(on.publisher.masterLink(j.versionId), null);
+  assert.equal(on.publisher.masterForEmail(j.versionId), null);
 });
 
 test('a master Bunny refuses fails on its own, Stream untouched; a plain publish sends it again into the same folder', async () => {
@@ -206,7 +207,7 @@ test('a master Bunny refuses fails on its own, Stream untouched; a plain publish
   assert.equal(failed.body.status, 'ready', 'the video plays from Stream whatever the master did');
   assert.equal(failed.body.master.status, 'failed');
   assert.match(failed.body.master.error, /Bunny Storage refused the upload \(500\)/);
-  assert.equal(on.publisher.masterLink(j.versionId), null, 'no link to a master that isn’t there');
+  assert.equal(on.publisher.masterForEmail(j.versionId), null, 'no link to a master that isn’t there');
   const tag = masterRow(j.versionId).publish_tag;
   // Needs you's Publish failed is about what the client watches: a master isn't counted.
   const needs = await on.call(`/api/needs?today=${TODAY}`, { cookie: on.admin });
@@ -301,7 +302,7 @@ test('the paid email carries a ready master’s link beside the Drive link; a ma
   resetStorage();
   const j = await job();
   db.prepare('UPDATE deliverable_versions SET drive_link = ? WHERE id = ?').run(DRIVE, j.versionId);
-  const plan = () => releasePlan(db, j.projectId, { masterLink: on.publisher.masterLink });
+  const plan = () => releasePlan(db, j.projectId, { master: on.publisher.masterForEmail });
   const keyWithout = plan().setKey;
   assert.equal(releasePlan(db, j.projectId).setKey, keyWithout, 'no master: the set key it had before Slice 8');
 
@@ -324,7 +325,9 @@ test('the paid email carries a ready master’s link beside the Drive link; a ma
   db.prepare("UPDATE deliverables SET hub_status = 'approved' WHERE id = ?").run(j.item);
   const files = plan().files;
   assert.equal(files.length, 1);
-  assert.equal(files[0].masterLink, on.publisher.masterLink(j.versionId));
+  assert.equal(files[0].masterLink, on.publisher.masterForEmail(j.versionId).url);
+  assert.match(files[0].masterLink, new RegExp(`^https://hub\\.example/hub/download/${j.versionId}/Hero%204K\\.mov\\?token=`), 'hub-api’s route, never Bunny’s own link');
+  assert.equal(files[0].masterKey, `master:${j.versionId}:${masterRow(j.versionId).publish_tag}`);
   assert.equal(files[0].driveLink, DRIVE);
   assert.notEqual(plan().setKey, releasePlan(db, j.projectId).setKey, 'with the master, a new set');
 
@@ -332,7 +335,7 @@ test('the paid email carries a ready master’s link beside the Drive link; a ma
   assert.match(mail.text, new RegExp(`Hero film \\(v1\\): ${files[0].masterLink.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   assert.match(mail.text, /Google Drive copy: https:\/\/drive\.google\.com/);
   assert.match(mail.text, /The link downloads the full-quality file\. The Google Drive copy is a backup\./);
-  assert.ok(mail.html.includes(`href="${files[0].masterLink}"`) && mail.html.includes(`href="${DRIVE}"`));
+  assert.ok(mail.html.includes(`href="${files[0].masterLink.replace(/&/g, '&amp;')}"`) && mail.html.includes(`href="${DRIVE}"`));
   // A master alone is a link: nothing is missing, for the client or the studio.
   const masterOnly = [{ ...files[0], driveLink: '' }];
   assert.doesNotMatch(filesReadyEmail({ business: {}, appUrl: '', files: masterOnly }).text, /separately/);

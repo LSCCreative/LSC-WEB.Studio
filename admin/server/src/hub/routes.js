@@ -718,6 +718,46 @@ function createHubRouter(db, opts = {}) {
     return streamFile(req, res, file.absolute, file.stat, false, { cacheControl: 'no-store' });
   });
 
+  // ── GET /hub/download/:versionId/:name?token&expires: a Final's master, from the
+  // client's paid-files email (Bunny Slice 9; the user's call, 2026-11-27). The link is
+  // signed over the version for 90 days, and every click is checked here before it
+  // goes on to Bunny with a link of its own for 24 hours, so a download can be
+  // refused later without touching an email already sent: `downloadRefusal` is that
+  // check, the one F3's payment rule extends. Opened from an email in a browser, so
+  // it answers in a sentence, not JSON. Nothing about the file is said to a bad link.
+  const getDownloadVersion = db.prepare(`
+    SELECT v.id, v.stage, v.kind, v.project_id, d.not_needed_at
+      FROM deliverable_versions v JOIN deliverables d ON d.id = v.deliverable_id WHERE v.id = ?
+  `);
+  const getProjectRow = db.prepare('SELECT * FROM projects WHERE id = ?');
+  /* Why a version's master can't be downloaded now, as [status, sentence], or null. */
+  function downloadRefusal(versionId) {
+    const v = getDownloadVersion.get(versionId);
+    if (!v || v.kind !== 'video' || v.stage !== 'final' || v.not_needed_at) return [404, 'This file isn’t available any more. Ask the studio for a new link.'];
+    const p = getProjectRow.get(v.project_id);
+    if (!p) return [404, 'This file isn’t available any more. Ask the studio for a new link.'];
+    // Lock downloads (F4) and the payment rule (F3) land here.
+    if (p.downloads_locked === 1) return [403, 'Downloads for this project are paused. Contact the studio.'];
+    return null;
+  }
+  const sayDownload = (res, status, text) => {
+    res.status(status).set({ 'Cache-Control': 'no-store', 'Content-Type': 'text/plain; charset=utf-8' }).send(text);
+  };
+  router.get('/hub/download/:versionId/:name', mediaLimit, (req, res) => {
+    res.set('Referrer-Policy', 'no-referrer');
+    const { versionId } = req.params;
+    if (!bunnyPublisher || !bunnyPublisher.verifyDownload) return sayDownload(res, 404, 'This link isn’t working. Ask the studio for a new one.');
+    if (!bunnyPublisher.verifyDownload(versionId, String(req.query.token || ''), req.query.expires)) {
+      return sayDownload(res, 410, 'This download link has expired or isn’t valid. Ask the studio for a new one.');
+    }
+    const refused = downloadRefusal(versionId);
+    if (refused) return sayDownload(res, ...refused);
+    const target = bunnyPublisher.downloadTarget(versionId);
+    if (!target) return sayDownload(res, 404, 'This file isn’t available any more. Ask the studio for a new link.');
+    res.set('Cache-Control', 'no-store');
+    return res.redirect(302, target);
+  });
+
   /* The hub's server answered everything in JSON, and the portal reads every
      reply as JSON: an unknown /hub path or a bad body mustn't get HTML. */
   router.use('/hub', (req, res) => res.status(404).json({ error: 'not found' }));

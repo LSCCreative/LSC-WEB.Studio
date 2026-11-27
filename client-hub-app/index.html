@@ -435,13 +435,57 @@ function photoSrc(ph, size){
 /* An <img>'s src for a photo, and the way back to the NAS: a Bunny size that won't
    load (the pull zone refusing, a file gone) swaps once to the photo's NAS link, so
    the client sees the photo rather than a broken frame. `drop`: take the image out
-   when even that fails (the landing strip, where a gap reads better). */
+   when even that fails (the landing strip, where a gap reads better). A Bunny size
+   whose signed link ran out (Slice 9: they last about 6 hours) is renewed first: the
+   page asks for the project once, for every tile that failed together, and takes the
+   photo's fresh link; only if that fails too does it go to the NAS's full-size copy. */
 function photoImg(ph, size, drop = false){
   const src = photoSrc(ph, size);
-  return `src="${escapeAttr(src)}"${src !== ph.reviewLink ? ` data-nas="${escapeAttr(ph.reviewLink)}"` : ''}${drop ? ' data-drop' : ''} onerror="photoFallback(this)"`;
+  const bunny = src !== ph.reviewLink ? ` data-nas="${escapeAttr(ph.reviewLink)}" data-ph="${escapeAttr(ph.reviewLink)}" data-size="${size}"` : '';
+  return `src="${escapeAttr(src)}"${bunny}${drop ? ' data-drop' : ''} onerror="photoFallback(this)"`;
+}
+/* When a signed Bunny link stops working, in ms, or null for one that isn't signed. */
+function linkExpiresAt(url){
+  const m = /[?&]expires=(\d+)/.exec(url || '');
+  return m ? Number(m[1]) * 1000 : null;
+}
+/* One read of the project for every photo whose link ran out at the same moment: the
+   fresh sizes are put on the page's own photos (by their NAS link, their identity),
+   and the map of them is the answer. Null when the server didn't answer. */
+let photoRenewal = null;
+function renewPhotoLinks(){
+  const project = state.project;
+  if(!project) return Promise.resolve(null);
+  if(!photoRenewal){
+    photoRenewal = api('/hub/projects/' + encodeURIComponent(project.id)).then(({ project: view }) => {
+      const byLink = new Map();
+      (portalProject(view).assets || []).forEach(x => (x.photos || []).forEach(ph => byLink.set(ph.reviewLink, ph)));
+      ((state.project && state.project.assets) || []).forEach(x => (x.photos || []).forEach(ph => {
+        const f = byLink.get(ph.reviewLink);
+        if(f){ ph.grid = f.grid; ph.full = f.full; }
+      }));
+      return byLink;
+    }).catch(() => null);
+    // A burst of failing tiles shares this read; a later burst gets its own.
+    photoRenewal.then(() => setTimeout(() => { photoRenewal = null; }, 30 * 1000));
+  }
+  return photoRenewal;
 }
 function photoFallback(img){
   const nas = img.getAttribute('data-nas');
+  const expires = linkExpiresAt(img.getAttribute('src'));
+  if(nas && !img.dataset.renewed && expires && expires <= Date.now() + 60 * 1000){
+    img.dataset.renewed = '1';
+    renewPhotoLinks().then(byLink => {
+      if(!img.isConnected) return;
+      const f = byLink && byLink.get(img.dataset.ph);
+      const next = f && (img.dataset.size === 'grid' ? f.grid : f.full);
+      // A fresh link that fails too comes back here and goes to the NAS.
+      if(next && next !== img.getAttribute('src')) img.src = next;
+      else photoFallback(img);
+    });
+    return;
+  }
   if(nas){ img.removeAttribute('data-nas'); img.src = nas; return; }
   if(img.hasAttribute('data-drop')) img.remove();
 }
@@ -1526,8 +1570,10 @@ function renderVideoCanvas(a){
 // re-rendering the asset screen never leaks an instance or a stale error handler.
 let reviewHls = null;
 let reviewVideo = null;
+let renewTimer = null; // renews the open video's link before it runs out (relinkVideo, Slice 9)
 
 function detachReviewSource(){
+  clearTimeout(renewTimer); // a renewal belongs to the <video> being thrown away
   if(reviewVideo){
     // The old element is about to be thrown away: its late error/pause events must not
     // reach state (a stale onerror would flip videoFailed on the NEXT asset).
@@ -1602,8 +1648,10 @@ function attachHls(video, url, onFail){
     if(hls !== reviewHls) return;
     if(manifestParsed && !recoveryUsed && type === Hls.ErrorTypes.MEDIA_ERROR){ recoveryUsed = true; hls.recoverMediaError(); return; }
     if(manifestParsed && !recoveryUsed && type === Hls.ErrorTypes.NETWORK_ERROR){ recoveryUsed = true; hls.startLoad(); return; }
-    detachReviewSource();
-    onFail();
+    // Where the client was, read before anything resets the element, and nothing torn
+    // down here: onFail may renew an expired link on this same element (relinkVideo,
+    // Slice 9), which replaces the instance; the failure card's render() detaches it.
+    onFail({ at: video.currentTime || 0, playing: !video.paused && !video.ended });
   };
   hls.on(Hls.Events.MANIFEST_PARSED, () => { manifestParsed = true; });
   hls.on(Hls.Events.ERROR, (_evt, data) => { if(data.fatal) fatal(data.type); });
@@ -1775,6 +1823,103 @@ function videoFailed(){
     .catch(e => e.status === 401 ? (state.preview ? previewOver('expired') : signedOut('Your session ended. Sign in again to carry on.')) : setState({ videoFailed:true }));
 }
 
+/* A Bunny link signed for a few hours (Bunny Slice 9) that runs out mid-review fails
+   like a broken one: a 403 on the playlist or a segment. Before the failure card, the
+   page asks the server for the project once more and, if it gives the same version a
+   new link, re-attaches it to the SAME <video> at the same time, playing or paused as
+   it was. Nothing re-renders, so the pause pill, the revision panel and a half-written
+   note stay exactly as they are. Once per link: a fresh link that fails too, a newer
+   version (a different cut must never slip in under the client's notes), or no answer
+   goes to videoFailed as before. */
+let relinkedFrom = null; // the link a refresh was last tried for
+let relinking = null;    // the <video> being renewed: its own pause isn't the client's
+/* Renewed this long before the link's expiry. An iPhone's own player can stall on an
+   expired segment without ever raising an error, so waiting for one isn't enough. A
+   phone that slept past it fires the timer on waking, and renews then. */
+const RENEW_EARLY_MS = 5 * 60 * 1000;
+
+/* The asset as the server gives it now, or null when it doesn't answer. */
+async function freshAssetOf(projectId, assetId){
+  try {
+    const { project: view } = await api('/hub/projects/' + encodeURIComponent(projectId));
+    return (portalProject(view).assets || []).find(x => x.id === assetId) || null;
+  } catch(_){ return null; }
+}
+/* The asset as the page holds it now (a note saved meanwhile may have replaced the project). */
+const liveAssetOf = (assetId) => ((state.project && state.project.assets) || []).find(x => x.id === assetId) || null;
+
+function scheduleRenewal(video, assetId, delayMs){
+  clearTimeout(renewTimer);
+  const expires = linkExpiresAt(video.dataset.src);
+  if(delayMs == null && !expires) return; // not a signed link: nothing runs out
+  const wait = delayMs != null ? delayMs : Math.max(0, expires - Date.now() - RENEW_EARLY_MS);
+  renewTimer = setTimeout(() => {
+    if(reviewVideo === video && video.isConnected) relinkVideo(video, assetId, null, { early: true });
+  }, wait);
+}
+
+/* `early`: the link still works and is about to run out (scheduleRenewal), so the
+   video carries on while the project is read, and if the server can't give a new one
+   yet it is asked again in a minute. Otherwise the link has failed. */
+async function relinkVideo(video, assetId, where, { early = false } = {}){
+  const failed = video.dataset.src || '';
+  const project = state.project;
+  const a = project && (project.assets || []).find(x => x.id === assetId);
+  // hls.js says where the client was; a native error (Safari) leaves it on the element.
+  let at = where && typeof where.at === 'number' ? where.at : (video.currentTime || 0);
+  let playing = where && typeof where.playing === 'boolean' ? where.playing : (!video.paused && !video.ended);
+  if(!early){
+    // The failed instance goes now, so it raises nothing more while the project is read.
+    clearTimeout(renewTimer);
+    relinking = video;
+    if(reviewVideo === video && reviewHls){ reviewHls.destroy(); reviewHls = null; }
+    if(!a || relinkedFrom === failed){ relinking = null; return videoFailed(); }
+    relinkedFrom = failed;
+  } else if(!a) return;
+  const fresh = await freshAssetOf(project.id, assetId);
+  // The client left the video, or another renewal already swapped it, meanwhile.
+  if(reviewVideo !== video || video.dataset.src !== failed){ if(!early) relinking = null; return; }
+  if(!fresh || fresh.versionId !== a.versionId || !fresh.reviewLink || fresh.reviewLink === failed){
+    if(early) return scheduleRenewal(video, assetId, 60 * 1000);
+    relinking = null;
+    return videoFailed();
+  }
+  if(early){
+    // Read now, not before the project was: the video kept playing meanwhile.
+    at = video.currentTime || 0;
+    playing = !video.paused && !video.ended;
+    relinking = video;
+  }
+  const live = liveAssetOf(assetId) || a;
+  live.reviewLink = fresh.reviewLink;
+  live.poster = fresh.poster;
+  if(fresh.poster) video.poster = fresh.poster;
+  video.dataset.src = fresh.reviewLink;
+  video.addEventListener('loadedmetadata', () => {
+    if(reviewVideo !== video) return;
+    if(at) video.currentTime = at;
+    relinking = null;
+    if(playing) video.play().catch(() => {});
+  }, { once: true });
+  attachReviewSource(video, fresh.reviewLink, (info) => relinkVideo(video, assetId, info));
+  scheduleRenewal(video, assetId);
+}
+
+/* The failure card's Try again: the link it failed on may simply have run out, so the
+   project is read again first (and the once-per-link renewal is open again). */
+async function retryVideo(assetId, btn){
+  relinkedFrom = null;
+  if(btn) btn.disabled = true;
+  const project = state.project;
+  const fresh = project ? await freshAssetOf(project.id, assetId) : null;
+  const live = liveAssetOf(assetId);
+  if(fresh && live && fresh.versionId === live.versionId && fresh.reviewLink){
+    live.reviewLink = fresh.reviewLink;
+    live.poster = fresh.poster;
+  }
+  setState({ videoFailed:false });
+}
+
 /* ================= helpers ================= */
 function escapeHtml(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function escapeAttr(s){ return escapeHtml(s); }
@@ -1828,16 +1973,20 @@ function bindClientAsset(){
     video.onplay = () => setPausePill(null);
     video.onpause = () => {
       if(video.ended) return;
+      // A link being renewed pauses the element itself (Slice 9): not the client's pause.
+      if(video === relinking) return;
       // Timestamps only exist once the client has asked for revisions: an incidental
       // pause while just watching must not stamp anything.
       if(!state.revisionOpen) return;
       setPausePill(fmtVideoTime(video.currentTime), video.currentTime);
     };
-    // attachReviewSource owns video.onerror (with the hls.js recovery routing).
-    attachReviewSource(video, video.dataset.src, videoFailed);
+    // attachReviewSource owns video.onerror (with the hls.js recovery routing). A link
+    // that ran out is renewed in place first (relinkVideo, Bunny Slice 9).
+    attachReviewSource(video, video.dataset.src, (info) => relinkVideo(video, a.id, info));
+    scheduleRenewal(video, a.id);
   }
   const retry = document.getElementById('video-retry');
-  if(retry) retry.onclick = () => setState({ videoFailed:false });
+  if(retry) retry.onclick = () => retryVideo(a.id, retry);
 
   bindPhotoThumbs(a);
   bindPhotoLightbox(a);
