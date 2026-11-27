@@ -136,7 +136,8 @@ const ProjectDeliverables = (() => {
       const clock = deemedOf(item);
       return 'v' + newest.n + ' published ' + when(newest.publishedAt) + (clock && clock.due ? ' · approval due' : '');
     }
-    const bunny = { none: ' · send to Bunny first', processing: ' · Bunny processing', failed: ' · Bunny failed', ready: ' · Bunny has an old cut' }[bunnyHold(newest)] || '';
+    const bunny = { none: ' · send to Bunny first', processing: ' · Bunny processing', failed: ' · Bunny failed',
+      ready: newest && newest.kind === 'photos' ? ' · Bunny has an old set' : ' · Bunny has an old cut' }[bunnyHold(newest)] || '';
     return 'v' + newest.n + ' not published' + bunny + (published ? ' · v' + published.n + ' is with the client' : '');
   }
 
@@ -158,7 +159,7 @@ const ProjectDeliverables = (() => {
     const off = Boolean(item.notNeededAt);
     const meta = [item.format, item.duration].filter(Boolean).join(' · ');
     const named = item.title;
-    // A video waiting on Bunny opens its page, where Send to Bunny is.
+    // A version waiting on Bunny opens its page, where Send to Bunny is.
     const canPublish = newest && !newest.publishedAt && !off && !filed() && !bunnyHold(newest);
     const primary = filed()
       ? '<button type="button" class="btn btn-sm" data-dlv="open" data-id="' + esc(item.id) + '" aria-label="Open ' + esc(named) + '">Open</button>'
@@ -432,13 +433,15 @@ const ProjectDeliverables = (() => {
     });
   }
 
-  // ── Bunny Stream (Bunny Slice 4) ──────────────────────────────────────────
+  // ── Bunny (Bunny Slices 4 and 7) ─────────────────────────────────────────
   /* With Bunny on (the folder's bunnyOn), the client watches a video from Bunny
      Stream: Send to Bunny comes first, and the client's Publish waits until it's
      ready there with the file the NAS holds now. The two stay separate steps, since
-     Bunny takes minutes and Publish can email the client. Photo libraries aren't
-     sent yet (Bunny Slice 7). The folder carries each version's status; a read of
-     /bunny adds the poster and whether the NAS file changed since, and is repeated
+     Bunny takes minutes and Publish can email the client. A photo library goes to
+     Bunny Edge Storage the same way (Slice 7), with n of total as it goes, but its
+     Publish never waits: the client sees it from the NAS until every photo is on
+     Bunny. The folder carries each version's status; a read of /bunny adds the
+     poster and whether the NAS file (or folder) changed since, and is repeated
      while Bunny processes. The newest read is kept per version, so a redraw (any
      write's reply) starts from it, not from the older folder. */
   const BUNNY_CHECK_MS = 10000;
@@ -449,27 +452,56 @@ const ProjectDeliverables = (() => {
     bunnyTimer = null;
   };
 
-  const bunnyApplies = (v) => Boolean(ctx.folder.bunnyOn && v && v.kind === 'video' && v.sourcePath);
+  const bunnyApplies = (v) => Boolean(ctx.folder.bunnyOn && v && (v.kind === 'video' || v.kind === 'photos') && v.sourcePath);
+  const noProgress = { done: 0, total: 0 };
   /* The folder's status wins when it differs (the webhook moved it on since the
      last read); the kept read adds the poster and the changed-file check. */
   function bunnyOf(v) {
     const status = v.bunny ? v.bunny.status : 'none';
     const seen = bunnyViews.get(v.id);
     if (seen && seen.status === status) return seen;
-    return { status, error: v.bunny ? v.bunny.error : null, sourceChanged: false, posterUrl: null };
+    return {
+      status, error: v.bunny ? v.bunny.error : null, sourceChanged: false, posterUrl: null,
+      progress: (v.bunny && v.bunny.progress) || noProgress,
+    };
   }
-  /* Why the client's Publish waits, or '' when it needn't. */
+  /* Why the client's Publish waits, or '' when it needn't. A photo library waits only
+     while Bunny holds a set the folder has moved on from (the server holds it too). */
   function bunnyHold(v) {
     if (!bunnyApplies(v) || v.publishedAt) return '';
     const b = bunnyOf(v);
+    if (v.kind === 'photos') return b.status === 'ready' && b.sourceChanged ? 'ready' : '';
     return b.status === 'ready' && !b.sourceChanged ? '' : b.status;
   }
+  /* A Final's master (Slice 8): its untouched file goes to Bunny Storage beside the
+     Stream copy, for the download link in the client's paid-files email (C10). A
+     Draft Cut never has one. Like bunnyOf: the folder's status wins when it differs
+     (the master landed since the last read), the kept read adds how far it is. */
+  const noMaster = { status: 'none', error: null, progress: noProgress };
+  const masterApplies = (v) => bunnyApplies(v) && v.kind === 'video' && v.stage === 'final';
+  function masterOf(v) {
+    const folder = v.master || null;
+    const seen = (bunnyViews.get(v.id) || {}).master;
+    if (seen && (!folder || seen.status === folder.status)) return seen;
+    return folder || noMaster;
+  }
+  /* An error from Bunny may end without a full stop: one is added before the next sentence. */
+  const sentence = (text) => (/[.!?…]$/.test(String(text).trim()) ? String(text).trim() : String(text).trim() + '.');
+  const masterPercent = (m) => (m.progress && m.progress.total ? Math.floor((m.progress.done / m.progress.total) * 100) : 0);
+
   /* A view the server answered with: kept, and the folder's copy brought level, so
      the checklist row says the same when the screen goes back to it. */
   function keepBunny(v, view) {
-    const kept = { status: view.status, error: view.error || null, sourceChanged: Boolean(view.sourceChanged), posterUrl: view.posterUrl || null };
+    const m = view.master || null;
+    const kept = {
+      status: view.status, error: view.error || null, sourceChanged: Boolean(view.sourceChanged), posterUrl: view.posterUrl || null,
+      progress: view.progress || noProgress,
+      master: m ? { status: m.status, error: m.error || null, progress: m.progress || noProgress } : null,
+    };
     bunnyViews.set(v.id, kept);
-    v.bunny = view.status === 'none' ? null : { status: kept.status, error: kept.error, videoId: (v.bunny && v.bunny.videoId) || null };
+    v.bunny = view.status === 'none' ? null
+      : { status: kept.status, error: kept.error, videoId: (v.bunny && v.bunny.videoId) || null, progress: kept.progress };
+    if (kept.master) v.master = kept.master.status === 'none' ? null : kept.master;
     return kept;
   }
 
@@ -479,6 +511,48 @@ const ProjectDeliverables = (() => {
     ready: ['Ready', 'is-ok'],
     failed: ['Failed', 'is-alert'],
   };
+
+  /* A photo library's block: what Bunny has of it, n of total while it goes. */
+  function photosBunnyCopy(b, v, can, sent, button) {
+    const n = 'v' + v.n;
+    const of = b.progress.total ? b.progress.done + ' of ' + b.progress.total : '';
+    if (b.status === 'processing') {
+      return {
+        chip: [of ? 'Sending ' + of : 'Sending', 'is-info'],
+        note: 'Bunny is taking the photos' + (of ? ': ' + of + ' there so far' : '') +
+          ', with a grid size and a full-screen size made from each. This checks again every 10 seconds, and you can leave the page.',
+      };
+    }
+    if (b.status === 'failed') {
+      return {
+        chip: BUNNY_CHIP.failed,
+        note: (b.error || 'Bunny couldn’t take them.') + ' Until they’re all there, the client sees them from the NAS.',
+        act: can ? button('Send to Bunny again') : '',
+      };
+    }
+    if (b.status === 'ready' && b.sourceChanged) {
+      return {
+        chip: ['Folder changed', 'is-alert'],
+        note: sent
+          ? 'Photos in the folder changed after ' + n + ' went out. The client still sees the set on Bunny: add the new photos as a new version.'
+          : 'Photos in the folder changed after they went to Bunny, so Bunny has the old set. Send the changes before you publish ' + n + '.',
+        act: can && !sent ? button('Send changes to Bunny…', true) : '',
+      };
+    }
+    if (b.status === 'ready') {
+      return {
+        chip: [of ? 'Ready · ' + b.progress.total + ' photos' : 'Ready', 'is-ok'],
+        note: sent ? 'The client sees these from Bunny.' : 'The client will see these from Bunny once you publish ' + n + '.',
+      };
+    }
+    return {
+      chip: BUNNY_CHIP.none,
+      note: 'The client sees these from the NAS for now. Send them to Bunny and the server makes a grid size and a full-screen size of each, ' +
+        'so the client’s pages load quickly; the originals stay as they are. ' +
+        (sent ? 'The client moves to them once every photo is there.' : 'You can publish before or after.'),
+      act: can ? button('Send to Bunny') : '',
+    };
+  }
 
   function bunnyMarkup(item, v) {
     if (!bunnyApplies(v)) return '';
@@ -491,6 +565,17 @@ const ProjectDeliverables = (() => {
       (force ? ' data-force' : '') + '>' + label + '</button>';
     let note = '';
     let act = '';
+    if (v.kind === 'photos') {
+      const copy = photosBunnyCopy(b, v, can, sent, button);
+      return (
+        '<div class="dlv-bunny" id="dlv-bunny"><div class="dlv-bunny-body">' +
+        '<p class="dlv-bunny-head"><span class="dlv-bunny-label">Bunny Storage</span>' +
+        '<span class="pf-chip ' + copy.chip[1] + '">' + esc(copy.chip[0]) + '</span></p>' +
+        '<p class="dlv-note" id="dlv-bunny-note" role="status">' + esc(copy.note) + '</p>' +
+        (copy.act ? '<div class="dlv-bunny-acts">' + copy.act + '</div>' : '') +
+        '</div></div>'
+      );
+    }
     if (b.status === 'processing') {
       note = 'Bunny is fetching the file from the NAS and transcoding it. This checks again every 10 seconds, and you can leave the page.';
     } else if (b.status === 'failed') {
@@ -508,6 +593,7 @@ const ProjectDeliverables = (() => {
         ? 'The client watches this from the NAS. Send it to Bunny and they’ll watch it from there once it’s ready, ' +
           'as long as the NAS file is still the one they were given.'
         : 'The client watches videos from Bunny Stream, so send it there before you publish. Bunny fetches it from the NAS and transcodes it, which takes a few minutes.';
+      if (masterApplies(v)) note += ' As a Final, its untouched master goes to Bunny Storage too, for the paid-files email.';
       if (can) act = button('Send to Bunny');
     }
     const poster = b.status === 'ready' && b.posterUrl
@@ -519,7 +605,45 @@ const ProjectDeliverables = (() => {
       '<span class="pf-chip ' + chip[1] + '">' + chip[0] + '</span></p>' +
       '<p class="dlv-note" id="dlv-bunny-note" role="status">' + esc(note) + '</p>' +
       (act ? '<div class="dlv-bunny-acts">' + act + '</div>' : '') +
+      masterMarkup(v, b, can) +
       '</div></div>'
+    );
+  }
+
+  /* The master's line under Stream's, once the video has been sent (before then,
+     Send to Bunny's note says the master goes with it). Its button is a plain send
+     again: the server sends the master if it's missing or failed, and leaves Stream. */
+  function masterMarkup(v, b, can) {
+    if (!masterApplies(v) || b.status === 'none') return '';
+    const m = masterOf(v);
+    const button = (label) => '<button type="button" class="btn btn-sm" data-write id="dlv-master-send">' + label + '</button>';
+    const copy = {
+      processing: {
+        chip: ['Sending ' + masterPercent(m) + '%', 'is-info'],
+        note: 'The untouched file is going to Bunny Storage, for the download link in the client’s paid-files email. ' +
+          'Big files take a while on the NAS’s upload; you can leave the page.',
+      },
+      ready: {
+        chip: ['On Bunny', 'is-ok'],
+        note: 'The client’s paid-files email links to this full-quality file, beside its Drive backup if it has one.',
+      },
+      failed: {
+        chip: BUNNY_CHIP.failed,
+        note: sentence(m.error || 'Bunny Storage couldn’t take it.') + ' Until it’s there, the paid-files email carries the Drive link only.',
+        act: can ? button('Send master again') : '',
+      },
+    }[m.status] || {
+      chip: BUNNY_CHIP.none,
+      note: 'This Final went to Bunny before masters did. Send its untouched file too, and the paid-files email links to it beside the Drive link.',
+      act: can ? button('Send master') : '',
+    };
+    return (
+      '<div class="dlv-master" id="dlv-master">' +
+      '<p class="dlv-bunny-head"><span class="dlv-bunny-label">Master</span>' +
+      '<span class="pf-chip ' + copy.chip[1] + '">' + esc(copy.chip[0]) + '</span></p>' +
+      '<p class="dlv-note" id="dlv-master-note" role="status">' + esc(copy.note) + '</p>' +
+      (copy.act ? '<div class="dlv-bunny-acts">' + copy.act + '</div>' : '') +
+      '</div>'
     );
   }
 
@@ -529,6 +653,7 @@ const ProjectDeliverables = (() => {
     const block = $('dlv-bunny');
     if (!block) return;
     const hadFocus = block.contains(document.activeElement);
+    const inMaster = hadFocus && Boolean($('dlv-master')) && $('dlv-master').contains(document.activeElement);
     block.outerHTML = bunnyMarkup(item, v);
     bindBunny(item, v);
     const publishBtn = $('dlv-publish');
@@ -538,7 +663,8 @@ const ProjectDeliverables = (() => {
       if (held) publishBtn.setAttribute('aria-describedby', 'dlv-bunny-note');
       else publishBtn.removeAttribute('aria-describedby');
     }
-    if (hadFocus) focusBunny();
+    if (inMaster) focusMaster();
+    else if (hadFocus) focusBunny();
   }
   /* Focus back on the block after its button was replaced: its next action, or the
      block itself while there is none (Processing), so the keyboard isn't dropped. */
@@ -550,6 +676,19 @@ const ProjectDeliverables = (() => {
     if (next) return next.focus();
     block.setAttribute('tabindex', '-1');
     block.focus();
+  }
+
+  /* A busy button is disabled while it waits, which drops the keyboard to the page:
+     its reply hands focus back to the block. */
+  const focusDropped = () => !document.activeElement || document.activeElement === document.body;
+  /* The same for the master's line: its button, or the line while it sends. */
+  function focusMaster() {
+    const line = $('dlv-master');
+    if (!line) return focusBunny();
+    const next = $('dlv-master-send');
+    if (next) return next.focus();
+    line.setAttribute('tabindex', '-1');
+    return line.focus();
   }
 
   /* The item and version as the screen holds them now, if it is still that
@@ -565,8 +704,13 @@ const ProjectDeliverables = (() => {
     return { item, v };
   }
 
+  const sameProgress = (a, b) => (a || noProgress).done === (b || noProgress).done && (a || noProgress).total === (b || noProgress).total;
+  const sameMaster = (a, b) => (!a && !b) || (Boolean(a && b) && a.status === b.status && a.error === b.error && sameProgress(a.progress, b.progress));
   const sameView = (a, b) => Boolean(a && b) && a.status === b.status && a.error === b.error &&
-    a.sourceChanged === b.sourceChanged && a.posterUrl === b.posterUrl;
+    a.sourceChanged === b.sourceChanged && a.posterUrl === b.posterUrl && sameProgress(a.progress, b.progress) &&
+    sameMaster(a.master, b.master);
+  /* Still worth reading again: Stream processing, or a Final's master going up. */
+  const stillGoing = (v) => bunnyOf(v).status === 'processing' || (masterApplies(v) && masterOf(v).status === 'processing');
 
   /* Reads where the publish stands, and again every 10 seconds while Bunny is
      processing it. Stops once the screen has moved on. Repaints only when
@@ -578,8 +722,9 @@ const ProjectDeliverables = (() => {
     try {
       const view = await LSCApi.get(versionUrl(item, v, '/bunny'));
       if (!block.isConnected) return;
-      const before = bunnyOf(v);
+      const before = { ...bunnyOf(v), master: masterApplies(v) ? masterOf(v) : null };
       const kept = keepBunny(v, view);
+      if (!masterApplies(v)) kept.master = null;
       if (!sameView(before, kept)) paintBunny(item, v);
     } catch (err) {
       if (!(err instanceof LSCApi.ApiError)) throw err;
@@ -588,7 +733,7 @@ const ProjectDeliverables = (() => {
       const note = $('dlv-bunny-note');
       if (note && err.kind !== 'network') note.textContent = 'Couldn’t check Bunny: ' + failureText(err);
     }
-    if (bunnyOf(v).status === 'processing' && $('dlv-bunny')) {
+    if (stillGoing(v) && $('dlv-bunny')) {
       bunnyTimer = setTimeout(() => {
         if ($('dlv-bunny') && $('dlv-bunny').isConnected) checkBunny(item, v);
       }, BUNNY_CHECK_MS);
@@ -627,8 +772,6 @@ const ProjectDeliverables = (() => {
     // A thumbnail that won't load leaves the frame empty rather than a broken image.
     const poster = box.querySelector('.dlv-bunny-poster img');
     if (poster) poster.addEventListener('error', () => poster.remove(), { once: true });
-    const send = $('dlv-bunny-send');
-    if (!send) return;
     const settle = (result) => {
       if (!result || !result.live) return;
       const { item: liveItem, v: liveV } = result.live;
@@ -636,10 +779,33 @@ const ProjectDeliverables = (() => {
       // A failed row says why in the block; anything else refused (a kept video, a
       // file gone) goes in the panel's error line.
       if (result.refused && (!result.view || result.view.status !== 'failed')) showError(result.refused);
-      if (bunnyOf(liveV).status === 'processing') checkBunny(liveItem, liveV);
+      if (stillGoing(liveV)) checkBunny(liveItem, liveV);
     };
+    const sendMaster = $('dlv-master-send');
+    if (sendMaster) {
+      sendMaster.addEventListener('click', () => busyWhile(sendMaster, async () => {
+        clearError();
+        Toast.working('Sending the master to Bunny…');
+        const result = await postBunny(item, v, false);
+        const m = result && result.view && result.view.master;
+        if (result && !result.refused && m && m.status !== 'failed') {
+          Toast.ok(m.status === 'ready' ? 'The master is on Bunny.' : 'Sending. The master goes to Bunny in the background.');
+        } else if (result && result.refused && !result.live) Toast.error('Bunny didn’t take v' + v.n + ' of ' + item.title + ': ' + result.refused);
+        else Toast.hide();
+        settle(result);
+        if (result && result.live && focusDropped()) focusMaster();
+      }));
+    }
+    const send = $('dlv-bunny-send');
+    if (!send) return;
     if (send.hasAttribute('data-force')) {
-      send.addEventListener('click', () => ctx.confirm(send, {
+      const photos = v.kind === 'photos';
+      send.addEventListener('click', () => ctx.confirm(send, photos ? {
+        title: 'Send v' + v.n + '’s changes to Bunny?',
+        body: 'New and replaced photos in ' + (v.fileName || 'the folder') + ' go to Bunny, and ones taken out of the folder leave v' + v.n + '. ' +
+          'Photos that haven’t changed aren’t sent again. Until it’s done, the client would see the set from the NAS.',
+        confirm: 'Send changes',
+      } : {
         title: 'Republish v' + v.n + ' to Bunny?',
         body: 'Bunny fetches ' + (v.fileName || 'the file') + ' from the NAS again, and v' + v.n + ' uses the new video once it’s ready. ' +
           'The old one stays on Bunny until cleanup takes it off.',
@@ -660,10 +826,14 @@ const ProjectDeliverables = (() => {
       clearError();
       Toast.working('Sending to Bunny…');
       const result = await postBunny(item, v, false);
-      if (result && !result.refused) Toast.ok(result.view.status === 'ready' ? 'Ready on Bunny.' : 'Sent. Bunny is processing it.');
+      if (result && !result.refused) {
+        Toast.ok(result.view.status === 'ready' ? 'Ready on Bunny.'
+          : v.kind === 'photos' ? 'Sending. The photos go to Bunny in the background.' : 'Sent. Bunny is processing it.');
+      }
       else if (result && result.refused && !result.live) Toast.error('Bunny didn’t take v' + v.n + ' of ' + item.title + ': ' + result.refused);
       else Toast.hide();
       settle(result);
+      if (result && result.live && focusDropped()) focusBunny();
     }));
   }
 

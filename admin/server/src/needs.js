@@ -107,10 +107,12 @@ function readNeeds(db, { today, briefs, rows }) {
   });
 
   // Publish failed (Bunny Slice 3): Bunny gave up on the newest version of a needed item,
-  // so the client can't be given it. Leaves when a publish of it goes through (or a newer
+  // so the client can't be given its video (a photo library, Slice 7, can go to them
+  // from the NAS meanwhile, but the send still needs doing again). Leaves when a publish of it goes through (or a newer
   // version replaces it); the row opens the item, where Send to Bunny again is. A version
   // the client already has isn't counted: they still watch it from the NAS, so nothing
-  // waits on it (its item page says the send failed).
+  // waits on it (its item page says the send failed). A Final's master (Slice 8) isn't
+  // counted either: Publish never waits on it, and the item page says when one failed.
   db.prepare(`
     SELECT b.version_id, b.error, b.updated_at, v.n, d.id AS item_id, d.title,
            p.id AS project_id, p.client_id, p.upid, p.name
@@ -118,7 +120,7 @@ function readNeeds(db, { today, briefs, rows }) {
       JOIN deliverable_versions v ON v.id = b.version_id
       JOIN deliverables d ON d.id = v.deliverable_id
       JOIN projects p ON p.id = d.project_id
-     WHERE b.status = 'failed' AND p.archived_at IS NULL AND p.declined_at IS NULL AND d.not_needed_at IS NULL
+     WHERE b.status = 'failed' AND b.kind != 'master' AND p.archived_at IS NULL AND p.declined_at IS NULL AND d.not_needed_at IS NULL
        AND v.published_at IS NULL
        AND v.n = (SELECT MAX(n) FROM deliverable_versions WHERE deliverable_id = d.id)
      ORDER BY b.updated_at, b.version_id

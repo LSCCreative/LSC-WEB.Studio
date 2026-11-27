@@ -127,7 +127,10 @@ function registerInvoiceRoutes(app, db, opts = {}) {
     const listed = folder.invoices.find((i) => i.id === row.id) || {};
     const invoice = { ...invoiceJson(db, row), publicToken: listed.publicToken || null, send: listed.send || null };
     // Whether paying this one sends the client their files (C10): Mark paid's dialog says so.
-    const filesRelease = releaseView(db, row.project_id, req.app.locals.mailer);
+    const bunnyPublisher = req.app.locals.bunnyPublisher;
+    const filesRelease = releaseView(db, row.project_id, req.app.locals.mailer, {
+      masterLink: bunnyPublisher ? bunnyPublisher.masterLink : undefined,
+    });
     return res.json({ ok: true, invoice, project: folder.project, invoices: folder.invoices, filesRelease, ...(extra || {}) });
   }
 

@@ -239,6 +239,16 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   With Bunny on, a video's client publish waits for a ready row with the NAS file unchanged (Slice 4);
   only a ready row with an id plays as HLS, anything else falls back to the NAS link. The row reaches the
   portal only as the links `reviewOf` builds: keep `bunny` off `projectView`'s allow-list.
+  Photo libraries (Slice 6, `src/bunny-photos.js`, schema v36): a background job, one `bunny_photo_files`
+  row per photo, resumed at start-up; the library shows from Bunny only once every photo is `done`.
+  Originals live under `original-<publish_tag>/`, never a guessable `original/`, and the client's reply
+  never carries an original (no download until a gate gives one): keep both until Slice 9 signs links.
+  A photo row has a publish_tag and no video id: anything that walks Stream rows (the webhook's adopt pass)
+  must filter `kind = 'video'`. A photo publish is held only while Bunny's set is stale (`bunny_stale`).
+  Masters (Slice 8, `src/bunny-masters.js`): a Final's video also gets a `kind = 'master'` row, so a
+  version can have two rows: anything keyed by version id alone (delivery.js's map, Needs you) must pick
+  its kind. The master's link goes only into C10's paid email (the user's call); `files-release.js` adds it
+  to the set key only when there is one, so old keys never change and old jobs never re-send.
   A new route never answers an outside service's refusal (Bunny saying no) with a 5xx: the admin's
   connection banner reads any 5xx as the server down and blocks every write.
 

@@ -19,11 +19,13 @@
  * later "paid" from Hnry (F6) calls check() too. An item the old hub delivered
  * (R4's hub_status 'delivered') is the client's already: it is never in the email.
  *
- * WHAT. Each approved Final with its Drive backup link; an item with none is named
- * and the studio's copy flags it. B3 adds the Bunny download links to the same email.
+ * WHAT. Each approved Final with its Drive backup link, and its master on Bunny
+ * when one landed there (Bunny Slice 8: the user's call of 2026-11-27, this email is
+ * the only place that link goes until F3/F5); an item with neither is named and the
+ * studio's copy flags it. A master that lands after the email went sends an update.
  *
  * ONCE. files_releases (v32) keeps one row per project: the set it last tried
- * (`set_key`: each item's approved version and its link). The same set never goes
+ * (`set_key`: each item's approved version and its links). The same set never goes
  * twice, so marking paid again or a second approval changes nothing; a new set (a
  * newer Final approved, or a link added or changed) sends an update. A failed send
  * is tried again by the hourly pass, up to MAX_ATTEMPTS, then the studio is told.
@@ -65,6 +67,11 @@ function setKeyOf(files) {
 }
 
 const hasLink = (f) => /^https?:\/\//i.test(f.driveLink);
+const hasAnyLink = (f) => hasLink(f) || Boolean(f.masterLink);
+/* A file's part of the set key. The master's link joins only when there is one, so
+   every set recorded before masters existed (v32's baselines, emails sent) keeps the
+   key it had and never sends again on its own. */
+const keyPart = (f) => (f.masterLink ? [f.itemId, f.versionId, f.driveLink, f.masterLink] : [f.itemId, f.versionId, f.driveLink]);
 
 /**
  * Where a project stands for its files. Pure reads.
@@ -76,15 +83,16 @@ const hasLink = (f) => /^https?:\/\//i.test(f.driveLink);
  *   approved: boolean,      every needed item approved, and at least one
  *   needed: number,         items not marked Not needed
  *   open: number,           needed items not approved yet
- *   files: Array<{ itemId, title, versionId, versionN, driveLink }>,  the approved
- *                           items, less what the old hub delivered
+ *   files: Array<{ itemId, title, versionId, versionN, driveLink, masterLink }>,  the
+ *                           approved items, less what the old hub delivered; masterLink
+ *                           is the Final's master on Bunny, or null
  *   setKey: string,
  *   client: object|null,
  *   email: string,          the client's address, '' when it isn't one
  *   badEmail: string,       what the client has instead, when it isn't an address
  *   record: object|null }}  the files_releases row
  */
-function releasePlan(db, projectId) {
+function releasePlan(db, projectId, { masterLink = () => null } = {}) {
   const p = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
   if (!p) return null;
   const live = db.prepare("SELECT id, kind, status FROM invoices WHERE project_id = ? AND status != 'void'").all(projectId);
@@ -101,9 +109,10 @@ function releasePlan(db, projectId) {
       versionId: v ? v.id : null,
       versionN: v ? v.n : null,
       driveLink: v ? String(v.driveLink || '').trim() : '',
+      masterLink: v ? masterLink(v.id) || null : null,
     };
   });
-  const setKey = setKeyOf(files.map((f) => [f.itemId, f.versionId, f.driveLink]));
+  const setKey = setKeyOf(files.map(keyPart));
   const client = p.client_id ? db.prepare('SELECT * FROM clients WHERE id = ?').get(p.client_id) : null;
   const raw = client ? String(client.email || '').trim() : '';
   const email = isEmail(raw) ? raw : '';
@@ -129,8 +138,8 @@ function releasePlan(db, projectId) {
  * What the studio's screens say (the invoice's Mark paid, the folder): the facts
  * that decide whether marking the last invoice paid sends the files.
  */
-function releaseView(db, projectId, mailer) {
-  const plan = releasePlan(db, projectId);
+function releaseView(db, projectId, mailer, { masterLink } = {}) {
+  const plan = releasePlan(db, projectId, { masterLink });
   if (!plan) return null;
   const r = plan.record;
   const current = Boolean(r && r.set_key === plan.setKey);
@@ -142,7 +151,7 @@ function releaseView(db, projectId, mailer) {
     open: plan.open,
     // Every approved item was delivered by the old hub: nothing to send.
     nothingNew: plan.approved && plan.files.length === 0,
-    noLink: plan.files.filter((f) => !hasLink(f)).map((f) => f.title),
+    noLink: plan.files.filter((f) => !hasAnyLink(f)).map((f) => f.title),
     email: plan.email,
     badEmail: plan.badEmail,
     mail: Boolean(mailer && mailer.configured),
@@ -156,7 +165,7 @@ function releaseView(db, projectId, mailer) {
 }
 
 /**
- * @param {object} env  { mailer, appUrl, tickMs? }
+ * @param {object} env  { mailer, appUrl, tickMs?, masterLink? (versionId → a ready master's link or null) }
  */
 function createFilesRelease(db, env) {
   let timer = null;
@@ -195,7 +204,7 @@ function createFilesRelease(db, env) {
    */
   async function attempt(projectId) {
     if (!env.mailer || !env.mailer.configured) return { sent: false, reason: 'no_mail' };
-    const plan = releasePlan(db, projectId);
+    const plan = releasePlan(db, projectId, { masterLink: env.masterLink });
     if (!plan) return { sent: false, reason: 'no_project' };
     if (!plan.paid) return { sent: false, reason: 'not_paid' };
     if (!plan.approved) return { sent: false, reason: 'not_approved' };
@@ -254,7 +263,7 @@ function createFilesRelease(db, env) {
       console.error(`[mail] files email for project ${projectId} failed: ${err && err.code ? err.code : 'error'}`);
       return { sent: false, reason: gaveUp ? 'gave_up' : 'failed', to: plan.email, error };
     }
-    const missing = plan.files.filter((f) => !hasLink(f)).map((f) => f.title);
+    const missing = plan.files.filter((f) => !hasAnyLink(f)).map((f) => f.title);
     upsert.run({ ...base, status: 'sent', to_email: plan.email, attempts, error: '', owner_told: 0, sent_at: at });
     logActivity(db, projectId, 'files_sent', { to: plan.email, count: plan.files.length, missing, update }, at);
     // The studio's copy in the background: the client's email is what the caller waits on.
