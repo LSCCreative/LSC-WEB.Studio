@@ -166,7 +166,8 @@ that means. The client sees the files as offline under Past projects, and
 Bunny keys live in a 1Password Environment and the NAS `.env` only:
 `BUNNY_STREAM_LIBRARY_ID`, `BUNNY_STREAM_API_KEY`, `BUNNY_STREAM_READ_KEY`,
 `BUNNY_STREAM_CDN_HOST`, `BUNNY_STORAGE_ZONE`, `BUNNY_STORAGE_PASSWORD`,
-`BUNNY_STORAGE_HOST`, `BUNNY_STORAGE_CDN_HOST`, `BUNNY_CDN_TOKEN_KEY`
+`BUNNY_STORAGE_HOST`, `BUNNY_STORAGE_CDN_HOST`, `BUNNY_STREAM_TOKEN_KEY`,
+`BUNNY_STORAGE_TOKEN_KEY` (one per pull zone, Slice 9)
 (names only — never values in repo, chat or logs). Never in
 `client-hub-app`, the widget, or `docker-compose.yml` (it's mirrored to a
 public repo).

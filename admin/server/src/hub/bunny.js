@@ -5,7 +5,11 @@
    reach an error message or a log line. Publishing logic lives in
    ../bunny-publish.js. */
 
+const { signBunnyUrl, expiresIn } = require('./bunny-tokens');
+
 const STREAM_API = 'https://video.bunnycdn.com';
+/* How long a signed Bunny link works (Slice 9): long enough for a review session. */
+const SIGNED_TTL_SECONDS = 6 * 60 * 60;
 const REQUEST_TIMEOUT_MS = 30_000;
 /* An original photo or master through the NAS's upload: generous, so a big file on
    a slow line isn't cut off, but a hung connection still ends. */
@@ -17,8 +21,9 @@ const bareHost = (host) => String(host || '').trim().replace(/^https?:\/\//i, ''
    `?` stays one file and a `/` in a path still separates folders. */
 const escapePath = (path) => String(path).split('/').map(encodeURIComponent).join('/');
 
-/* Every key the hub needed at boot. The CDN token key isn't here: token auth
-   comes later, and requiring it now would stop the server starting. */
+/* Every key the hub needed at boot. The two pull zones' token keys aren't here
+   (BUNNY_STREAM_TOKEN_KEY, BUNNY_STORAGE_TOKEN_KEY, Slice 9): without one, that
+   zone's links go out unsigned, which works until its token authentication is on. */
 const REQUIRED = {
   libraryId: 'BUNNY_STREAM_LIBRARY_ID',
   streamApiKey: 'BUNNY_STREAM_API_KEY',
@@ -44,13 +49,16 @@ function statusFromVideo(video) {
   return 'processing';
 }
 
-function createBunny(settings, { fetchImpl = fetch } = {}) {
+function createBunny(settings, { fetchImpl = fetch, now = Date.now } = {}) {
   const missing = missingBunnySettings(settings);
   if (missing.length) throw new Error(`Bunny isn't set up: missing ${missing.join(', ')}`);
   const { libraryId, streamApiKey, streamCdnHost, storageZone, storagePassword } = settings;
   const storageHost = bareHost(settings.storageHost);
   const storageCdnHost = bareHost(settings.storageCdnHost);
   const storageApiUrl = (path) => `https://${storageHost}/${encodeURIComponent(storageZone)}/${escapePath(path)}`;
+  const ttl = Number(settings.signedTtlSeconds) > 0 ? Number(settings.signedTtlSeconds) : SIGNED_TTL_SECONDS;
+  const streamTokenKey = settings.streamTokenKey || '';
+  const storageTokenKey = settings.storageTokenKey || '';
 
   /* Bunny Storage's reason, from its JSON ({ HttpCode, Message }) when it sends one. */
   async function storageReason(res) {
@@ -161,11 +169,20 @@ function createBunny(settings, { fetchImpl = fetch } = {}) {
     return items.filter((i) => !i.IsDirectory).map((i) => ({ name: i.ObjectName, length: i.Length, checksum: i.Checksum || null }));
   }
 
-  /* Where a stored file is served from (the storage zone's pull zone). */
-  const storageUrl = (path) => `https://${storageCdnHost}/${escapePath(path)}`;
-
-  const hlsUrl = (videoId) => `https://${streamCdnHost}/${videoId}/playlist.m3u8`;
-  const posterUrl = (videoId) => `https://${streamCdnHost}/${videoId}/thumbnail.jpg`;
+  /* Every CDN link below is built when someone is answered, never stored, and signed
+     here, the one place (Slice 9): a link copied out of a reply stops working once it
+     expires. A video's links carry a token for its whole folder, in the path, so the
+     playlist's segments load with it. `ttlSeconds` overrides the review TTL (a
+     download's redirect). */
+  const storageUrl = (path, { ttlSeconds = ttl } = {}) => signBunnyUrl(
+    `https://${storageCdnHost}/${escapePath(path)}`, storageTokenKey, { expires: expiresIn(ttlSeconds, now()) },
+  );
+  const streamUrl = (videoId, file) => signBunnyUrl(
+    `https://${streamCdnHost}/${videoId}/${file}`, streamTokenKey,
+    { expires: expiresIn(ttl, now()), directory: `/${videoId}/`, pathForm: true },
+  );
+  const hlsUrl = (videoId) => streamUrl(videoId, 'playlist.m3u8');
+  const posterUrl = (videoId) => streamUrl(videoId, 'thumbnail.jpg');
 
   return {
     findOrCreateCollection, fetchVideo, findVideoByTag, getVideo, statusFromVideo, hlsUrl, posterUrl,
@@ -173,4 +190,4 @@ function createBunny(settings, { fetchImpl = fetch } = {}) {
   };
 }
 
-module.exports = { createBunny, missingBunnySettings, statusFromVideo };
+module.exports = { createBunny, missingBunnySettings, statusFromVideo, SIGNED_TTL_SECONDS };

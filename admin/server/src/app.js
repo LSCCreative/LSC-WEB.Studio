@@ -238,7 +238,7 @@ function createApp(db, opts = {}) {
     mailer,
     appUrl: appUrlOf(opts.appUrl !== undefined ? opts.appUrl : config.appUrl),
     waitMs: opts.filesWaitMs,
-    masterLink: bunnyPublisher.masterLink,
+    master: bunnyPublisher.masterForEmail,
   });
 
   // Hnry (hnry-invoicing): an accepted project's deposit or single invoice is

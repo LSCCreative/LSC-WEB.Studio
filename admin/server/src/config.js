@@ -130,6 +130,11 @@ const config = {
       storagePassword: (process.env.BUNNY_STORAGE_PASSWORD || '').trim(),
       storageHost: (process.env.BUNNY_STORAGE_HOST || '').trim(),
       storageCdnHost: (process.env.BUNNY_STORAGE_CDN_HOST || '').trim(),
+      // Each pull zone's URL Token Authentication Key (Slice 9). Unset, that zone's links go unsigned.
+      streamTokenKey: (process.env.BUNNY_STREAM_TOKEN_KEY || '').trim(),
+      storageTokenKey: (process.env.BUNNY_STORAGE_TOKEN_KEY || '').trim(),
+      // How long a signed link works, in seconds (default 6 hours). Only for testing a short one.
+      signedTtlSeconds: Number(process.env.BUNNY_SIGNED_TTL_SECONDS) || 0,
     },
   },
 };

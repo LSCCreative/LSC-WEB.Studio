@@ -250,17 +250,25 @@ function createMasterPublisher(db, { bunny, nas, now = Date.now, onReady = () =>
   }
 
   /**
-   * A ready master's CDN address, or null. For the server's own use (C10's paid
-   * email): built when it is needed, never stored, so Slice 9 can sign it.
+   * A ready master's CDN address, signed (Slice 9) for `ttlSeconds`, or null. Only
+   * the download route hands it out, as a redirect: the paid email carries that
+   * route's link, never this one. Built when it is needed, never stored.
    */
-  function linkOf(versionId) {
+  function linkOf(versionId, { ttlSeconds } = {}) {
     const row = getAsset.get(versionId);
-    return row && row.status === 'ready' ? bunny.storageUrl(pathOf(row)) : null;
+    return row && row.status === 'ready' ? bunny.storageUrl(pathOf(row), ttlSeconds ? { ttlSeconds } : undefined) : null;
+  }
+
+  /* A ready master as the paid email names it: which upload it is (its folder's
+     tag, so a Republish is a new file) and the file's name, or null. */
+  function readyOf(versionId) {
+    const row = getAsset.get(versionId);
+    return row && row.status === 'ready' ? { tag: row.publish_tag, name: fileName(row) } : null;
   }
 
   const idle = () => Promise.all([...jobs.values()]).then(() => undefined);
 
-  return { wants, publish, view, resume, linkOf, idle };
+  return { wants, publish, view, resume, linkOf, readyOf, idle };
 }
 
 module.exports = { createMasterPublisher, STALL_MS };

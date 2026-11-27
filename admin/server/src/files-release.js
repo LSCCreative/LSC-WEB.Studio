@@ -23,6 +23,8 @@
  * when one landed there (Bunny Slice 8: the user's call of 2026-11-27, this email is
  * the only place that link goes until F3/F5); an item with neither is named and the
  * studio's copy flags it. A master that lands after the email went sends an update.
+ * The master's link is hub-api's download route (Slice 9), signed for 90 days when
+ * the email is built, so the set key names the upload (`masterKey`), not the link.
  *
  * ONCE. files_releases (v32) keeps one row per project: the set it last tried
  * (`set_key`: each item's approved version and its links). The same set never goes
@@ -71,7 +73,7 @@ const hasAnyLink = (f) => hasLink(f) || Boolean(f.masterLink);
 /* A file's part of the set key. The master's link joins only when there is one, so
    every set recorded before masters existed (v32's baselines, emails sent) keeps the
    key it had and never sends again on its own. */
-const keyPart = (f) => (f.masterLink ? [f.itemId, f.versionId, f.driveLink, f.masterLink] : [f.itemId, f.versionId, f.driveLink]);
+const keyPart = (f) => (f.masterKey ? [f.itemId, f.versionId, f.driveLink, f.masterKey] : [f.itemId, f.versionId, f.driveLink]);
 
 /**
  * Where a project stands for its files. Pure reads.
@@ -83,16 +85,17 @@ const keyPart = (f) => (f.masterLink ? [f.itemId, f.versionId, f.driveLink, f.ma
  *   approved: boolean,      every needed item approved, and at least one
  *   needed: number,         items not marked Not needed
  *   open: number,           needed items not approved yet
- *   files: Array<{ itemId, title, versionId, versionN, driveLink, masterLink }>,  the
- *                           approved items, less what the old hub delivered; masterLink
- *                           is the Final's master on Bunny, or null
+ *   files: Array<{ itemId, title, versionId, versionN, driveLink, masterLink, masterKey }>,
+ *                           the approved items, less what the old hub delivered;
+ *                           masterLink is the download link for the Final's master on
+ *                           Bunny and masterKey which upload it is, or both null
  *   setKey: string,
  *   client: object|null,
  *   email: string,          the client's address, '' when it isn't one
  *   badEmail: string,       what the client has instead, when it isn't an address
  *   record: object|null }}  the files_releases row
  */
-function releasePlan(db, projectId, { masterLink = () => null } = {}) {
+function releasePlan(db, projectId, { master = () => null } = {}) {
   const p = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
   if (!p) return null;
   const live = db.prepare("SELECT id, kind, status FROM invoices WHERE project_id = ? AND status != 'void'").all(projectId);
@@ -103,13 +106,15 @@ function releasePlan(db, projectId, { masterLink = () => null } = {}) {
   // What the old hub delivered the client has already: never sent again.
   const files = done.filter((d) => d.hubStatus !== 'delivered').map((d) => {
     const v = d.versions[d.versions.length - 1] || null;
+    const m = v ? master(v.id) : null;
     return {
       itemId: d.id,
       title: d.title || '',
       versionId: v ? v.id : null,
       versionN: v ? v.n : null,
       driveLink: v ? String(v.driveLink || '').trim() : '',
-      masterLink: v ? masterLink(v.id) || null : null,
+      masterLink: m ? m.url : null,
+      masterKey: m ? m.key : null,
     };
   });
   const setKey = setKeyOf(files.map(keyPart));
@@ -138,8 +143,8 @@ function releasePlan(db, projectId, { masterLink = () => null } = {}) {
  * What the studio's screens say (the invoice's Mark paid, the folder): the facts
  * that decide whether marking the last invoice paid sends the files.
  */
-function releaseView(db, projectId, mailer, { masterLink } = {}) {
-  const plan = releasePlan(db, projectId, { masterLink });
+function releaseView(db, projectId, mailer, { master } = {}) {
+  const plan = releasePlan(db, projectId, { master });
   if (!plan) return null;
   const r = plan.record;
   const current = Boolean(r && r.set_key === plan.setKey);
@@ -165,7 +170,7 @@ function releaseView(db, projectId, mailer, { masterLink } = {}) {
 }
 
 /**
- * @param {object} env  { mailer, appUrl, tickMs?, masterLink? (versionId → a ready master's link or null) }
+ * @param {object} env  { mailer, appUrl, tickMs?, master? (versionId → { key, url } of a ready master, or null) }
  */
 function createFilesRelease(db, env) {
   let timer = null;
@@ -204,7 +209,7 @@ function createFilesRelease(db, env) {
    */
   async function attempt(projectId) {
     if (!env.mailer || !env.mailer.configured) return { sent: false, reason: 'no_mail' };
-    const plan = releasePlan(db, projectId, { masterLink: env.masterLink });
+    const plan = releasePlan(db, projectId, { master: env.master });
     if (!plan) return { sent: false, reason: 'no_project' };
     if (!plan.paid) return { sent: false, reason: 'not_paid' };
     if (!plan.approved) return { sent: false, reason: 'not_approved' };

@@ -249,6 +249,10 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   version can have two rows: anything keyed by version id alone (delivery.js's map, Needs you) must pick
   its kind. The master's link goes only into C10's paid email (the user's call); `files-release.js` adds it
   to the set key only when there is one, so old keys never change and old jobs never re-send.
+  Signed links (Slice 9): Bunny CDN links are signed only in `hub/bunny.js`'s builders (hlsUrl, posterUrl,
+  storageUrl), as a reply is built; never store or compare a signed link (the email's set key uses `masterKey`).
+  HLS needs the path form with a folder token, or segments 403. An emailed link is never a Bunny link: it is
+  `/hub/download/…` (90 days, checked per click by `downloadRefusal`, which F3 extends).
   A new route never answers an outside service's refusal (Bunny saying no) with a 5xx: the admin's
   connection banner reads any 5xx as the server down and blocks every write.
 

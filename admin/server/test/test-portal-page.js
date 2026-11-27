@@ -109,7 +109,55 @@ check('the portal signs in through the server’s session, holding no token of i
   assert.match(fnBody('signOut'), /catch\(_\)\{[^}]*toast\([^)]*\);\s*return;/);
   // A video that fails asks whether the session ended before showing the broken-video card.
   assert.match(fnBody('videoFailed'), /'\/hub\/session'[\s\S]*401[\s\S]*signedOut/);
-  assert.match(page, /attachReviewSource\(video, video\.dataset\.src, videoFailed\)/);
+  assert.match(page, /attachReviewSource\(video, video\.dataset\.src, \(info\) => relinkVideo\(video, a\.id, info\)\)/);
+});
+
+check('a review link that ran out is renewed in place, once, before the failure card (Bunny Slice 9)', () => {
+  const relink = fnBody('relinkVideo');
+  // Once per link, then the old path (which checks the session).
+  assert.match(relink, /relinkedFrom === failed\)\{ relinking = null; return videoFailed\(\); \}/);
+  // The project is asked for again, and only the same version's new link is taken.
+  assert.match(relink, /await freshAssetOf\(project\.id, assetId\)/);
+  assert.match(fnBody('freshAssetOf'), /api\('\/hub\/projects\/' \+ encodeURIComponent\(projectId\)\)/);
+  assert.match(relink, /fresh\.versionId !== a\.versionId[\s\S]{0,160}return videoFailed\(\);/);
+  // The same <video>, at the same time, playing or paused as it was: no render().
+  assert.doesNotMatch(relink, /render\(|setState\(/);
+  assert.match(relink, /video\.currentTime = at/);
+  assert.match(relink, /if\(playing\) video\.play\(\)/);
+  assert.match(relink, /attachReviewSource\(video, fresh\.reviewLink, \(info\) => relinkVideo\(video, assetId, info\)\)/);
+  // hls.js hands over the playhead before anything resets the element, and tears nothing down itself.
+  const hls = fnBody('attachHls');
+  assert.match(hls, /onFail\(\{ at: video\.currentTime \|\| 0, playing: !video\.paused && !video\.ended \}\)/);
+  assert.doesNotMatch(hls.slice(hls.indexOf('const fatal')), /detachReviewSource\(\)|hls\.destroy\(\)/);
+  // The swap's own pause never stamps the pill.
+  assert.match(fnBody('bindClientAsset'), /if\(video === relinking\) return;/);
+  // Renewed before it runs out (an iPhone's player can stall without an error), and again
+  // in a minute if the server can't give a new one yet; a thrown-away <video> takes its timer.
+  assert.match(fnBody('bindClientAsset'), /scheduleRenewal\(video, a\.id\);/);
+  assert.match(fnBody('scheduleRenewal'), /expires - Date\.now\(\) - RENEW_EARLY_MS/);
+  assert.match(relink, /if\(early\) return scheduleRenewal\(video, assetId, 60 \* 1000\);/);
+  assert.match(relink, /scheduleRenewal\(video, assetId\);\s*\}$/);
+  assert.match(fnBody('detachReviewSource'), /clearTimeout\(renewTimer\)/);
+  // Try again reads the project first and opens the once-per-link renewal again.
+  assert.match(fnBody('bindClientAsset'), /retry\.onclick = \(\) => retryVideo\(a\.id, retry\)/);
+  const retry = fnBody('retryVideo');
+  assert.match(retry, /relinkedFrom = null;[\s\S]*freshAssetOf\([\s\S]*setState\(\{ videoFailed:false \}\)/);
+  assert.match(retry, /fresh\.versionId === live\.versionId/);
+  // A client who left the video meanwhile is left alone.
+  assert.match(relink, /if\(reviewVideo !== video \|\| video\.dataset\.src !== failed\)\{ if\(!early\) relinking = null; return; \}/);
+});
+
+check('a photo whose signed Bunny link ran out is renewed once before the NAS copy (Bunny Slice 9)', () => {
+  const fb = fnBody('photoFallback');
+  // Only a link that has run out is renewed, once per image; anything else goes to the NAS as before.
+  assert.match(fb, /nas && !img\.dataset\.renewed && expires && expires <= Date\.now\(\)/);
+  assert.match(fb, /renewPhotoLinks\(\)\.then/);
+  assert.match(fb, /if\(nas\)\{ img\.removeAttribute\('data-nas'\); img\.src = nas; return; \}/);
+  // One read of the project for a burst of failing tiles, matched by each photo's NAS link.
+  const renew = fnBody('renewPhotoLinks');
+  assert.match(renew, /if\(!photoRenewal\)/);
+  assert.match(renew, /byLink\.get\(ph\.reviewLink\)/);
+  assert.match(fnBody('photoImg'), /data-ph="\$\{escapeAttr\(ph\.reviewLink\)\}" data-size="\$\{size\}"/);
 });
 
 check('the review player plays inline on an iPhone (the user, 2026-11-27)', () => {
@@ -211,10 +259,10 @@ check('a video on Bunny Stream shows its poster and plays through the same playe
   assert.match(thumb, /<img src="\$\{escapeAttr\(a\.poster\)\}"[^>]*onerror="this\.remove\(\)"/);
   // The review player is still the one <video id="asset-video">, fed by attachReviewSource.
   assert.match(fnBody('renderVideoCanvas'), /<video id="asset-video"[^>]*\$\{a\.poster \? ` poster="\$\{escapeAttr\(a\.poster\)\}"` : ''\}/);
-  assert.match(page, /attachReviewSource\(video, video\.dataset\.src, videoFailed\)/);
+  assert.match(page, /attachReviewSource\(video, video\.dataset\.src, \(info\) => relinkVideo\(video, a\.id, info\)\)/);
 });
 
-check('a photo library on Bunny shows its sizes, keyed and noted as the NAS links are (Bunny Slice 7)', () => {
+check('a photo library on Bunny shows its sizes, keyed and noted as the NAS links are (Bunny Slice 7)', async () => {
   const key = (n) => String(n).repeat(16);
   const url = (n) => `https://hub.example/hub/projects/p/versions/v/review?photo=${key(n)}`;
   const { photosOf, photoSrc } = new Function(`const PHOTO_KEY = /photo=([0-9a-f]{16})/; ${fnBody('photosOf')} ${fnBody('photoSrc')}; return { photosOf, photoSrc };`)();
@@ -238,16 +286,33 @@ check('a photo library on Bunny shows its sizes, keyed and noted as the NAS link
   assert.match(page, /shots\.map\(ph => `<img \$\{photoImg\(ph, 'grid', true\)\}/);
   // A Bunny size that won't load swaps once to the NAS link; the strip drops it only after that.
   const escapeAttr = (v) => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-  const { photoImg, photoFallback } = new Function('escapeAttr', `${fnBody('photoSrc')} ${fnBody('photoImg')} ${fnBody('photoFallback')}; return { photoImg, photoFallback };`)(escapeAttr);
+  let renewed = null; // what the stubbed project read answers (Slice 9)
+  const renewPhotoLinks = () => Promise.resolve(renewed);
+  const { photoImg, photoFallback } = new Function('escapeAttr', 'renewPhotoLinks',
+    `${fnBody('photoSrc')} ${fnBody('photoImg')} ${fnBody('linkExpiresAt')} ${fnBody('photoFallback')}; return { photoImg, photoFallback };`)(escapeAttr, renewPhotoLinks);
   assert.match(photoImg(bunny[0], 'grid'), /data-nas="https:\/\/hub\.example\/[^"]+photo=1{16}"/);
   assert.doesNotMatch(photoImg(nas[0], 'grid'), /data-nas/, 'a NAS photo has nowhere else to go');
   const attrs = new Map([['data-nas', url(1)], ['data-drop', '']]);
-  const img = { src: 'bunny', removed: false, getAttribute: (k) => (attrs.has(k) ? attrs.get(k) : null),
+  const img = { src: 'bunny', removed: false, dataset: {}, getAttribute: (k) => (attrs.has(k) ? attrs.get(k) : null),
     removeAttribute: (k) => attrs.delete(k), hasAttribute: (k) => attrs.has(k), remove() { this.removed = true; } };
   photoFallback(img);
-  assert.deepEqual([img.src, img.removed], [url(1), false], 'first failure: the NAS copy');
+  assert.deepEqual([img.src, img.removed], [url(1), false], 'first failure (not an expired link): the NAS copy');
   photoFallback(img);
   assert.equal(img.removed, true, 'the NAS copy failing too: the strip drops it');
+
+  // A signed link that ran out (Slice 9) is renewed first, once, then the NAS copy.
+  const expired = 'https://cdn.example/p/600/a.jpg?token=HS256-x&expires=1000';
+  const fresh = 'https://cdn.example/p/600/a.jpg?token=HS256-y&expires=9999999999';
+  const a2 = new Map([['data-nas', url(1)], ['src', expired]]);
+  const img2 = { isConnected: true, dataset: { ph: url(1), size: 'grid' }, getAttribute: (k) => (a2.has(k) ? a2.get(k) : null),
+    removeAttribute: (k) => a2.delete(k), hasAttribute: (k) => a2.has(k), remove() {},
+    set src(v) { a2.set('src', v); }, get src() { return a2.get('src'); } };
+  renewed = new Map([[url(1), { grid: fresh, full: 'f' }]]);
+  photoFallback(img2);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(img2.src, fresh, 'the photo’s fresh link, not the NAS copy');
+  photoFallback(img2);
+  assert.equal(img2.src, url(1), 'the fresh link failing too: the NAS copy, without asking again');
   // Never the original: the page doesn't read a download from the reply.
   assert.doesNotMatch(fnBody('photosOf'), /download|original/);
 });

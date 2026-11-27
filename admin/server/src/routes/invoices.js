@@ -129,7 +129,7 @@ function registerInvoiceRoutes(app, db, opts = {}) {
     // Whether paying this one sends the client their files (C10): Mark paid's dialog says so.
     const bunnyPublisher = req.app.locals.bunnyPublisher;
     const filesRelease = releaseView(db, row.project_id, req.app.locals.mailer, {
-      masterLink: bunnyPublisher ? bunnyPublisher.masterLink : undefined,
+      master: bunnyPublisher ? bunnyPublisher.masterForEmail : undefined,
     });
     return res.json({ ok: true, invoice, project: folder.project, invoices: folder.invoices, filesRelease, ...(extra || {}) });
   }

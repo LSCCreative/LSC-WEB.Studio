@@ -45,6 +45,13 @@ const VIDEO_LOOKUP_ATTEMPTS = 3;
 /* Long enough for Bunny to pull a big master through the tunnel, short enough
    that a copied link is soon useless. */
 const SOURCE_TTL_SECONDS = 6 * 60 * 60;
+/* The paid email's download link (Slice 9; the user's call, 2026-11-27): it goes
+   through hub-api, which can refuse it later (F3), and lasts this long. Each click
+   gets a Bunny link of its own for DOWNLOAD_REDIRECT_SECONDS, long enough for a
+   big master to finish downloading. */
+const DOWNLOAD_LINK_SECONDS = 90 * 24 * 60 * 60;
+const DOWNLOAD_REDIRECT_SECONDS = 24 * 60 * 60;
+const downloadSignedPath = (versionId) => `/hub/download/${versionId}`;
 
 /* What the signature covers: the version, never a path, so a signed URL can only
    ever serve the file that version names. */
@@ -103,7 +110,7 @@ function createBunnyPublisher(db, opts = {}) {
   const now = opts.now || Date.now;
   const isoNow = () => new Date(now()).toISOString();
   const lookupGapMs = opts.videoLookupGapMs ?? 1000;
-  const bunny = ready ? createBunny(opts.bunny, { fetchImpl: opts.bunnyFetch }) : null;
+  const bunny = ready ? createBunny(opts.bunny, { fetchImpl: opts.bunnyFetch, now }) : null;
   const signer = ready ? createUrlSigner(opts.signingSecret, { now }) : null;
   const nas = opts.deliverablesDir ? createDeliverables(opts.deliverablesDir) : null;
   const photos = ready ? createPhotoPublisher(db, { bunny, nas, now, concurrency: opts.photoConcurrency }) : null;
@@ -540,12 +547,28 @@ function createBunnyPublisher(db, opts = {}) {
     /** Every photo job running now, done: for the tests, and resuming at start-up. */
     photoJobs: () => (photos ? photos.idle() : Promise.resolve()),
     resumePhotos: () => (photos ? photos.resume() : Promise.resolve()),
-    /** A ready master's link, for C10's paid email only, or null (bunny-masters.js). */
-    masterLink: (versionId) => (masters ? masters.linkOf(versionId) : null),
+    /**
+     * A ready master as C10's paid email carries it, or null: `key` names the upload
+     * (stable, for the email's set key) and `url` is the download route on hub-api,
+     * signed for 90 days (Slice 9). Never Bunny's own link.
+     */
+    masterForEmail(versionId) {
+      const m = masters ? masters.readyOf(versionId) : null;
+      if (!m) return null;
+      const { token, expires } = signer.signPath(downloadSignedPath(versionId), DOWNLOAD_LINK_SECONDS);
+      return {
+        key: `master:${versionId}:${m.tag}`,
+        url: `${opts.publicBaseUrl}${downloadSignedPath(encodeURIComponent(versionId))}/${encodeURIComponent(m.name)}?token=${token}&expires=${expires}`,
+      };
+    },
+    /** Whether a download link is genuine and unexpired: for the hub router's route. */
+    verifyDownload: (versionId, token, expires) => Boolean(signer) && signer.verifyPath(downloadSignedPath(versionId), token, expires),
+    /** Where a download goes: the master on Bunny, signed for one download, or null. */
+    downloadTarget: (versionId) => (masters ? masters.linkOf(versionId, { ttlSeconds: DOWNLOAD_REDIRECT_SECONDS }) : null),
     /** Every master job queued or running, done: for the tests. */
     masterJobs: () => (masters ? masters.idle() : Promise.resolve()),
     resumeMasters: () => (masters ? masters.resume() : Promise.resolve()),
   };
 }
 
-module.exports = { createBunnyPublisher, UNLISTED_VIDEO_LIMIT_MS, SOURCE_TTL_SECONDS };
+module.exports = { createBunnyPublisher, UNLISTED_VIDEO_LIMIT_MS, SOURCE_TTL_SECONDS, DOWNLOAD_LINK_SECONDS };
