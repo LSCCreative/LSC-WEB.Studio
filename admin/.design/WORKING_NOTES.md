@@ -239,6 +239,10 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   With Bunny on, a video's client publish waits for a ready row with the NAS file unchanged (Slice 4);
   only a ready row with an id plays as HLS, anything else falls back to the NAS link. The row reaches the
   portal only as the links `reviewOf` builds: keep `bunny` off `projectView`'s allow-list.
+  Photo libraries (Slice 6, `src/bunny-photos.js`, schema v36): a background job, one `bunny_photo_files`
+  row per photo, resumed at start-up; the library shows from Bunny only once every photo is `done`.
+  Originals live under `original-<publish_tag>/`, never a guessable `original/`, and the client's reply
+  never carries an original (no download until a gate gives one): keep both until Slice 9 signs links.
   A new route never answers an outside service's refusal (Bunny saying no) with a 5xx: the admin's
   connection banner reads any 5xx as the server down and blocks every write.
 

@@ -165,6 +165,8 @@ function createApp(db, opts = {}) {
     videoLookupGapMs: opts.videoLookupGapMs,
     adoptGapMs: opts.bunnyAdoptGapMs,
     now: opts.bunnyNow,
+    photoConcurrency: opts.photoConcurrency,
+    resumePhotos: opts.resumePhotos,
   });
   app.locals.bunnyPublisher = bunnyPublisher;
   if (hub && !bunnyPublisher.ready) {

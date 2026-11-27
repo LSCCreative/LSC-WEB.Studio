@@ -9,7 +9,7 @@
 (`client_logins.code_chosen_at`), `POST /hub/pin`, `choosePin` on `/hub/auth` and `/hub/session`; the portal's
 PIN dialog lives in `#pin-host` (outside `#app`, page inert behind it, no skip, never in a preview). Tests:
 `test-portal-pin.js` (own file: its sign-ins would use up `test-portal-sessions.js`'s rate limit). Checked on scratch
-at 375 px and desktop. **B2 Slice 5 DONE 2026-11-27:** the user chose a 4-digit PIN on the iPhone (saved 02:49Z, the Mac session ended as designed), PTC9 v4 played inline and a note was sent on it (`cs_4702defe`). Desktop Safari and an imported NAS-linked version are left to Slice 12. **Next: Slice 6 (photo libraries → Edge Storage) | Model: Opus 5.5 | Effort: High.**
+at 375 px and desktop. **B2 Slice 5 DONE 2026-11-27:** the user chose a 4-digit PIN on the iPhone (saved 02:49Z, the Mac session ended as designed), PTC9 v4 played inline and a note was sent on it (`cs_4702defe`). Desktop Safari and an imported NAS-linked version are left to Slice 12. **Slice 6 DONE 2026-11-27, not deployed, not committed:** photo libraries to Edge Storage (schema v36, `src/bunny-photos.js`, `sharp` 0.35.5 checked on the NAS's Node image). Originals under `original-<tag>/`, and the client's reply gets the two sizes but never a download. 1171 tests. Deploying it needs the v36 migration (back up, run on a copy) and a rebuild that installs `sharp`. **Next: Slice 7 (photos from Bunny in the admin and portal) | Model: Sonnet 5.5 | Effort: Medium.**
 
 **M3 done 2026-11-06 (local, not pushed).** The portal is mounted in billing's `app.js`: trust proxy always 1
 hop; `hub-api` serves `/hub/*` and `/health` only (Host header); billing's CORS skips `/hub` and ignores portal

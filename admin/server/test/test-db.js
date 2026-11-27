@@ -817,8 +817,29 @@ test('the v9 steps leave their inputs alone', () => {
   assert.equal(neg.notes.length, 1);
 });
 
-test('the schema knows it is at v35', () => {
-  assert.equal(LATEST_VERSION, 35);
+test('the schema knows it is at v36', () => {
+  assert.equal(LATEST_VERSION, 36);
+});
+
+/**
+ * MIGRATION v36 — each photo of a library sent to Bunny Edge Storage (Bunny
+ * Slice 6). A new, empty table; every other table reads as it did; twice is safe.
+ */
+test('v36 adds an empty table of photos sent to Bunny, touches nothing else, and runs twice safely', () => {
+  const { migrateV36 } = require('../src/migrations/v36-bunny-photos');
+  const db = openDatabase(tempDbPath('v36-upgrade'), { migrate: false });
+  migrate(db, { to: 35 });
+  const tables = everyTableBut(db, ['schema_version']);
+  const before = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
+  migrate(db);
+  for (const t of tables) assert.deepEqual(dump(db, t), before[t], t);
+  assert.equal(db.prepare('SELECT COUNT(*) FROM bunny_photo_files').pluck().get(), 0);
+  migrateV36(db);
+  const cols = db.prepare('PRAGMA table_info(bunny_photo_files)').all().map((c) => c.name);
+  assert.deepEqual(cols, ['version_id', 'file_name', 'source_size', 'source_mtime', 'width', 'height', 'status', 'error', 'updated_at']);
+  assert.throws(() => db.prepare("INSERT INTO bunny_photo_files (version_id, file_name, source_size, source_mtime, status, updated_at) VALUES ('v', 'a.jpg', 1, 1, 'sent', 'x')").run(),
+    /CHECK constraint/, 'only pending, done or failed');
+  db.close();
 });
 
 /**

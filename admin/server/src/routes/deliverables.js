@@ -358,7 +358,9 @@ function registerDeliverableRoutes(app, db, opts = {}) {
       // A version the client has seen never changes (its notes and approval name it):
       // a changed file is a new version, not a replaced video.
       if (force && v.published_at) {
-        return refuse(res, 409, 'published', 'The client has seen this version, so its video stays. Add the new file as a new version.');
+        return refuse(res, 409, 'published', v.kind === 'photos'
+          ? 'The client has seen this version, so its photos stay as they were. Add the new photos as a new version.'
+          : 'The client has seen this version, so its video stays. Add the new file as a new version.');
       }
       const checked = await bunnyPublisher.check(v);
       if (checked.refusal) return refuse(res, ...checked.refusal);
@@ -366,8 +368,9 @@ function registerDeliverableRoutes(app, db, opts = {}) {
       // the file at publish, so a file written after it went out is taken as
       // replaced: Bunny would show them a different cut under the same version.
       if (v.published_at && checked.file.stat.mtimeMs > Date.parse(v.published_at)) {
-        return refuse(res, 409, 'changed_since_published',
-          `The NAS file changed after v${v.n} went to the client, so it isn’t the cut they have. Add it as a new version.`);
+        return refuse(res, 409, 'changed_since_published', v.kind === 'photos'
+          ? `Photos in the folder changed after v${v.n} went to the client, so they aren’t the set they have. Add them as a new version.`
+          : `The NAS file changed after v${v.n} went to the client, so it isn’t the cut they have. Add it as a new version.`);
       }
       const { httpStatus, body } = await bunnyPublisher.publish(p, v, checked.file, { force });
       return res.status(httpStatus).json(body);

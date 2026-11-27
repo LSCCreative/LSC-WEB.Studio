@@ -1160,6 +1160,13 @@ const MIGRATIONS = [
       require('./migrations/v35-code-failures').migrateV35(db);
     },
   },
+  {
+    version: 36,
+    name: 'bunny_photo_files: each photo of a library sent to Bunny Edge Storage (Bunny Slice 6)',
+    up(db) {
+      require('./migrations/v36-bunny-photos').migrateV36(db);
+    },
+  },
 ];
 
 /**

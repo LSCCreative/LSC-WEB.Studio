@@ -304,6 +304,7 @@ function createHubRouter(db, opts = {}) {
   }), (m) => key === undefined || m.byKey.has(key)).byKey;
 
   /* A version's review copy. A video ready on Bunny Stream plays from there as HLS,
+     and a photo library all on Bunny Edge Storage lists its sizes from there too,
      with Bunny's thumbnail as its poster (Bunny Slice 4). Anything else plays from
      the NAS through the route below, so a version published before Bunny, or one
      whose publish is still processing or failed, plays as it always did. Addressed
@@ -319,7 +320,17 @@ function createHubRouter(db, opts = {}) {
     const mark = preview ? 'preview=1' : '';
     if (v.kind !== 'photos') return { type: 'file', url: mark ? `${url}?${mark}` : url };
     folderMemory.delete(v.sourcePath); // the project page reads the folder as it is now
-    return { type: 'photos', urls: [...photosIn(v.sourcePath).keys()].map((key) => `${url}?${mark ? mark + '&' : ''}photo=${key}`) };
+    const urls = [...photosIn(v.sourcePath).keys()].map((key) => `${url}?${mark ? mark + '&' : ''}photo=${key}`);
+    // A library all on Bunny (Slice 6) also gives each photo's two sizes from there,
+    // keyed as the NAS links are, so a note names the same photo either way. The page
+    // moves to them in Slice 7; until then it keeps reading `urls`. Never the original:
+    // nothing here is a download (C2) until a gate gives one (Slices 8-9, F3).
+    const onBunny = bunnyPublisher ? bunnyPublisher.photosOf(v.id) : null;
+    if (!onBunny) return { type: 'photos', urls };
+    return {
+      type: 'photos', urls,
+      photos: onBunny.map((ph) => ({ key: photoKey(ph.name), name: ph.name, width: ph.width, height: ph.height, grid: ph.grid, review: ph.review })),
+    };
   }
 
   // ── POST /hub/auth: { email, code } → the session cookie and who signed in.

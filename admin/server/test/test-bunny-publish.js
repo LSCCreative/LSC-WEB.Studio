@@ -327,7 +327,7 @@ test('the NAS file replaced after publishing is reported, and force sends the ne
   assert.deepEqual([gone.status, gone.body.status, gone.body.sourceChanged], [200, 'ready', false], 'a published video outlives its NAS file');
 });
 
-test('only a video in a project folder, on a needed item of a workable project, can go', async () => {
+test('only a video in a project folder, on a needed item of a workable project, can go (photo libraries: test-bunny-photos.js)', async () => {
   reset();
   const p = project();
   const now = nowIso();
@@ -338,7 +338,6 @@ test('only a video in a project folder, on a needed item of a workable project, 
     return id;
   };
   const cases = [
-    [addRaw(101, 'photos', 'Acme/Stills', 'Stills'), 422, 'not_a_video'],
     [addRaw(102, 'video', null, 'Old hub link'), 409, 'no_nas_file'],
     [addRaw(103, 'video', 'Loose.mp4', 'Loose.mp4'), 422, 'not_in_project_folder'],
     [addRaw(104, 'video', 'Acme/Notes.pdf', 'Notes.pdf'), 422, 'not_a_video'],

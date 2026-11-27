@@ -35,6 +35,7 @@ const { createBunny, missingBunnySettings, statusFromVideo } = require('./hub/bu
 const { createUrlSigner } = require('./hub/url-signing');
 const { createDeliverables, VIDEO_EXTENSIONS } = require('./hub/deliverables');
 const { sha256Hex } = require('./hub/tokens');
+const { createPhotoPublisher } = require('./bunny-photos');
 
 /* How long a publish may wait for Bunny to list the fetched video before it is
    failed. Without it a lost fetch job stays "processing" forever. */
@@ -76,7 +77,12 @@ const WEBHOOK_STATUS = {
  *   signingSecret    HUB_SIGNING_SECRET: signs the source URL Bunny pulls from
  *   publicBaseUrl    hub-api's public address, where Bunny pulls from
  *   deliverablesDir  the read-only NAS deliverables folder
- * Tests only: bunnyFetch (Bunny's API), videoLookupGapMs, adoptGapMs, now (ms clock).
+ * Tests only: bunnyFetch (Bunny's API), videoLookupGapMs, adoptGapMs, now (ms clock),
+ * photoConcurrency, resumePhotos (false: a test starts them itself).
+ *
+ * A photo library goes to Edge Storage instead (Slice 6, bunny-photos.js): check,
+ * publish and status hand a `photos` version there, and photosOf gives the client's
+ * URLs. Libraries a restart interrupted go on from where they stopped.
  */
 function createBunnyPublisher(db, opts = {}) {
   const missing = [
@@ -92,6 +98,8 @@ function createBunnyPublisher(db, opts = {}) {
   const bunny = ready ? createBunny(opts.bunny, { fetchImpl: opts.bunnyFetch }) : null;
   const signer = ready ? createUrlSigner(opts.signingSecret, { now }) : null;
   const nas = opts.deliverablesDir ? createDeliverables(opts.deliverablesDir) : null;
+  const photos = ready ? createPhotoPublisher(db, { bunny, nas, now, concurrency: opts.photoConcurrency }) : null;
+  if (photos && opts.resumePhotos !== false) setImmediate(() => photos.resume());
 
   const getAsset = db.prepare('SELECT * FROM bunny_assets WHERE version_id = ? AND kind = ?');
   const upsertAsset = db.prepare(`
@@ -213,8 +221,9 @@ function createBunnyPublisher(db, opts = {}) {
   /* Why a version can't go to Bunny Stream, as [status, code, message], or the
      NAS file it would send: { file }. The same rules as adding the file (R3). */
   async function check(version) {
+    if (version.kind === 'photos') return photos.check(version);
     if (version.kind !== 'video') {
-      return { refusal: [422, 'not_a_video', 'Only a video goes to Bunny Stream. Photo libraries come later.'] };
+      return { refusal: [422, 'not_a_video', 'Only a video or a photo library goes to Bunny.'] };
     }
     if (!version.source_path) {
       return { refusal: [409, 'no_nas_file', 'This version is a link the old Client Hub stored, with no NAS file to send.'] };
@@ -369,6 +378,10 @@ function createBunnyPublisher(db, opts = {}) {
    * The caller has already checked the version is this project's and passed check().
    */
   async function publish(project, version, file, { force = false } = {}) {
+    if (version.kind === 'photos') {
+      const body = await photos.publish(project, version, file.photos, { force });
+      return { httpStatus: 200, body: { ...body, refused: false } };
+    }
     // A repeat while one is running joins it, unless it's a force behind a plain
     // publish: that one runs after it, or the Republish would be lost.
     let entry = publishesInFlight.get(version.id);
@@ -398,6 +411,7 @@ function createBunnyPublisher(db, opts = {}) {
 
   /** The version's publish as it stands, looked up on Bunny if still processing. Needs no NAS file. */
   async function status(version) {
+    if (version.kind === 'photos') return photos.status(version);
     const row = await refresh(getAsset.get(version.id, 'video'));
     const file = version.source_path ? nas.resolveDeliverablePath(version.source_path) : null;
     return view(row, file && file.stat);
@@ -503,6 +517,11 @@ function createBunnyPublisher(db, opts = {}) {
   return {
     ready, missing, check, publish, status, playback, verifySource, servedSource, refresh, view, verifyWebhook, applyWebhook,
     adopted: () => adopting,
+    /** A ready photo library's URLs for the client, or null (bunny-photos.js). */
+    photosOf: (versionId) => (photos ? photos.photosOf(versionId) : null),
+    /** Every photo job running now, done: for the tests, and resuming at start-up. */
+    photoJobs: () => (photos ? photos.idle() : Promise.resolve()),
+    resumePhotos: () => (photos ? photos.resume() : Promise.resolve()),
   };
 }
 

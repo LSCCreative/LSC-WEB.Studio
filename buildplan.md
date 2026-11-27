@@ -181,7 +181,7 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
 
 ### Part C — Photos & masters (merge task B3)
 
-- [ ] Slice 6: **[API]** Photo libraries → Edge Storage, **without Bunny Optimizer** (user,
+- [x] Slice 6: **[API]** Photo libraries → Edge Storage, **without Bunny Optimizer** (user,
       2026-11-07). The server makes the smaller sizes itself at publish: a grid size (~600px
       wide) and a lightbox size (~2400px), JPEG, beside the untouched original. This adds the
       `sharp` dependency; check it builds in the NAS image first, and if it won't, stop and ask
@@ -192,6 +192,19 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       `n/total`, surviving a restart (resumes from the rows). The reply gives photos as
       `{ name, grid, review, download }` built from the rows (download = original). Tests:
       partial failure, resume, a file replaced mid-job, cap, sizes made and never upscaled. | Model: Opus 5.5 | Effort: High
+      **Done 2026-11-27 (not deployed):** `sharp` 0.35.5 checked in the NAS's `node:22-bookworm-slim` (x64)
+      first. Schema **v36** `bunny_photo_files` (one row per photo: size, mtime, width, height, status);
+      `src/bunny-photos.js` (the job), Edge Storage PUT/list/URL in `hub/bunny.js`; the existing
+      `…/versions/:versionId/bunny` routes take a photo version. 600 by width, 2400 inside a 2400 box,
+      JPEG, EXIF-upright, never upscaled; a .png/.webp's sizes are `<file>.jpg`. Skips a photo done and
+      unchanged, and an original Bunny holds with the same SHA-256 (Checksum header on every PUT). Resumes
+      at start-up. **Two changes from the plan, on purpose:** (1) originals go under `original-<tag>/`
+      (a random tag per version in `publish_tag`), not `original/`: Bunny's links are public until Slice 9,
+      and swapping `2400` for `original` must not reach the paid original; (2) the client's reply has
+      `photos: [{ key, name, width, height, grid, review }]` beside the NAS `urls`, and **no download**: the
+      reply offers none (C2) until a gate does (Slices 8-9, F3). `key` is the NAS links' photo key, so notes
+      match either way. A library shows from Bunny only once every photo is there. 1171 tests
+      (`test-bunny-photos.js` 7).
 
 - [ ] Slice 7: **[ADMIN + PORTAL]** Photos from Bunny. Admin: the same Publish action on
       photo versions with `n/total`. Portal: `photoSrc(ph, size)` picks the server-made
