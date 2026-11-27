@@ -214,6 +214,44 @@ check('a video on Bunny Stream shows its poster and plays through the same playe
   assert.match(page, /attachReviewSource\(video, video\.dataset\.src, videoFailed\)/);
 });
 
+check('a photo library on Bunny shows its sizes, keyed and noted as the NAS links are (Bunny Slice 7)', () => {
+  const key = (n) => String(n).repeat(16);
+  const url = (n) => `https://hub.example/hub/projects/p/versions/v/review?photo=${key(n)}`;
+  const { photosOf, photoSrc } = new Function(`const PHOTO_KEY = /photo=([0-9a-f]{16})/; ${fnBody('photosOf')} ${fnBody('photoSrc')}; return { photosOf, photoSrc };`)();
+  // On the NAS only: as before, each photo is its NAS link.
+  const nas = photosOf({ urls: [url(1), url(2)] });
+  assert.deepEqual(nas.map((ph) => [ph.name, photoSrc(ph, 'grid'), photoSrc(ph, 'full')]),
+    [['Photo 1', url(1), url(1)], ['Photo 2', url(2), url(2)]]);
+  // All on Bunny: the grid size and the full-screen size, matched by key whatever the order.
+  const bunny = photosOf({ urls: [url(1), url(2)], photos: [
+    { key: key(2), grid: 'https://cdn.example/b/600/two.jpg', review: 'https://cdn.example/b/2400/two.jpg' },
+    { key: key(1), grid: 'https://cdn.example/b/600/one.jpg', review: 'https://cdn.example/b/2400/one.jpg' },
+  ] });
+  assert.deepEqual(bunny.map((ph) => [ph.reviewLink, photoSrc(ph, 'grid'), photoSrc(ph, 'full')]), [
+    [url(1), 'https://cdn.example/b/600/one.jpg', 'https://cdn.example/b/2400/one.jpg'],
+    [url(2), 'https://cdn.example/b/600/two.jpg', 'https://cdn.example/b/2400/two.jpg'],
+  ], 'the NAS link stays each photo’s identity: notes and drafts go by it');
+  // Where each size shows: the grid in the contact sheet and the landing strip, the full one in the lightbox.
+  assert.match(fnBody('renderPhotoCanvas'), /<img \$\{photoImg\(ph, 'grid'\)\}/);
+  assert.match(fnBody('renderPhotoLightbox'), /<img \$\{photoImg\(ph, 'full'\)\}/);
+  assert.doesNotMatch(fnBody('renderPhotoCanvas') + fnBody('renderPhotoLightbox'), /src="\$\{escapeAttr\(ph\.reviewLink\)\}"/);
+  assert.match(page, /shots\.map\(ph => `<img \$\{photoImg\(ph, 'grid', true\)\}/);
+  // A Bunny size that won't load swaps once to the NAS link; the strip drops it only after that.
+  const escapeAttr = (v) => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  const { photoImg, photoFallback } = new Function('escapeAttr', `${fnBody('photoSrc')} ${fnBody('photoImg')} ${fnBody('photoFallback')}; return { photoImg, photoFallback };`)(escapeAttr);
+  assert.match(photoImg(bunny[0], 'grid'), /data-nas="https:\/\/hub\.example\/[^"]+photo=1{16}"/);
+  assert.doesNotMatch(photoImg(nas[0], 'grid'), /data-nas/, 'a NAS photo has nowhere else to go');
+  const attrs = new Map([['data-nas', url(1)], ['data-drop', '']]);
+  const img = { src: 'bunny', removed: false, getAttribute: (k) => (attrs.has(k) ? attrs.get(k) : null),
+    removeAttribute: (k) => attrs.delete(k), hasAttribute: (k) => attrs.has(k), remove() { this.removed = true; } };
+  photoFallback(img);
+  assert.deepEqual([img.src, img.removed], [url(1), false], 'first failure: the NAS copy');
+  photoFallback(img);
+  assert.equal(img.removed, true, 'the NAS copy failing too: the strip drops it');
+  // Never the original: the page doesn't read a download from the reply.
+  assert.doesNotMatch(fnBody('photosOf'), /download|original/);
+});
+
 check('their own PIN: asked after sign-in, typed twice, outside the page, never in a preview', () => {
   const dialog = fnBody('renderPinDialog');
   assert.match(dialog, /field\('pin-new'/);

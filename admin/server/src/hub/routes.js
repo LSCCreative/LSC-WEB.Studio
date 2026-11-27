@@ -322,15 +322,13 @@ function createHubRouter(db, opts = {}) {
     folderMemory.delete(v.sourcePath); // the project page reads the folder as it is now
     const urls = [...photosIn(v.sourcePath).keys()].map((key) => `${url}?${mark ? mark + '&' : ''}photo=${key}`);
     // A library all on Bunny (Slice 6) also gives each photo's two sizes from there,
-    // keyed as the NAS links are, so a note names the same photo either way. The page
-    // moves to them in Slice 7; until then it keeps reading `urls`. Never the original:
-    // nothing here is a download (C2) until a gate gives one (Slices 8-9, F3).
+    // keyed as the NAS links are, so a note names the same photo either way; the page
+    // shows those (Slice 7) and falls back to `urls`. Only the key and the two sizes:
+    // never the file's name as data, and never the original, since nothing here is a
+    // download (C2) until a gate gives one (F3/F5; a Final's master goes only in the paid email, Slice 8).
     const onBunny = bunnyPublisher ? bunnyPublisher.photosOf(v.id) : null;
     if (!onBunny) return { type: 'photos', urls };
-    return {
-      type: 'photos', urls,
-      photos: onBunny.map((ph) => ({ key: photoKey(ph.name), name: ph.name, width: ph.width, height: ph.height, grid: ph.grid, review: ph.review })),
-    };
+    return { type: 'photos', urls, photos: onBunny.map((ph) => ({ key: photoKey(ph.name), grid: ph.grid, review: ph.review })) };
   }
 
   // ── POST /hub/auth: { email, code } → the session cookie and who signed in.

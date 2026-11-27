@@ -36,6 +36,7 @@ const { createUrlSigner } = require('./hub/url-signing');
 const { createDeliverables, VIDEO_EXTENSIONS } = require('./hub/deliverables');
 const { sha256Hex } = require('./hub/tokens');
 const { createPhotoPublisher } = require('./bunny-photos');
+const { createMasterPublisher } = require('./bunny-masters');
 
 /* How long a publish may wait for Bunny to list the fetched video before it is
    failed. Without it a lost fetch job stays "processing" forever. */
@@ -78,11 +79,18 @@ const WEBHOOK_STATUS = {
  *   publicBaseUrl    hub-api's public address, where Bunny pulls from
  *   deliverablesDir  the read-only NAS deliverables folder
  * Tests only: bunnyFetch (Bunny's API), videoLookupGapMs, adoptGapMs, now (ms clock),
- * photoConcurrency, resumePhotos (false: a test starts them itself).
+ * photoConcurrency, resumePhotos (false: a test starts them itself; masters too),
+ * masterStallMs.
+ *   onMasterReady    (projectId) a Final's master just landed on Bunny (Slice 8)
  *
  * A photo library goes to Edge Storage instead (Slice 6, bunny-photos.js): check,
  * publish and status hand a `photos` version there, and photosOf gives the client's
  * URLs. Libraries a restart interrupted go on from where they stopped.
+ *
+ * A Final's video also sends its untouched master to Edge Storage (Slice 8,
+ * bunny-masters.js), beside Stream: publish starts it, a plain publish again sends
+ * one that's missing or failed, and a Republish sends the new file. The video's
+ * view carries it as `master`. Only C10's paid email gives its link out (linkOf).
  */
 function createBunnyPublisher(db, opts = {}) {
   const missing = [
@@ -99,7 +107,11 @@ function createBunnyPublisher(db, opts = {}) {
   const signer = ready ? createUrlSigner(opts.signingSecret, { now }) : null;
   const nas = opts.deliverablesDir ? createDeliverables(opts.deliverablesDir) : null;
   const photos = ready ? createPhotoPublisher(db, { bunny, nas, now, concurrency: opts.photoConcurrency }) : null;
+  const masters = ready ? createMasterPublisher(db, {
+    bunny, nas, now, onReady: opts.onMasterReady, stallMs: opts.masterStallMs,
+  }) : null;
   if (photos && opts.resumePhotos !== false) setImmediate(() => photos.resume());
+  if (masters && opts.resumePhotos !== false) setImmediate(() => masters.resume());
 
   const getAsset = db.prepare('SELECT * FROM bunny_assets WHERE version_id = ? AND kind = ?');
   const upsertAsset = db.prepare(`
@@ -152,11 +164,13 @@ function createBunnyPublisher(db, opts = {}) {
     UPDATE bunny_assets SET status = ?, error = ?, progress_done = ?, last_event_at = ?, updated_at = ?
      WHERE version_id = ? AND kind = ? AND bunny_video_id = ?
   `);
-  /* Rows with no video id yet: still processing, or failed with nothing Bunny listed
-     (the 30-minute limit, a slow queue) inside the 6 hours a webhook can still come. */
+  /* Video rows with no video id yet: still processing, or failed with nothing Bunny
+     listed (the 30-minute limit, a slow queue) inside the 6 hours a webhook can still
+     come. Videos only: a photo library's row has no video id and a publish_tag of its
+     own (its originals' folder, Slice 6), and isn't Stream's to look up or fail. */
   const waitingForId = db.prepare(`
     SELECT * FROM bunny_assets
-     WHERE bunny_video_id IS NULL AND publish_tag IS NOT NULL
+     WHERE kind = 'video' AND bunny_video_id IS NULL AND publish_tag IS NOT NULL
        AND (status = 'processing' OR (status = 'failed' AND updated_at >= ?))
      ORDER BY created_at
   `);
@@ -382,6 +396,10 @@ function createBunnyPublisher(db, opts = {}) {
       const body = await photos.publish(project, version, file.photos, { force });
       return { httpStatus: 200, body: { ...body, refused: false } };
     }
+    // A Final's master goes beside the video, whatever Stream answers: the download
+    // is the file itself, and Stream refusing it says nothing about Edge Storage.
+    const master = () => masters.view(version.id);
+    masters.publish(project, version, file.stat, { force });
     // A repeat while one is running joins it, unless it's a force behind a plain
     // publish: that one runs after it, or the Republish would be lost.
     let entry = publishesInFlight.get(version.id);
@@ -398,13 +416,13 @@ function createBunnyPublisher(db, opts = {}) {
     }
     try {
       const row = await entry.promise;
-      return { httpStatus: 200, body: { ...view(row, file.stat), refused: row.status === 'failed' } };
+      return { httpStatus: 200, body: { ...view(row, file.stat), master: master(), refused: row.status === 'failed' } };
     } catch (err) {
       if (!err.keptExisting) throw err;
       const kept = getAsset.get(version.id, 'video');
       return {
         httpStatus: 200,
-        body: { ...view(kept, file.stat), refused: true, error: `Bunny refused the republish, so the published video stays: ${err.message}` },
+        body: { ...view(kept, file.stat), master: master(), refused: true, error: `Bunny refused the republish, so the published video stays: ${err.message}` },
       };
     }
   }
@@ -414,7 +432,7 @@ function createBunnyPublisher(db, opts = {}) {
     if (version.kind === 'photos') return photos.status(version);
     const row = await refresh(getAsset.get(version.id, 'video'));
     const file = version.source_path ? nas.resolveDeliverablePath(version.source_path) : null;
-    return view(row, file && file.stat);
+    return { ...view(row, file && file.stat), master: masters.view(version.id) };
   }
 
   /**
@@ -522,6 +540,11 @@ function createBunnyPublisher(db, opts = {}) {
     /** Every photo job running now, done: for the tests, and resuming at start-up. */
     photoJobs: () => (photos ? photos.idle() : Promise.resolve()),
     resumePhotos: () => (photos ? photos.resume() : Promise.resolve()),
+    /** A ready master's link, for C10's paid email only, or null (bunny-masters.js). */
+    masterLink: (versionId) => (masters ? masters.linkOf(versionId) : null),
+    /** Every master job queued or running, done: for the tests. */
+    masterJobs: () => (masters ? masters.idle() : Promise.resolve()),
+    resumeMasters: () => (masters ? masters.resume() : Promise.resolve()),
   };
 }
 

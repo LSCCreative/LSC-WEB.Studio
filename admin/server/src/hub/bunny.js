@@ -128,8 +128,10 @@ function createBunny(settings, { fetchImpl = fetch } = {}) {
 
   /* Edge Storage (photos, Slice 6; masters, Slice 8). `body` is a Buffer or a file
      stream: a stream needs `length`, which Bunny is sent as Content-Length. `checksum`
-     is the bytes' SHA-256 in hex: Bunny refuses the upload if what arrived differs. */
-  async function putObject(path, body, { length, checksum } = {}) {
+     is the bytes' SHA-256 in hex: Bunny refuses the upload if what arrived differs.
+     `signal` replaces the 15-minute limit: a master may take hours on the NAS's
+     upload, so its job ends the request itself when the bytes stop moving. */
+  async function putObject(path, body, { length, checksum, signal } = {}) {
     const res = await fetchImpl(storageApiUrl(path), {
       method: 'PUT',
       headers: {
@@ -140,7 +142,7 @@ function createBunny(settings, { fetchImpl = fetch } = {}) {
       },
       body,
       duplex: 'half',
-      signal: AbortSignal.timeout(STORAGE_PUT_TIMEOUT_MS),
+      signal: signal || AbortSignal.timeout(STORAGE_PUT_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`Bunny Storage refused the upload (${res.status}): ${await storageReason(res)}`);
   }

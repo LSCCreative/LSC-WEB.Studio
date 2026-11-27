@@ -206,19 +206,51 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       match either way. A library shows from Bunny only once every photo is there. 1171 tests
       (`test-bunny-photos.js` 7).
 
-- [ ] Slice 7: **[ADMIN + PORTAL]** Photos from Bunny. Admin: the same Publish action on
+- [x] Slice 7: **[ADMIN + PORTAL]** Photos from Bunny. Admin: the same Publish action on
       photo versions with `n/total`. Portal: `photoSrc(ph, size)` picks the server-made
       size for Bunny photos (grid in the grid and landing strip, the lightbox size in the
       lightbox), and the original only for download. NAS-linked libraries render as
       today. Check the lightbox's per-photo notes, the per-photo draft isolation and
       keyboard nav. Player guardrail applies. | Model: Sonnet 5.5 | Effort: Medium
+      **Done 2026-11-27 (not deployed):** Deliverables tab: a photo version has a **Bunny Storage** block
+      (Send to Bunny, "Sending n of total", Ready · N photos, Folder changed → Send changes to Bunny… with a
+      confirm), its Publish held only while Bunny has a set the folder moved on from (`bunny_stale`, server and
+      tab); the folder reply carries a photo row's `progress` (delivery.js).
+      Portal: `photosOf(review)` keeps each photo's NAS link as its identity (notes, drafts, the address)
+      and attaches the Bunny sizes by key; `photoSrc(ph, 'grid'|'full')` picks them (contact sheet and
+      landing strip: grid; lightbox: full), NAS link otherwise, and a Bunny size that won't load swaps once to
+      the NAS link (`photoImg`/`photoFallback`). The reply's photos are `{ key, grid, review }` only. Review
+      fixes: Stream's adopt pass (`waitingForId`) is videos only, so a webhook can't fail a long photo send.
+      Checked on scratch with a fake Bunny serving its storage: sending with n/total in the tab, the strip,
+      the sheet and the lightbox on Bunny sizes (never enlarged), arrow keys, Escape back to the tile, an
+      old note on the right photo, a draft kept per photo, a new note saved on the right photo, 375 px.
+      Not checked: desktop Safari (the video player itself is unchanged). 1172 tests.
 
-- [ ] Slice 8: **[API + ADMIN]** Video masters. Publishing a **Final** video also `PUT`s the
+- [x] Slice 8: **[API + ADMIN]** Video masters. Publishing a **Final** video also `PUT`s the
       untouched master to Edge Storage (`kind:'master'`, Slice 6's job pattern), so 4K
       downloads at full resolution. Draft Cuts never upload a master (they're never
       downloadable, per the brief). The reply's download for that version is the master's
       CDN URL, given only where the download gate (C4/C5 now, F3 later) allows it. Old
       versions with NAS download links still work. | Model: Sonnet 5.5 | Effort: Medium
+      **Done 2026-11-27 (not deployed):** no migration (v33 already allows `kind = 'master'`).
+      `src/bunny-masters.js`: Send to Bunny on a Final also sends its master to
+      `/<projectId>/<itemId>/<versionId>/master-<tag>/<file>` (a random tag; a Republish takes a new one, so
+      the pull zone can't serve the old file under the old address), in the background, **one at a time**,
+      read once for its SHA-256 and once going up (n/total counts both), with no total time limit but ended
+      after 5 minutes of no bytes moving; resumed at start-up, skipped when Bunny holds the same bytes, sent
+      again once if saved over mid-send. A plain send again sends a missing or failed master and leaves
+      Stream; a failed master never holds Publish or shows in Needs you. **The user's call (2026-11-27): the
+      link goes only into C10's paid email**, beside the Drive link ("Each link downloads the full-quality
+      file. The Google Drive copy is a backup."); **the portal reply carries no download** until F3/F5. A master
+      landing calls the email's check, so one that lands after the email went sends an "Updated files" email;
+      the set key gains the master's link only when there is one, so every set already sent or baselined keeps
+      its key. Deliverables tab: a **Master** line under Bunny Stream on a Final (Sending n%, On Bunny, Failed
+      with Send master again, and Send master for a Final sent before this). Tests: `test-bunny-masters.js` 7;
+      1181. Checked on scratch with the fake Bunny at desktop and 375 px: an old Final's Send master, a new
+      Final's master sending beside Stream, a refused master and its retry, focus kept on the block.
+      **For Slice 9:** a link in an email can't expire in 6 hours. The paid email's master links need their
+      own answer when the storage pull zone gets token auth (a long-lived signed link, or a `hub-api` route
+      that checks and redirects), or every emailed master breaks.
 
 ### Part D — Lock it down (merge task B4; payment can't start until this is done)
 

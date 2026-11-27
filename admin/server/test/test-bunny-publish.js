@@ -146,7 +146,10 @@ test('a video version goes to Bunny once: its project’s collection, a tagged t
   assert.deepEqual(first.body, {
     status: 'ready', error: null, sourceChanged: false,
     posterUrl: `https://${FAKE_BUNNY_SETTINGS.streamCdnHost}/${rowOf(v).bunny_video_id}/thumbnail.jpg`,
-    progress: { done: 1, total: 1 }, refused: false,
+    progress: { done: 1, total: 1 },
+    // A Draft Cut sends no master (Slice 8, test-bunny-masters.js).
+    master: { status: 'none', error: null, progress: { done: 0, total: 0 } },
+    refused: false,
   });
   assert.equal(bunny.fetches(), fetchesBefore + 1);
 

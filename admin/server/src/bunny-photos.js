@@ -348,7 +348,7 @@ function createPhotoPublisher(db, { bunny, nas, now = Date.now, sharpImpl, concu
    * A ready library's photos, in the folder's order, as
    * { name, width, height, grid, review, download } (download is the original, for
    * the server's own use: the client's reply leaves it out until a download gate
-   * gives it, Slices 8-9), or null while it isn't all on Bunny. Built when the portal answers, never
+   * gives it, F3/F5), or null while it isn't all on Bunny. Built when the portal answers, never
    * stored, so Slice 9 can sign them in one place.
    */
   function photosOf(versionId) {

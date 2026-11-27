@@ -396,14 +396,24 @@ function registerDeliverableRoutes(app, db, opts = {}) {
     }
   });
 
-  /* Why a video can't go to the client yet, as [code, message], or null. With Bunny
+  /* Why a version can't go to the client yet, as [code, message], or null. With Bunny
      on, the client watches from Bunny Stream, so the video waits until it's ready
      there, and until Bunny has the file the NAS holds now (a file replaced after it
-     was sent would show the client the old cut). Photo libraries aren't held: they
-     go to Bunny in a later slice. A status read also asks Bunny about one still
-     processing, so a publish clicked the moment it's ready isn't refused. */
+     was sent would show the client the old cut). A status read also asks Bunny about
+     one still processing, so a publish clicked the moment it's ready isn't refused.
+     A photo library (Slice 7) waits only when Bunny holds a set the folder has moved
+     on from: published, a replaced photo would show its old copy from Bunny under
+     the same key, and nothing could change it after. Not sent, sending or failed,
+     the client sees it from the NAS until Bunny has all of it, so it goes. */
   async function bunnyHold(v) {
-    if (!bunnyOn || v.kind !== 'video') return null;
+    if (!bunnyOn) return null;
+    if (v.kind === 'photos') {
+      const photos = await bunnyPublisher.status(v);
+      return photos.status === 'ready' && photos.sourceChanged
+        ? ['bunny_stale', 'Photos in the folder changed after they went to Bunny, so Bunny has the old set. Send the changes to Bunny first.']
+        : null;
+    }
+    if (v.kind !== 'video') return null;
     const bunny = await bunnyPublisher.status(v);
     if (bunny.status === 'ready' && bunny.sourceChanged) {
       return ['bunny_stale', 'The NAS file changed after it went to Bunny, so Bunny has the old cut. Republish it to Bunny first.'];

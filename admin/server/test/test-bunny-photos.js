@@ -189,6 +189,10 @@ test('a photo folder goes up in the background: the original untouched, two size
   assert.equal((await sharp(stored(`${j.base}/600/turned.jpg`).bytes).metadata()).orientation, undefined, 'and no rotation left to apply');
   assert.deepEqual(filesOf(j.versionId).map((f) => [f.file_name, f.status, f.width, f.height]),
     [['small.png', 'done', 400, 300], ['turned.jpg', 'done', 800, 1200], ['wide.jpg', 'done', 3000, 2000]]);
+  // The Deliverables tab (Slice 7) reads it from the folder, with n of total.
+  const folder = await on.call(`/api/projects/${j.projectId}?today=${TODAY}`, { cookie: on.admin });
+  const listed = folder.body.deliverables.find((d) => d.id === j.item).versions.find((x) => x.id === j.versionId);
+  assert.deepEqual(listed.bunny, { status: 'ready', error: null, videoId: null, progress: { done: 3, total: 3 } });
   const put = bunny.calls.find((c) => c.method === 'PUT' && c.path.endsWith('/600/wide.jpg'));
   assert.equal(put.key, FAKE_BUNNY_SETTINGS.storagePassword, 'the storage zone’s own key, only in its header');
 
@@ -199,13 +203,11 @@ test('a photo folder goes up in the background: the original untouched, two size
   assert.equal(review.urls.length, 3, 'the NAS links stay until the page moves over (Slice 7)');
   const keys = review.urls.map((u) => new URL(u).searchParams.get('photo'));
   assert.deepEqual(review.photos.map((ph) => ph.key), keys, 'the same photos, in the same order, under the same keys');
-  assert.deepEqual(review.photos.map((ph) => ph.name), ['small.png', 'turned.jpg', 'wide.jpg']);
-  assert.deepEqual(review.photos[2], {
-    key: keys[2], name: 'wide.jpg', width: 3000, height: 2000,
-    grid: `${CDN}/${j.base}/600/wide.jpg`, review: `${CDN}/${j.base}/2400/wide.jpg`,
-  });
+  assert.deepEqual(review.photos[2], { key: keys[2], grid: `${CDN}/${j.base}/600/wide.jpg`, review: `${CDN}/${j.base}/2400/wide.jpg` },
+    'the key and the two sizes only: no name or size as data, no original');
   assert.ok(review.photos.every((ph) => !('download' in ph)), 'no download: nothing in the reply is one (C2)');
   assert.ok(!text.includes('original-'), 'and nothing points at the originals’ folder');
+  assert.doesNotMatch(text, /"bunny"|publish_tag|progress/, 'the row itself stays with the studio');
 });
 
 test('publishing again sends nothing new; a changed folder is told, and a republish sends only what changed', async () => {
@@ -400,4 +402,40 @@ test('what can’t go: no photos, too many, a folder gone, and a version the cli
     assert.equal(assetOf(id), undefined, `${error}: nothing written`);
   }
 
+});
+
+test('a Stream webhook never looks up, or fails, a photo library that is still going up', async () => {
+  resetStorage();
+  const j = await job();
+  await j.toBunny();
+  await on.settled();
+  // A long send, 40 minutes in: past the 30 minutes a video waits to be listed.
+  const longAgo = new Date(Date.now() - 40 * 60 * 1000).toISOString();
+  db.prepare("UPDATE bunny_assets SET status = 'processing', progress_done = 2, updated_at = ? WHERE version_id = ? AND kind = 'photos'")
+    .run(longAgo, j.versionId);
+  const lookups = () => bunny.calls.filter((c) => c.path.startsWith('/library/lib1/videos')).length;
+  const before = lookups();
+  const outcome = await on.publisher.applyWebhook({ VideoLibraryId: 'lib1', VideoGuid: 'some-other-video', Status: 3, Timestamp: new Date().toISOString() });
+  assert.equal(outcome, 'unknown');
+  await on.publisher.adopted();
+  assert.equal(lookups(), before, 'Stream isn’t asked about a photo library');
+  const row = assetOf(j.versionId);
+  assert.deepEqual([row.status, row.progress_done, row.error], ['processing', 2, null], 'and it isn’t failed');
+});
+
+test('a library whose folder moved on after it went to Bunny waits for the changes before the client gets it', async () => {
+  resetStorage();
+  const j = await job();
+  await j.toBunny();
+  await on.settled();
+  fs.writeFileSync(j.file('wide.jpg'), await jpeg(2000, 1000, '#aa0000'));
+  touch(j.file('wide.jpg'));
+  const held = await j.publish();
+  assert.deepEqual([held.status, held.body.error], [409, 'bunny_stale'], 'published, the old copy would stay on Bunny under the same key');
+  assert.match(held.body.message, /Bunny has the old set/);
+
+  await j.toBunny({ force: true });
+  await on.settled();
+  assert.equal((await j.publish()).status, 200, 'sent again, it goes');
+  assert.deepEqual(await sizeOf(stored(`${j.base}/2400/wide.jpg`).bytes), [2000, 1000, 'jpeg']);
 });

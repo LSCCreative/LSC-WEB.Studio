@@ -582,29 +582,38 @@ function deemedReminderEmail(v) {
 /* Only a web address is a link in these emails; anything else is left out. */
 const webLink = (v) => (/^https?:\/\/\S+$/i.test(String(v || '').trim()) ? String(v).trim() : '');
 
-/* Each item as a line: its title, the version, and its link or why there's none. */
+/* Each item as a line: its title, the version, and its link or why there's none.
+   A Final's master on Bunny (Slice 8) is the link when there is one, the file
+   itself at full quality, and its Drive copy rides beside it as the backup. */
+const BACKUP_WORD = 'Google Drive copy';
 function fileLines(files, missingWord) {
   return files.map((f) => {
     const name = `${f.title || 'Deliverable'}${f.versionN ? ` (v${f.versionN})` : ''}`;
-    const link = webLink(f.driveLink);
-    return { name, link, text: link ? `${name}: ${link}` : `${name}: ${missingWord}` };
+    const master = webLink(f.masterLink);
+    const drive = webLink(f.driveLink);
+    const link = master || drive;
+    const backup = master && drive ? drive : '';
+    const text = link ? `${name}: ${link}${backup ? `\n  ${BACKUP_WORD}: ${backup}` : ''}` : `${name}: ${missingWord}`;
+    return { name, link, backup, master: Boolean(master), text };
   });
 }
 
 function fileListHtml(lines, missingWord) {
   return '<ul style="margin:0 0 14px;padding:0 0 0 20px">' + lines.map((l) => '<li style="margin:0 0 8px">' + (l.link
-    ? `<a href="${esc(l.link)}" style="color:${C.ink};font-weight:700">${esc(l.name)}</a>`
+    ? `<a href="${esc(l.link)}" style="color:${C.ink};font-weight:700">${esc(l.name)}</a>` +
+      (l.backup ? ` <span style="color:${C.muted}">·</span> <a href="${esc(l.backup)}" style="color:${C.muted}">${esc(BACKUP_WORD)}</a>` : '')
     : `${esc(l.name)}: <span style="color:${C.muted}">${esc(missingWord)}</span>`) + '</li>').join('') + '</ul>';
 }
 
 /**
  * The client's files (C10): sent once the job is paid and every item approved.
- * Each approved Final with its Drive backup link; an item without one is named,
- * and the studio sends it by hand. `update`: a newer Final (or link) after the
+ * Each approved Final with its master on Bunny (the full-quality download, Slice 8)
+ * and its Drive backup link, either or both; an item with neither is named, and the
+ * studio sends it by hand. `update`: a newer Final (or link) after the
  * first email went, so this one says it is the latest set.
  *
  * @param {{business:object, appUrl:string, contactName?:string, projectName?:string,
- *          upid?:string, files:Array<{title:string, versionN?:number, driveLink?:string}>,
+ *          upid?:string, files:Array<{title:string, versionN?:number, driveLink?:string, masterLink?:string}>,
  *          update?:boolean}} v
  */
 function filesReadyEmail(v) {
@@ -614,12 +623,18 @@ function filesReadyEmail(v) {
   const missingWord = 'we’ll send this one to you separately';
   const files = fileLines(v.files || [], missingWord);
   const linked = files.filter((f) => f.link).length;
+  const masters = files.filter((f) => f.master).length;
   const intro = v.update
     ? `We’ve updated the files for ${project}. These are the latest links, and they replace the ones we sent before.`
     : `Thanks for your payment. ${project.charAt(0).toUpperCase() + project.slice(1)} is complete, and here ${files.length === 1 ? 'is your file' : 'are your files'}.`;
-  const after = linked
-    ? `The link${linked === 1 ? ' opens' : 's open'} in Google Drive. Please download a copy to keep.`
-    : '';
+  // A link is a master (downloads the file) or Drive's (opens Drive): say which.
+  const backups = files.filter((f) => f.backup).length;
+  const main = masters === linked
+    ? `${linked === 1 ? 'The link downloads' : 'Each link downloads'} the full-quality file.`
+    : `${masters} of the links download the full-quality file${masters === 1 ? '' : 's'}, and the others open in Google Drive.`;
+  const after = !linked ? ''
+    : !masters ? `The link${linked === 1 ? ' opens' : 's open'} in Google Drive. Please download a copy to keep.`
+    : `${main}${backups ? ` The Google Drive ${backups === 1 ? 'copy is a backup' : 'copies are backups'}.` : ''} Please download a copy to keep.`;
   const lines = [v.contactName ? `Hi ${v.contactName},` : 'Hi,', intro];
   return {
     subject: `${v.update ? 'Updated files' : 'Your files'}${v.projectName ? `: ${v.projectName}` : ''} · ${business}`,
@@ -639,7 +654,8 @@ function filesReadyEmail(v) {
 
 /**
  * The studio's copy (C10): what went to the client, and to whom. An item with no
- * Drive link is flagged, since the client was told it comes separately.
+ * link at all (no master on Bunny, no Drive link) is flagged, since the client was
+ * told it comes separately.
  *
  * @param {{business:object, appUrl:string, clientName?:string, to:string, projectName?:string,
  *          upid?:string, files:Array, update?:boolean, link?:string}} v
@@ -652,7 +668,7 @@ function filesSentOwnerEmail(v) {
     `${v.update ? 'The updated files' : 'The files'}${v.projectName ? ` for ${v.projectName}` : ''} went to ${who}: the job is paid and every item is approved.`,
   ];
   if (missing.length) {
-    lines.push(`${missing.length === 1 ? 'One item has' : `${missing.length} items have`} no Drive backup link, so the client was told it comes separately: ${missing.map((f) => f.name).join(', ')}. Send ${missing.length === 1 ? 'it' : 'them'} by hand, or add the link and the client gets an updated email.`);
+    lines.push(`${missing.length === 1 ? 'One item has' : `${missing.length} items have`} no Drive backup link or master on Bunny, so the client was told it comes separately: ${missing.map((f) => f.name).join(', ')}. Send ${missing.length === 1 ? 'it' : 'them'} by hand, or add the link and the client gets an updated email.`);
   }
   const button = 'Open the project';
   return {

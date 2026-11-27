@@ -167,6 +167,9 @@ function createApp(db, opts = {}) {
     now: opts.bunnyNow,
     photoConcurrency: opts.photoConcurrency,
     resumePhotos: opts.resumePhotos,
+    masterStallMs: opts.masterStallMs,
+    // A Final's master landing may complete the paid email's links (C10, Slice 8).
+    onMasterReady: (projectId) => app.locals.filesRelease && app.locals.filesRelease.check(projectId),
   });
   app.locals.bunnyPublisher = bunnyPublisher;
   if (hub && !bunnyPublisher.ready) {
@@ -235,6 +238,7 @@ function createApp(db, opts = {}) {
     mailer,
     appUrl: appUrlOf(opts.appUrl !== undefined ? opts.appUrl : config.appUrl),
     waitMs: opts.filesWaitMs,
+    masterLink: bunnyPublisher.masterLink,
   });
 
   // Hnry (hnry-invoicing): an accepted project's deposit or single invoice is

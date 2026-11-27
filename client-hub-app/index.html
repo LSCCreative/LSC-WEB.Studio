@@ -391,9 +391,7 @@ function portalProject(view){
         reviewLink: (!photo && review && review.url) || '',
         // Bunny's thumbnail for a video that plays from Bunny Stream (an <img>, no stream pulled).
         poster: (!photo && review && review.type === 'hls' && review.poster) || '',
-        photos: (photo && review && Array.isArray(review.urls))
-          ? review.urls.map((url, i) => ({ name: 'Photo ' + (i + 1), reviewLink: url }))
-          : [],
+        photos: (photo && review && Array.isArray(review.urls)) ? photosOf(review) : [],
         approvedAt: v.approvedAt || null,
         // Recorded by the studio after 14 business days with no notes (C7), not by the client.
         deemed: !!v.deemed,
@@ -415,6 +413,37 @@ function portalProject(view){
       return a;
     }),
   };
+}
+
+/* A library's photos. Each is known by its NAS review link, which carries the server's
+   key: notes, drafts and the lightbox's address all go by it. A library all on Bunny
+   (Slice 7) also gives each photo, under the same key, a grid size and a full-screen
+   size made on the server; photoSrc picks those, and the NAS link otherwise. The
+   original is never here: nothing on this page is a download. */
+const PHOTO_KEY = /photo=([0-9a-f]{16})/;
+function photosOf(review){
+  const onBunny = new Map((Array.isArray(review.photos) ? review.photos : []).map(ph => [ph.key, ph]));
+  return review.urls.map((url, i) => {
+    const b = onBunny.get((PHOTO_KEY.exec(url) || [])[1]);
+    return { name: 'Photo ' + (i + 1), reviewLink: url, grid: (b && b.grid) || '', full: (b && b.review) || '' };
+  });
+}
+/* What to show of a photo: 'grid' (the contact sheet, the landing strip) or 'full' (the lightbox). */
+function photoSrc(ph, size){
+  return (size === 'grid' ? ph.grid : ph.full) || ph.reviewLink;
+}
+/* An <img>'s src for a photo, and the way back to the NAS: a Bunny size that won't
+   load (the pull zone refusing, a file gone) swaps once to the photo's NAS link, so
+   the client sees the photo rather than a broken frame. `drop`: take the image out
+   when even that fails (the landing strip, where a gap reads better). */
+function photoImg(ph, size, drop = false){
+  const src = photoSrc(ph, size);
+  return `src="${escapeAttr(src)}"${src !== ph.reviewLink ? ` data-nas="${escapeAttr(ph.reviewLink)}"` : ''}${drop ? ' data-drop' : ''} onerror="photoFallback(this)"`;
+}
+function photoFallback(img){
+  const nas = img.getAttribute('data-nas');
+  if(nas){ img.removeAttribute('data-nas'); img.src = nas; return; }
+  if(img.hasAttribute('data-drop')) img.remove();
 }
 
 /* A note as the page shows it, from the server's: where it is in the video, or which
@@ -1289,7 +1318,7 @@ function renderAssetThumb(a){
     return `
       <div class="asset-thumb is-strip" aria-hidden="true">
         ${fallback}
-        ${shots.map(ph => `<img src="${escapeAttr(ph.reviewLink)}" alt="" loading="lazy" onerror="this.remove()">`).join('')}
+        ${shots.map(ph => `<img ${photoImg(ph, 'grid', true)} alt="" loading="lazy">`).join('')}
       </div>`;
   }
   if(a.poster){
@@ -1610,7 +1639,7 @@ function renderPhotoCanvas(a){
     const n = commentsForPhoto(a, i).length;
     return `
     <button data-photo="${i}" title="${escapeAttr(ph.name)}" class="photo-tile ${n ? 'has-notes' : ''}">
-      <img src="${escapeAttr(ph.reviewLink)}" alt="${escapeAttr(ph.name)}" loading="lazy" oncontextmenu="return false">
+      <img ${photoImg(ph, 'grid')} alt="${escapeAttr(ph.name)}" loading="lazy" oncontextmenu="return false">
       ${n ? `<span class="photo-count">${icon('comment', 11)}${n}</span>` : ''}
     </button>`;
   }).join('');
@@ -1639,7 +1668,7 @@ function renderPhotoLightbox(a){
   <div id="photo-lightbox" class="lb-scrim" role="dialog" aria-modal="true" aria-label="${escapeAttr(ph.name)}">
     <div class="lb-stage">
       <button data-lb-prev class="lb-arrow lb-arrow-l" aria-label="Previous photo" ${i === 0 ? 'disabled' : ''}>${icon('chevronLeft', 20)}</button>
-      <img src="${escapeAttr(ph.reviewLink)}" alt="${escapeAttr(ph.name)}" oncontextmenu="return false">
+      <img ${photoImg(ph, 'full')} alt="${escapeAttr(ph.name)}" oncontextmenu="return false">
       <button data-lb-next class="lb-arrow lb-arrow-r" aria-label="Next photo" ${i === photos.length - 1 ? 'disabled' : ''}>${icon('chevronRight', 20)}</button>
     </div>
 
@@ -1998,7 +2027,7 @@ function bindPhotoLightbox(a){
     const text = (state.photoDrafts[key] || '').trim();
     if(!text || state.lbSaving) return;
     const ph = (a.photos || [])[i] || {};
-    const photo = (/photo=([0-9a-f]{16})/.exec(ph.reviewLink || '') || [])[1];
+    const photo = (PHOTO_KEY.exec(ph.reviewLink || '') || [])[1];
     state.lbSaving = true; state.lbError = null;
     refreshLightbox();
     if(!state.photoNoteKeys[key]) state.photoNoteKeys[key] = newNoteKey();
