@@ -364,7 +364,8 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
         them in 408 files: every tracked file, `client-hub-app/`, `desktop-publisher/` incl. `dist/LSC Publisher.app`,
         the app's settings and prefs. Criterion 7 done.
       - Deploy Slice 11: **NAS done 2026-11-28** (`a7ad646`, v37 rehearsed on a backup copy, dry-run cleanup,
-        m6-checks ALL PASS; rollback `lsc-admin:pre-v37` / `app.prev-v37` / `pre-v37-20261128-173607.db`). Pages next.
+        m6-checks ALL PASS; rollback `lsc-admin:pre-v37` / `app.prev-v37` / `pre-v37-20261128-173607.db`). First dry run:
+        0 versions, 0 strays, no errors. Pages: PR #8, waiting on the user's merge.
       - Live, on a test project: 3 (a photo folder to Edge Storage, grid/lightbox sizes); 4 (a Final's master,
         the paid email's `/hub/download` redirect); 5 (renewal while playing); 2's re-send making no duplicate;
         8 (an imported old-hub project still plays); Slice 11's dry-run log read, Take offline/Bring back online
