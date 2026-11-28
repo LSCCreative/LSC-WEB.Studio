@@ -1167,6 +1167,13 @@ const MIGRATIONS = [
       require('./migrations/v36-bunny-photos').migrateV36(db);
     },
   },
+  {
+    version: 37,
+    name: 'bunny_assets expired/offline with removed_at, projects.files_offline_at (Bunny Slice 11: cleanup, Take offline)',
+    up(db) {
+      require('./migrations/v37-bunny-cleanup').migrateV37(db);
+    },
+  },
 ];
 
 /**

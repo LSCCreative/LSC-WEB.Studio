@@ -817,14 +817,41 @@ test('the v9 steps leave their inputs alone', () => {
   assert.equal(neg.notes.length, 1);
 });
 
-test('the schema knows it is at v36', () => {
-  assert.equal(LATEST_VERSION, 36);
+test('the schema knows it is at v37', () => {
+  assert.equal(LATEST_VERSION, 37);
 });
 
 /**
  * MIGRATION v36 — each photo of a library sent to Bunny Edge Storage (Bunny
  * Slice 6). A new, empty table; every other table reads as it did; twice is safe.
  */
+/**
+ * MIGRATION v37 — Bunny cleanup and Take offline (Bunny Slice 11). bunny_assets is
+ * rebuilt for two new states with every row kept; projects gain files_offline_at.
+ */
+test('v37 keeps every Bunny row, allows expired and offline, adds files_offline_at, and runs twice safely', () => {
+  const { migrateV37 } = require('../src/migrations/v37-bunny-cleanup');
+  const db = openDatabase(tempDbPath('v37-upgrade'), { migrate: false });
+  migrate(db, { to: 36 });
+  db.prepare(`
+    INSERT INTO bunny_assets (version_id, kind, project_id, item_id, source_path, bunny_video_id, status, progress_done, progress_total, created_at, updated_at)
+    VALUES ('ver_1', 'video', 'prj_1', 'dlv_1', 'Acme/Hero.mp4', 'vid-1', 'ready', 1, 1, '2026-11-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z')
+  `).run();
+  const before = dump(db, 'bunny_assets');
+  migrate(db);
+  migrateV37(db);
+  assert.deepEqual(dump(db, 'bunny_assets').map(({ removed_at, ...r }) => r), before);
+  assert.equal(dump(db, 'bunny_assets')[0].removed_at, null);
+  db.prepare("UPDATE bunny_assets SET status = 'expired' WHERE version_id = 'ver_1'").run();
+  db.prepare("UPDATE bunny_assets SET status = 'offline' WHERE version_id = 'ver_1'").run();
+  assert.throws(() => db.prepare("UPDATE bunny_assets SET status = 'gone' WHERE version_id = 'ver_1'").run(), /CHECK constraint/);
+  const indexes = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'bunny_assets' AND sql IS NOT NULL ORDER BY name").pluck().all();
+  assert.deepEqual(indexes, ['idx_bunny_assets_project', 'idx_bunny_assets_video_id']);
+  const projectCols = db.prepare('PRAGMA table_info(projects)').all().map((c) => c.name);
+  assert.ok(projectCols.includes('files_offline_at') && projectCols.includes('files_offline_left'));
+  db.close();
+});
+
 test('v36 adds an empty table of photos sent to Bunny, touches nothing else, and runs twice safely', () => {
   const { migrateV36 } = require('../src/migrations/v36-bunny-photos');
   const db = openDatabase(tempDbPath('v36-upgrade'), { migrate: false });
@@ -887,7 +914,7 @@ test('v33 rebuilds the Bunny tables per version and project, and touches nothing
   migrate(db, { to: 32 });
   const tables = everyTableBut(db, ['schema_version', 'bunny_assets', 'bunny_collections']);
   const before = Object.fromEntries(tables.map((t) => [t, dump(db, t)]));
-  migrate(db);
+  migrate(db, { to: 36 }); // v37 adds removed_at (its own test)
   for (const t of tables) assert.deepEqual(dump(db, t), before[t], t);
   const cols = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
   assert.deepEqual(cols('bunny_assets'), ['version_id', 'kind', 'project_id', 'item_id', 'source_path', 'source_size',

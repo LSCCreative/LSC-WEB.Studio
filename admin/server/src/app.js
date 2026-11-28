@@ -168,6 +168,8 @@ function createApp(db, opts = {}) {
     photoConcurrency: opts.photoConcurrency,
     resumePhotos: opts.resumePhotos,
     masterStallMs: opts.masterStallMs,
+    // The daily cleanup's mode and window (Slice 11); a test passes its own.
+    cleanup: opts.bunnyCleanup || (hub ? hub.cleanup : undefined),
     // A Final's master landing may complete the paid email's links (C10, Slice 8).
     onMasterReady: (projectId) => app.locals.filesRelease && app.locals.filesRelease.check(projectId),
   });

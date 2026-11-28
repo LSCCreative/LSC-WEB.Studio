@@ -521,7 +521,7 @@ test('the leak test: every portal reply is exactly its allow-list, with nothing 
   assert.deepEqual(sorted(replies.session.body.client), CLIENT);
   replies.projects.body.projects.forEach((p) => assert.deepEqual(sorted(p), CARD));
   const view = replies.project.body.project;
-  assert.deepEqual(sorted(view), [...CARD, 'agreement', 'deliverables', 'hourlyRate', 'invoices'].sort());
+  assert.deepEqual(sorted(view), [...CARD, 'agreement', 'deliverables', 'filesOffline', 'hourlyRate', 'invoices'].sort());
   assert.deepEqual(sorted(replies.approve.body), ['approval', 'itemStatus', 'ok']);
   assert.deepEqual(sorted(replies.approve.body.approval), ['approvedAt', 'deemed', 'versionId']);
   assert.equal(view.invoices.length, 1);

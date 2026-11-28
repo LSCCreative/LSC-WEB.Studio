@@ -52,3 +52,8 @@ Visual Design/
 # (locally, and by the Pages workflow at deploy). Never edited or committed here.
 client-hub-app/css/
 client-hub-app/fonts/
+
+# The desktop publisher (Bunny Slice 10): build output only, never source.
+desktop-publisher/dist/
+desktop-publisher/.build/
+desktop-publisher/.swiftpm/

@@ -4,7 +4,7 @@ Read this only when deploying or redoing infrastructure. Logins and keys: `.cred
 (gitignored; the repo is public). The long original with the 2026-09-22 incident write-up is in
 `Project build archive/tracks/nas-hosted-billing/DEPLOYMENT_full.md`.
 
-## What is live (since the M6 cutover, 2026-11-07; the merged admin and new portal since C9, 2026-11-26; schema v33 and Bunny publishing on the NAS since 2026-11-26, the portal's Bunny poster and inline iPhone play since 2026-11-27; the client PIN, 4 digits, with schema v35 since 2026-11-27; Bunny photos and Final masters, schema v36 with `sharp`, since 2026-11-27)
+## What is live (since the M6 cutover, 2026-11-07; the merged admin and new portal since C9, 2026-11-26; schema v33 and Bunny publishing on the NAS since 2026-11-26, the portal's Bunny poster and inline iPhone play since 2026-11-27; the client PIN, 4 digits, with schema v35 since 2026-11-27; Bunny photos and Final masters, schema v36 with `sharp`, since 2026-11-27; Slice 9's signing code and `/hub/download/` since 2026-11-27, links unsigned until the two `BUNNY_*_TOKEN_KEY`s are in `.env`)
 
 The NAS is at **192.168.1.46** on the LAN since 2026-11-26 (it was .45; same host keys). Until the router reserves it and
 `~/.ssh/config` says so: `ssh -o HostName=192.168.1.46 -o HostKeyAlias=192.168.1.45 lsc-nas`. A rebuild takes ~10 minutes

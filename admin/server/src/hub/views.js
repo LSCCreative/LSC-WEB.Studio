@@ -105,7 +105,9 @@ function invoiceCard(inv) {
    never stored (C2): { type: 'hls', url, poster } for a video ready on Bunny Stream
    (Bunny Slice 4), { type: 'file', url } for one played from the NAS, { type:
    'photos', urls } for a photo library, or null when there's no file to show (an old
-   hub link). Nothing here offers a download. A version's `bunny` row stays here:
+   hub link), or { type: 'offline' } for every version while the project's files
+   are offline (Take offline, Bunny Slice 11; `filesOffline` is then true). Nothing
+   here offers a download. A version's `bunny` row stays here:
    only what reviewOf builds from it goes out.
    `invoices` (C3): the ones actually sent, through invoiceCard. `agreement`: the
    signed quote's page and when it was signed, or null when it wasn't signed here.
@@ -115,10 +117,11 @@ function invoiceCard(inv) {
    approved (`approvedAt`, and `deemed` when the studio marked it after the contract's
    14 business days, C7). Who, the IP and the device stay with the studio. */
 function projectView(project, checklist, {
-  reviewOf = () => null, invoices = [], agreement = null, clientId = null, hourlyRate = null,
+  reviewOf = () => null, invoices = [], agreement = null, clientId = null, hourlyRate = null, filesOffline = false,
 } = {}) {
   return {
     ...projectCard(project),
+    filesOffline: Boolean(filesOffline),
     invoices: invoices.map(invoiceCard),
     agreement: agreement ? { url: agreement.url, signedOn: str(agreement.signedOn) } : null,
     hourlyRate: hourlyRate ? str(hourlyRate) : null,

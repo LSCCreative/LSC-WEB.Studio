@@ -223,6 +223,7 @@ const ProjectDeliverables = (() => {
     const state = project.delivery;
     return (
       (filed() ? '<p class="pf-notice dlv-filed" role="note">Archived, so this is read-only. Unarchive it from Actions to change anything here.</p>' : '') +
+      filesMarkup() +
       '<section class="panel" aria-labelledby="dlv-h">' +
       '<div class="panel-head"><h2 class="panel-title" id="dlv-h">Checklist</h2>' +
       '<p class="dlv-progress">' + esc(progressText(state.checklist)) + '</p></div>' +
@@ -268,6 +269,132 @@ const ProjectDeliverables = (() => {
       '<dl class="dlv-approval-rec"><dt>Sign-in</dt><dd class="dlv-approval-ua">' + esc(handover.inviteUrl) + '</dd>' +
       '<dt>Client code</dt><dd class="fig">' + esc(handover.code) + '</dd></dl>' +
       '<button type="button" class="btn btn-sm" id="dlv-handover-done">I’ve noted them</button></div>';
+  }
+
+  // ── The client's files on Bunny: Take offline, Bring back online (Bunny Slice 11) ──
+
+  /* What Take offline means, in plain words: on the button's hover and focus, and
+     again in its dialog, since a phone or tablet has no hover. */
+  const OFFLINE_MEANS = 'Removes this client’s files from Bunny to save cost. The project stays under the client’s Past projects ' +
+    'with its notes and approvals, and they see “These files are offline. Ask us and we’ll put them back.” ' +
+    'The masters on the NAS aren’t touched, and Bring back online puts them back.';
+  const offlineAt = () => ctx.folder.project.filesOfflineAt || null;
+  /* What the last Bring back online couldn't send, kept for this project until the
+     next redraw of another, so a redraw doesn't lose which files are missing. */
+  let broughtBack = null;
+  const ON_BUNNY = new Set(['ready', 'failed']);
+  /* Anything of the project still on Bunny: a Take offline that stopped partway. */
+  const stillOnBunny = () => ctx.folder.deliverables.some((d) => d.versions.some((v) =>
+    (v.bunny && ON_BUNNY.has(v.bunny.status)) || (v.master && ON_BUNNY.has(v.master.status))));
+
+  function filesMarkup() {
+    const off = offlineAt();
+    if (!ctx.folder.bunnyOn || (!filed() && !off)) return '';
+    const tip = (id, label) =>
+      '<span class="dlv-tip-wrap"><button type="button" class="btn btn-sm" id="' + id + '" aria-describedby="dlv-offline-tip">' + label + '</button>' +
+      '<span class="dlv-tip" role="tooltip" id="dlv-offline-tip">' + esc(OFFLINE_MEANS) + '</span></span>';
+    let note;
+    let act;
+    const left = ctx.folder.project.filesOfflineLeft;
+    const onlineBtn = '<button type="button" class="btn btn-sm" id="dlv-online">Bring back online…</button>';
+    if (off && (left || stillOnBunny())) {
+      note = 'Taking these files offline stopped partway, so some are still on Bunny' + (left ? ' (' + sentence(left).replace(/\.$/, '') + ')' : '') +
+        '. The client already sees them as offline. Take offline again to finish, or bring them back online.';
+      act = tip('dlv-offline', 'Take offline again…') + onlineBtn;
+    } else if (off) {
+      note = 'Offline since ' + when(off) + '. The client sees “These files are offline. Ask us and we’ll put them back.”' +
+        (filed() ? ' under Past projects' : '') + '. The masters on the NAS are untouched.';
+      act = onlineBtn;
+    } else {
+      note = 'The client still sees this project’s files under Past projects, streamed from Bunny.';
+      act = tip('dlv-offline', 'Take offline…');
+    }
+    const back = broughtBack && broughtBack.projectId === ctx.folder.project.id ? broughtBackMarkup(broughtBack) : '';
+    return (
+      '<section class="panel dlv-files" aria-labelledby="dlv-files-h">' +
+      '<div class="panel-head"><h2 class="panel-title" id="dlv-files-h">Client’s files</h2>' +
+      '<span class="pf-chip ' + (off ? 'is-void' : 'is-ok') + '">' + (off ? 'Offline' : 'Online') + '</span></div>' +
+      '<div class="panel-body"><p class="dlv-note" id="dlv-files-note">' + esc(note) + '</p>' + back +
+      '<div class="dlv-bunny-acts">' + act + '</div>' +
+      '<div class="dlv-error" id="dlv-files-error" role="alert"></div></div></section>'
+    );
+  }
+
+  /* After Bring back online: what went, and what isn't on the NAS any more. */
+  function broughtBackMarkup(r) {
+    const line = (f) => '<li>' + esc(f.title || 'Untitled') + ' v' + f.n + (f.fileName ? ' (' + esc(f.fileName) + ')' : '') +
+      (f.reason ? ': ' + esc(f.reason) : '') + '</li>';
+    return (r.missing.length || r.refused.length)
+      ? '<div class="dlv-files-result" role="status">' +
+        (r.missing.length ? '<p class="dlv-note">Not on the NAS any more, so the client can’t be shown ' + (r.missing.length === 1 ? 'it' : 'these') +
+          ' until the file is back and you add it as a new version:</p><ul class="dlv-files-list">' + r.missing.map(line).join('') + '</ul>' : '') +
+        (r.refused.length ? '<p class="dlv-note">Bunny refused ' + (r.refused.length === 1 ? 'this one' : 'these') +
+          '. The client sees ' + (r.refused.length === 1 ? 'it' : 'them') + ' from the NAS; send again from the item’s page once the project is unarchived:</p>' +
+          '<ul class="dlv-files-list">' + r.refused.map(line).join('') + '</ul>' : '') +
+        '</div>'
+      : '';
+  }
+
+  function takeOffline(opener) {
+    const again = Boolean(offlineAt());
+    ctx.confirm(opener, {
+      title: again ? 'Finish taking these files offline?' : 'Take this project’s files offline?',
+      body: OFFLINE_MEANS + ' Anything still going to Bunny has to finish first.',
+      confirm: 'Take offline',
+      danger: true,
+      run: async () => {
+        const reply = await write('post', '/api/projects/' + encodeURIComponent(ctx.folder.project.id) + '/files-offline', undefined, {
+          working: 'Taking the files off Bunny…',
+          rethrow: true,
+          focus: '#dlv-files-h',
+        });
+        if (!reply) return;
+        const o = reply.offline || {};
+        if (o.error) Toast.error('Some files are still on Bunny: ' + o.error);
+        else Toast.ok('Offline. ' + (o.removed === 1 ? '1 version' : (o.removed || 0) + ' versions') + ' taken off Bunny.');
+      },
+    });
+  }
+
+  function bringOnline(opener) {
+    ctx.confirm(opener, {
+      title: 'Bring these files back online?',
+      body: 'Sends the current version of each deliverable to Bunny again from the NAS, and the client sees the files again: ' +
+        'from the NAS at first, then from Bunny as each one is ready. Any file that isn’t on the NAS any more is listed here afterwards.',
+      confirm: 'Bring back online',
+      run: async () => {
+        const reply = await write('post', '/api/projects/' + encodeURIComponent(ctx.folder.project.id) + '/files-online', undefined, {
+          working: 'Sending the files to Bunny…',
+          rethrow: true,
+          focus: '#dlv-files-h',
+        });
+        if (!reply) return;
+        const r = reply.online || { sent: [], missing: [], refused: [] };
+        broughtBack = { projectId: ctx.folder.project.id, ...r };
+        if (r.missing.length || r.refused.length) draw(box, ctx);
+        const gaps = r.missing.length + r.refused.length;
+        if (gaps) Toast.error('Back online, but ' + gaps + (gaps === 1 ? ' file didn’t go' : ' files didn’t go') + ' to Bunny. See the list.');
+        else Toast.ok('Back online. ' + (r.sent.length === 1 ? '1 version is' : r.sent.length + ' versions are') + ' going to Bunny.');
+      },
+    });
+  }
+
+  /* The explanation shows on hover and focus; Escape hides it until the pointer or
+     focus leaves (WCAG 1.4.13). */
+  function bindFiles() {
+    const off = $('dlv-offline');
+    if (off) {
+      const wrap = off.closest('.dlv-tip-wrap');
+      off.addEventListener('click', () => takeOffline(off));
+      wrap.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') wrap.classList.add('is-hushed');
+      });
+      const wake = () => wrap.classList.remove('is-hushed');
+      wrap.addEventListener('mouseleave', wake);
+      off.addEventListener('blur', wake);
+    }
+    const on = $('dlv-online');
+    if (on) on.addEventListener('click', () => bringOnline(on));
   }
 
   function publish(item, opener) {
@@ -412,6 +539,7 @@ const ProjectDeliverables = (() => {
     }));
     const inviteBtn = $('dlv-invite');
     if (inviteBtn) inviteBtn.addEventListener('click', () => sendInvite(inviteBtn));
+    bindFiles();
     const handoverDone = $('dlv-handover-done');
     if (handoverDone) handoverDone.addEventListener('click', () => {
       handover = null;
@@ -510,11 +638,38 @@ const ProjectDeliverables = (() => {
     processing: ['Processing', 'is-info'],
     ready: ['Ready', 'is-ok'],
     failed: ['Failed', 'is-alert'],
+    expired: ['Removed', 'is-void'],
+    offline: ['Offline', 'is-void'],
   };
+  /* A version whose files came off Bunny (Slice 11): the cleanup removed it long after
+     a newer one replaced it, or the project was taken offline. */
+  const REMOVED = {
+    expired: 'Taken off Bunny by the cleanup, a while after a newer version replaced it.',
+    offline: 'Taken offline with the project. Bring the files back online from the checklist.',
+    // An older version Bring back online didn't resend (it sends only what the client is shown).
+    wasOffline: 'Taken off Bunny while the project was offline, and not sent back since.',
+  };
+  /* Said only of a version the client was given: one never published, they never see. */
+  const SEEN_FROM_NAS = ' The client sees it from the NAS.';
+  /* What a removed row says, and whether it can be sent again: an offline one only once the project is back. */
+  function removedCopy(status, v) {
+    const seen = v && v.publishedAt ? SEEN_FROM_NAS : '';
+    if (status === 'expired') return { note: REMOVED.expired + seen, resend: true };
+    if (status !== 'offline') return null;
+    return offlineAt() ? { note: REMOVED.offline, resend: false } : { note: REMOVED.wasOffline + seen, resend: true };
+  }
 
   /* A photo library's block: what Bunny has of it, n of total while it goes. */
   function photosBunnyCopy(b, v, can, sent, button) {
     const n = 'v' + v.n;
+    const removed = removedCopy(b.status, v);
+    if (removed) {
+      return {
+        chip: b.status === 'offline' && !offlineAt() ? BUNNY_CHIP.expired : BUNNY_CHIP[b.status],
+        note: removed.note,
+        act: can && removed.resend ? button('Send to Bunny again') : '',
+      };
+    }
     const of = b.progress.total ? b.progress.done + ' of ' + b.progress.total : '';
     if (b.status === 'processing') {
       return {
@@ -560,7 +715,8 @@ const ProjectDeliverables = (() => {
     const n = 'v' + v.n;
     const can = !filed() && !item.notNeededAt;
     const sent = Boolean(v.publishedAt);
-    const chip = b.status === 'ready' && b.sourceChanged ? ['Old cut', 'is-alert'] : BUNNY_CHIP[b.status] || BUNNY_CHIP.none;
+    const chip = b.status === 'ready' && b.sourceChanged ? ['Old cut', 'is-alert']
+      : b.status === 'offline' && !offlineAt() ? BUNNY_CHIP.expired : BUNNY_CHIP[b.status] || BUNNY_CHIP.none;
     const button = (label, force) => '<button type="button" class="btn btn-sm" data-write id="dlv-bunny-send"' +
       (force ? ' data-force' : '') + '>' + label + '</button>';
     let note = '';
@@ -576,7 +732,11 @@ const ProjectDeliverables = (() => {
         '</div></div>'
       );
     }
-    if (b.status === 'processing') {
+    const removed = removedCopy(b.status, v);
+    if (removed) {
+      note = removed.note;
+      if (can && removed.resend) act = button('Send to Bunny again');
+    } else if (b.status === 'processing') {
       note = 'Bunny is fetching the file from the NAS and transcoding it. This checks again every 10 seconds, and you can leave the page.';
     } else if (b.status === 'failed') {
       note = (b.error || 'Bunny couldn’t take it.') + (sent ? ' Until it’s there, the client watches it from the NAS.' : '');
@@ -632,6 +792,10 @@ const ProjectDeliverables = (() => {
         note: sentence(m.error || 'Bunny Storage couldn’t take it.') + ' Until it’s there, the paid-files email carries the Drive link only.',
         act: can ? button('Send master again') : '',
       },
+      expired: { chip: BUNNY_CHIP.expired, note: 'Taken off Bunny Storage by the cleanup with the rest of this version.' },
+      offline: offlineAt()
+        ? { chip: BUNNY_CHIP.offline, note: 'Taken offline with the project. It goes back with the video when you bring the files back online.' }
+        : { chip: BUNNY_CHIP.expired, note: 'Taken off Bunny Storage while the project was offline. Send it again for the paid-files email to link to it.', act: can ? button('Send master again') : '' },
     }[m.status] || {
       chip: BUNNY_CHIP.none,
       note: 'This Final went to Bunny before masters did. Send its untouched file too, and the paid-files email links to it beside the Drive link.',

@@ -169,6 +169,72 @@ function createBunny(settings, { fetchImpl = fetch, now = Date.now } = {}) {
     return items.filter((i) => !i.IsDirectory).map((i) => ({ name: i.ObjectName, length: i.Length, checksum: i.Checksum || null }));
   }
 
+  /* What one storage folder holds, folders included, for cleanup (Slice 11):
+     [{ name, isDirectory, length, changedAt }]. A folder that isn't there is empty. */
+  async function listEntries(path) {
+    const res = await fetchImpl(`${storageApiUrl(path)}/`, {
+      headers: { AccessKey: storagePassword, Accept: 'application/json' },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (res.status === 404) return [];
+    if (!res.ok) throw new Error(`Bunny Storage couldn’t list a folder (${res.status}): ${await storageReason(res)}`);
+    const items = await res.json().catch(() => null);
+    if (!Array.isArray(items)) throw new Error('Bunny Storage listed a folder in a shape this server doesn’t know.');
+    return items.map((i) => ({
+      name: i.ObjectName, isDirectory: Boolean(i.IsDirectory), length: i.Length,
+      changedAt: i.LastChanged || i.DateCreated || null,
+    }));
+  }
+
+  /* ── Removing (Slice 11: cleanup and Take offline). Each answers once the thing
+     is gone, and one already gone counts as gone, so a removal can be run again. */
+
+  /* A file, or with `folder` the whole folder and everything under it. */
+  async function deleteObject(path, { folder = false } = {}) {
+    // Never the zone itself: a folder delete is recursive, so an empty path would take every client's files.
+    if (!String(path || '').split('/').some(Boolean)) throw new Error('Refusing to delete Bunny Storage’s root.');
+    const res = await fetchImpl(`${storageApiUrl(path)}${folder ? '/' : ''}`, {
+      method: 'DELETE',
+      headers: { AccessKey: storagePassword, Accept: 'application/json' },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (res.ok || res.status === 404) return;
+    throw new Error(`Bunny Storage couldn’t delete ${folder ? 'a folder' : 'a file'} (${res.status}): ${await storageReason(res)}`);
+  }
+
+  /* Like getVideo, a 404 is "already gone" only while the library itself answers. */
+  async function deleteVideo(videoId) {
+    try {
+      await streamRequest(`/videos/${encodeURIComponent(videoId)}`, { method: 'DELETE' });
+    } catch (err) {
+      if (!/\(404\)/.test(err.message)) throw err;
+      await streamRequest('/videos?itemsPerPage=1');
+    }
+  }
+
+  /* Every video in one collection, page by page: [{ guid, title, dateUploaded }]. */
+  async function listCollectionVideos(collectionId) {
+    const all = [];
+    for (let page = 1; page <= 100; page += 1) {
+      const params = new URLSearchParams({ collection: collectionId, page: String(page), itemsPerPage: '100' });
+      const data = await streamRequest(`/videos?${params}`);
+      const items = Array.isArray(data && data.items) ? data.items : [];
+      all.push(...items.map((v) => ({ guid: v.guid, title: String(v.title || ''), dateUploaded: v.dateUploaded || null })));
+      const total = Number(data && data.totalItems);
+      if (items.length < 100 || (Number.isFinite(total) && all.length >= total)) break;
+    }
+    return all;
+  }
+
+  async function deleteCollection(collectionId) {
+    try {
+      await streamRequest(`/collections/${encodeURIComponent(collectionId)}`, { method: 'DELETE' });
+    } catch (err) {
+      if (!/\(404\)/.test(err.message)) throw err;
+      await streamRequest('/videos?itemsPerPage=1');
+    }
+  }
+
   /* Every CDN link below is built when someone is answered, never stored, and signed
      here, the one place (Slice 9): a link copied out of a reply stops working once it
      expires. A video's links carry a token for its whole folder, in the path, so the
@@ -187,6 +253,7 @@ function createBunny(settings, { fetchImpl = fetch, now = Date.now } = {}) {
   return {
     findOrCreateCollection, fetchVideo, findVideoByTag, getVideo, statusFromVideo, hlsUrl, posterUrl,
     putObject, listFolder, storageUrl,
+    listEntries, deleteObject, deleteVideo, listCollectionVideos, deleteCollection,
   };
 }
 

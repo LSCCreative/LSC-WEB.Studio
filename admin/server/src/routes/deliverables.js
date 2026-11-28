@@ -344,6 +344,9 @@ function registerDeliverableRoutes(app, db, opts = {}) {
      publish's view, not the folder:
      { status, error, sourceChanged, posterUrl, progress, refused }: refused is true
      when Bunny said no (a 200 still: the admin reads any 5xx as the server down). */
+  /* Taken offline (Bunny Slice 11): nothing goes to Bunny or the client until it's brought back. */
+  const refuseOffline = (res) => refuse(res, 409, 'files_offline',
+    'This project’s files are offline. Bring them back online from the Deliverables tab first.');
   const bunnyOff = (res) => refuse(res, 503, 'bunny_not_set_up', 'Publishing to Bunny isn’t set up on this server yet.');
   app.post('/api/projects/:id/deliverables/:itemId/versions/:versionId/bunny', async (req, res, next) => {
     try {
@@ -354,6 +357,7 @@ function registerDeliverableRoutes(app, db, opts = {}) {
       if (!v) return undefined;
       if (d.not_needed_at) return refuse(res, 409, 'not_needed', 'This one is marked not needed. Mark it needed first.');
       if (!bunnyPublisher || !bunnyPublisher.ready) return bunnyOff(res);
+      if (p.files_offline_at) return refuseOffline(res);
       const force = (req.body || {}).force === true;
       // A version the client has seen never changes (its notes and approval name it):
       // a changed file is a new version, not a replaced video.
@@ -423,6 +427,8 @@ function registerDeliverableRoutes(app, db, opts = {}) {
       none: 'Send it to Bunny first: the client watches it from there.',
       processing: 'Bunny is still processing it. Publish once it’s ready.',
       failed: 'Bunny couldn’t take it. Send it to Bunny again first.',
+      expired: 'Its video was taken off Bunny. Send it to Bunny again first.',
+      offline: 'Its video was taken off Bunny with the project. Send it to Bunny again first.',
     }[bunny.status] || 'Send it to Bunny first: the client watches it from there.'];
   }
 
@@ -437,6 +443,7 @@ function registerDeliverableRoutes(app, db, opts = {}) {
       if (!v) return undefined;
       if (v.published_at) return answer(req, res);
       if (d.not_needed_at) return refuse(res, 409, 'not_needed', 'This one is marked not needed. Mark it needed first.');
+      if (p.files_offline_at) return refuseOffline(res);
       if (newestOf(d.id).id !== v.id) return refuse(res, 409, 'not_newest', 'Only the newest version can be published.');
       const source = await readSource(v.source_path);
       // The NAS being away says nothing about the file: that one is worth retrying.

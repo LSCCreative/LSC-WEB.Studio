@@ -136,6 +136,13 @@ const config = {
       // How long a signed link works, in seconds (default 6 hours). Only for testing a short one.
       signedTtlSeconds: Number(process.env.BUNNY_SIGNED_TTL_SECONDS) || 0,
     },
+    // The daily cleanup (Bunny Slice 11): 'dry' (the default: it logs what it would
+    // remove), 'on' (it removes) or 'off'; and how long a replaced version stays, in days.
+    cleanup: {
+      mode: ['on', 'off', 'dry'].includes((process.env.BUNNY_CLEANUP || '').trim().toLowerCase())
+        ? (process.env.BUNNY_CLEANUP || '').trim().toLowerCase() : 'dry',
+      retentionDays: Number(process.env.BUNNY_RETENTION_DAYS) || 90,
+    },
   },
 };
 

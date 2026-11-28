@@ -321,6 +321,10 @@ function readFolder(db, id, today) {
     // What Mark accepted's deposit % starts at (D33).
     depositPctDefault: depositPctFor(db, p),
     archivedAt: p.archived_at || null,
+    // Take offline (Bunny Slice 11): the client sees the files as offline until Bring back online.
+    filesOfflineAt: p.files_offline_at || null,
+    // Why a Take offline stopped partway, until a try gets everything off Bunny.
+    filesOfflineLeft: p.files_offline_left || null,
     noDeliverablesAt: p.no_deliverables_at || null,
     createdAt: p.created_at,
     updatedAt: p.updated_at,
@@ -1139,6 +1143,62 @@ function registerProjectRoutes(app, db, opts = {}) {
       logActivity(db, p.id, 'unarchived', {}, now);
     })();
     return folderReply(req, res);
+  });
+
+  /* Take offline (Bunny Slice 11; the user, 2026-11-07): an archived project's files
+     come off Bunny to save cost. The project stays under the client's Past projects
+     with its notes and approvals, the client is told the files are offline and to ask,
+     and the NAS masters are untouched (bunny-cleanup.js). Archived projects only.
+     Safe to send again: one that stopped partway (Bunny refusing) finishes what's
+     left. Answers the folder with `offline: { removed, error }`. */
+  app.post('/api/projects/:id/files-offline', async (req, res, next) => {
+    try {
+      const p = projectFor(req, res);
+      if (!p) return undefined;
+      const publisher = req.app.locals.bunnyPublisher;
+      if (!publisher || !publisher.ready) {
+        // A 409, not a 503: the admin reads any 5xx as the server down (WORKING_NOTES).
+        return res.status(409).json({ error: 'bunny_not_set_up', message: 'Bunny isn’t set up on this server, so there’s nothing to take offline.' });
+      }
+      // Archived only, except to finish one that stopped partway: unarchiving keeps a
+      // project offline, so its Take offline again must still go.
+      if (!p.archived_at && !p.files_offline_at) {
+        return res.status(409).json({ error: 'not_archived', message: 'Only an archived project’s files can be taken offline. Archive it first.' });
+      }
+      const result = await publisher.takeOffline(p);
+      if (result.refusal) {
+        const [status, error, message] = result.refusal;
+        return res.status(status).json({ error, message });
+      }
+      if (!p.files_offline_at) logActivity(db, p.id, 'files_offline', { versions: result.removed }, nowIso());
+      return folderReply(req, res, { offline: { removed: result.removed, error: result.error } });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  /* Bring back online: the current versions go to Bunny again from the NAS, and the
+     client sees the files again. Answers the folder with `online: { sent, missing,
+     refused }`, so the studio is told which files aren't on the NAS any more. */
+  app.post('/api/projects/:id/files-online', async (req, res, next) => {
+    try {
+      const p = projectFor(req, res);
+      if (!p) return undefined;
+      if (!p.files_offline_at) return folderReply(req, res, { online: { sent: [], missing: [], refused: [] } });
+      const publisher = req.app.locals.bunnyPublisher;
+      if (!publisher || !publisher.ready) {
+        return res.status(409).json({ error: 'bunny_not_set_up', message: 'Bunny isn’t set up on this server, so the files can’t go back.' });
+      }
+      const result = await publisher.bringOnline(p);
+      if (result.refusal) {
+        const [status, error, message] = result.refusal;
+        return res.status(status).json({ error, message });
+      }
+      logActivity(db, p.id, 'files_online', { sent: result.sent.length, missing: result.missing.length }, nowIso());
+      return folderReply(req, res, { online: result });
+    } catch (err) {
+      return next(err);
+    }
   });
 
   /* The estimate a project's invoices bill: an accepted one if it has any

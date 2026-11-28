@@ -21,13 +21,16 @@
      failPut(path)         true refuses that PUT (500)
      onPut(path)           awaited inside each PUT, before it lands
      listFails             a folder listing answers 500
-   A PUT checks Content-Length and the Checksum header against the bytes, as Bunny does. */
+     failDelete(path)      true refuses that DELETE (500), storage or Stream
+     clock()               the time a PUT or fetch is stamped with (a Date)
+   A folder listing gives its subfolders too; a DELETE of a folder (trailing /)
+   takes everything under it, as Bunny's does (Slice 11). A PUT checks Content-Length and the Checksum header against the bytes, as Bunny does. */
 
 function fakeBunny() {
   const calls = [];
   const state = {
     collections: [], videos: [], failFetch: false, listAfter: 0, neverList: false, statusOnFetch: 4, libraryGone: false,
-    storage: new Map(), failPut: null, onPut: null, listFails: false,
+    storage: new Map(), failPut: null, onPut: null, listFails: false, failDelete: null, clock: () => new Date(), deletedVideos: 0,
   };
   const reply = (status, data) => ({ ok: status < 400, status, json: async () => data, text: async () => JSON.stringify(data) });
 
@@ -53,15 +56,38 @@ function fakeBunny() {
       }
       const checksum = require('crypto').createHash('sha256').update(bytes).digest('hex').toUpperCase();
       if (headers.Checksum && headers.Checksum !== checksum) return reply(400, { HttpCode: 400, Message: 'checksum mismatch' });
-      state.storage.set(path, { bytes, length: bytes.length, checksum });
+      state.storage.set(path, { bytes, length: bytes.length, checksum, changedAt: state.clock().toISOString() });
       return reply(201, { HttpCode: 201, Message: 'File uploaded.' });
     }
     if (method === 'GET' && u.pathname.endsWith('/')) {
       if (state.listFails) return reply(500, { HttpCode: 500, Message: 'list hiccup' });
       const folder = path.replace(/\/$/, '');
       const inside = [...state.storage.entries()].filter(([k]) => k.slice(0, k.lastIndexOf('/')) === folder);
-      if (!inside.length) return reply(404, { HttpCode: 404, Message: 'Object Not Found' });
-      return reply(200, inside.map(([k, f]) => ({ ObjectName: k.slice(k.lastIndexOf('/') + 1), Length: f.length, Checksum: f.checksum, IsDirectory: false })));
+      // Subfolders: the next segment of anything deeper, dated by its newest file.
+      const dirs = new Map();
+      for (const [k, f] of state.storage.entries()) {
+        if (!k.startsWith(`${folder}/`)) continue;
+        const rest = k.slice(folder.length + 1).split('/');
+        if (rest.length < 2) continue;
+        const at = dirs.get(rest[0]);
+        if (!at || f.changedAt > at) dirs.set(rest[0], f.changedAt);
+      }
+      if (!inside.length && !dirs.size) return reply(404, { HttpCode: 404, Message: 'Object Not Found' });
+      return reply(200, [
+        ...[...dirs].map(([name, at]) => ({ ObjectName: name, Length: 0, IsDirectory: true, LastChanged: at, DateCreated: at })),
+        ...inside.map(([k, f]) => ({
+          ObjectName: k.slice(k.lastIndexOf('/') + 1), Length: f.length, Checksum: f.checksum, IsDirectory: false,
+          LastChanged: f.changedAt, DateCreated: f.changedAt,
+        })),
+      ]);
+    }
+    if (method === 'DELETE') {
+      if (state.failDelete && state.failDelete(path)) return reply(500, { HttpCode: 500, Message: 'delete hiccup' });
+      const folder = u.pathname.endsWith('/') ? path.replace(/\/$/, '') : null;
+      const gone = [...state.storage.keys()].filter((k) => (folder !== null ? k.startsWith(`${folder}/`) : k === path));
+      if (!gone.length) return reply(404, { HttpCode: 404, Message: 'Object Not Found' });
+      for (const k of gone) state.storage.delete(k);
+      return reply(200, { HttpCode: 200, Message: 'File deleted successfully.' });
     }
     return reply(404, { HttpCode: 404, Message: 'no such route' });
   }
@@ -86,17 +112,29 @@ function fakeBunny() {
       if (state.failFetch) return reply(200, { success: false, message: 'fetch refused', statusCode: 400 });
       const { title, url: source } = JSON.parse(init.body);
       state.videos.push({
-        guid: `vid-${state.videos.length + 1}`, title, status: state.statusOnFetch, dateUploaded: new Date().toISOString(),
+        guid: `vid-${state.videos.length + state.deletedVideos + 1}`, title, status: state.statusOnFetch, dateUploaded: state.clock().toISOString(),
         collectionId: u.searchParams.get('collectionId'), source, listAfter: state.listAfter, searchesSeen: 0,
       });
       return reply(200, { success: true, message: 'OK', statusCode: 200 });
     }
     if (route === '/videos' && method === 'GET') {
-      const search = u.searchParams.get('search');
+      const search = u.searchParams.get('search') || '';
       const collection = u.searchParams.get('collection');
       const found = state.videos.filter((v) => v.title.includes(search) && (!collection || v.collectionId === collection));
       for (const v of found) v.searchesSeen += 1;
-      return reply(200, { items: found.filter(listed).map(({ listAfter, searchesSeen, ...v }) => v) });
+      const shown = found.filter(listed).map(({ listAfter, searchesSeen, ...v }) => v);
+      const per = Number(u.searchParams.get('itemsPerPage')) || 100;
+      const page = Number(u.searchParams.get('page')) || 1;
+      return reply(200, { totalItems: shown.length, currentPage: page, itemsPerPage: per, items: shown.slice((page - 1) * per, page * per) });
+    }
+    const oneCollection = /^\/collections\/([^/]+)$/.exec(route);
+    if (oneCollection && method === 'DELETE') {
+      const id = decodeURIComponent(oneCollection[1]);
+      if (state.failDelete && state.failDelete(`collection:${id}`)) return reply(500, { message: 'delete hiccup' });
+      const at = state.collections.findIndex((c) => c.guid === id);
+      if (at < 0) return reply(404, { message: 'Collection not found' });
+      state.collections.splice(at, 1);
+      return reply(200, { success: true, message: 'OK', statusCode: 200 });
     }
     const one = /^\/videos\/([^/]+)$/.exec(route);
     if (one && method === 'GET') {
@@ -104,6 +142,15 @@ function fakeBunny() {
       if (!v) return reply(404, { message: 'Video not found' });
       const { listAfter, searchesSeen, ...shown } = v;
       return reply(200, shown);
+    }
+    if (one && method === 'DELETE') {
+      const id = decodeURIComponent(one[1]);
+      if (state.failDelete && state.failDelete(`video:${id}`)) return reply(500, { message: 'delete hiccup' });
+      const at = state.videos.findIndex((x) => x.guid === id);
+      if (at < 0) return reply(404, { message: 'Video not found' });
+      state.videos.splice(at, 1);
+      state.deletedVideos += 1;
+      return reply(200, { success: true, message: 'OK', statusCode: 200 });
     }
     return reply(404, { message: 'no such route' });
   }

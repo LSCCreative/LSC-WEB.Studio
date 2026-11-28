@@ -254,7 +254,7 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
 
 ### Part D — Lock it down (merge task B4; payment can't start until this is done)
 
-- [ ] Slice 9: **[USER + API + PORTAL]** Signed, expiring media URLs. The user turns on
+- [x] Slice 9: **[USER + API + PORTAL]** Signed, expiring media URLs. The user turns on
       token auth for the Stream pull zone and the storage pull zone and adds
       `BUNNY_CDN_TOKEN_KEY` to 1Password and the NAS `.env`. The portal's project reply
       signs every Bunny URL as it goes out (HLS with a path token covering `/<videoId>/` so
@@ -266,7 +266,7 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       instance on the same element). Also: Slice 2's `/hub/source/` links expire, and NAS
       `/hub/files/` links are left for F3. Test with a forced short TTL. Player guardrail
       applies. | Model: Opus 5.5 | Effort: High
-      **Built 2026-11-27 (not deployed, not committed; waits on the user's Bunny steps):** signing is
+      **Code live 2026-11-27 (`46bf5f9`, NAS + Pages #7), links unsigned until the user's Bunny steps; not ticked until the live test:** signing is
       `src/hub/bunny-tokens.js` (Bunny's advanced HMAC-SHA256 token, `HS256-…`, after Bunny's Node reference),
       applied in one place, `hub/bunny.js`'s URL builders, so every reply signs as it answers and the DB keeps
       nothing signed. **Two keys, not one:** the Stream library and the storage zone are separate pull zones,
@@ -293,19 +293,35 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       so nothing re-sends; still true only if no master is sent before this deploys). 1186. Checked on
       scratch: early renewal mid-note (9.96 s, paused, pill, draft kept), Try again after the card, an
       expired photo tile going fresh link then NAS.
+      **Live test PASSED 2026-11-28:** both keys in the NAS `.env`, Token Authentication on in both pull zones
+      (Stream 6014428, storage `lscclientmedia` 6833812; IP validation off). Stream: signed playlist, quality
+      playlist and poster 200, unsigned 403. Storage (a test file uploaded, checked and deleted): signed 200,
+      unsigned, wrong-token and expired 403. **Found and fixed on the way:** `BUNNY_STORAGE_PASSWORD` (NAS and
+      1Password) was the OLD `clienthubdata` zone's password, so every photo/master upload to `lsc-client-media`
+      would have got a 401; the user put the right one in 1Password, it's on the NAS now (backup
+      `.env.pre-storagepw`) and the Sydney host takes it. **Still to see once real work goes through:** the first
+      real photo send and master upload, a paid-email download redirecting, renewal while playing, desktop Safari.
 
 ### Part E — Desktop publisher (merge task B5)
 
-- [ ] Slice 10: **[DESKTOP]** Still wanted (user, 2026-11-07). SwiftUI `MenuBarExtra` in
+- [x] Slice 10: **[DESKTOP]** Still wanted (user, 2026-11-07). SwiftUI `MenuBarExtra` in
       `desktop-publisher/`, no third-party deps. Signs in with the **billing account**
       (`/api` login, session cookie kept by URLSession, password never stored). Pick a
       project and deliverable from `/api`, drag a file: copy it onto the mounted NAS share
       if it isn't there, add it as a new version, publish, show progress. Holds no Bunny
       key. README with build/run steps. | Model: Opus 5.5 | Effort: High
+      **Done 2026-11-28 (not committed):** `desktop-publisher/` (`PublisherCore` + the SwiftUI app; README). No server change.
+      Every step is an existing `/api` route, so the server's checks stand; it never sends the portal invite. 27 Swift tests, 6 of them
+      end to end on `portal-api-fakebunny`. Not tried live (the NAS share wasn't mounted): acceptance criterion 6 is Slice 12's.
 
 ### Part F — Cost control & close-out (merge task B5)
 
-- [ ] Slice 11: **[API + ADMIN + PORTAL]** Cleanup, plus Take offline.
+- [ ] Slice 11: **[API + ADMIN + PORTAL]** Cleanup, plus Take offline. **Built 2026-11-28, not deployed; only the
+      desktop Safari player check is left** (the guardrail; it needs the user's Safari, so it can go with Slice 12's):
+      schema v37, `src/bunny-cleanup.js`, routes `POST /api/projects/:id/files-offline|files-online`, the
+      Deliverables tab's Client's files panel, the portal's offline state, and the review's 9 fixes. 1204 server
+      tests (17 in `test-bunny-cleanup.js`); checked on scratch at 375 px and desktop; player contract re-run in
+      Chrome (desktop + 375 px). Cleanup ships as a dry run (`BUNNY_CLEANUP`).
       **Automatic cleanup** never removes what a client can still open. A daily
       in-process timer deletes only Bunny objects that no client reply refers to: versions
       replaced by a newer one more than `BUNNY_RETENTION_DAYS` (default 90) ago, and
@@ -335,3 +351,26 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       strings. Update `client-hub-docs/NAS-DELIVERABLES.md` (publishing, the tables, the
       webhook, signed links, retention), the admin's `.design/WORKING_NOTES.md` traps and
       `ROADMAP.md`, and any help copy. | Model: Opus 5.5 | Effort: Medium
+      **Started 2026-11-28.** Done: `client-hub-docs/NAS-DELIVERABLES.md` rewritten as built (it was still the
+      pre-merge NAS-link doc; gitignored, Drive only); two traps added to WORKING_NOTES (Storage's recursive
+      folder delete, where the as-built doc lives); help copy read, nothing stale.
+      Code review of the branch (9 findings) all fixed: a photo library keeps one originals tag, cleanup removals
+      guarded against a send, Take offline finishable after unarchiving, hub writes refused while offline, and
+      smaller fixes; 1210 tests. Criterion 7, pattern half:
+      no UUID/hex/secret-assignment/PEM/`.env` in the 400 tracked files (one hit, a public pull-zone host + video
+      id in scratchpad.md). **Left:**
+      - 7, value half: **PASSED 2026-11-28.** `key-scan.js` read the 1Password-mounted `bunny.env` (5 secrets:
+        STORAGE_PASSWORD, STORAGE_TOKEN_KEY, STREAM_API_KEY, STREAM_READ_KEY, STREAM_TOKEN_KEY) and found none of
+        them in 408 files: every tracked file, `client-hub-app/`, `desktop-publisher/` incl. `dist/LSC Publisher.app`,
+        the app's settings and prefs. Criterion 7 done.
+      - Deploy Slice 11: **NAS done 2026-11-28** (`a7ad646`, v37 rehearsed on a backup copy, dry-run cleanup,
+        m6-checks ALL PASS; rollback `lsc-admin:pre-v37` / `app.prev-v37` / `pre-v37-20261128-173607.db`). First dry run:
+        0 versions, 0 strays, no errors. Pages: PR #8, waiting on the user's merge.
+      - Live, on a test project: 3 (a photo folder to Edge Storage, grid/lightbox sizes); 4 (a Final's master,
+        the paid email's `/hub/download` redirect); 5 (renewal while playing); 2's re-send making no duplicate;
+        8 (an imported old-hub project still plays); Slice 11's dry-run log read, Take offline/Bring back online
+        on an archived test project.
+      - The user's devices: 1 on desktop Safari (also Slice 11's guardrail) and iPhone Safari (Slice 5 used Chrome
+        for iOS); 6 with the NAS share mounted on this Mac and LSC Publisher signed in to `app`.
+      - Not a criterion: `client-hub-docs/Bunny.Net Storage zone & Pull Zone Details.rtf` has key labels (likely
+        keys) in a Drive-synced folder; gitignored, but worth moving into 1Password and deleting.

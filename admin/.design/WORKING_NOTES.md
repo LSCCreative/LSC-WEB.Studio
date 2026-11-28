@@ -253,8 +253,18 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   storageUrl), as a reply is built; never store or compare a signed link (the email's set key uses `masterKey`).
   HLS needs the path form with a folder token, or segments 403. An emailed link is never a Bunny link: it is
   `/hub/download/…` (90 days, checked per click by `downloadRefusal`, which F3 extends).
-  A new route never answers an outside service's refusal (Bunny saying no) with a 5xx: the admin's
-  connection banner reads any 5xx as the server down and blocks every write.
+  Token auth is ON in both pull zones: a token key missing from `.env` breaks playback. `BUNNY_STORAGE_PASSWORD`
+  is `lsc-client-media`'s (Sydney host), not the old `clienthubdata`'s, or every upload 401s.
+  `desktop-publisher/` reads the folder reply and the bunny view (`PublisherCore/Models.swift`): renaming a field it
+  reads breaks it quietly.
+  Rows can be `expired` (cleanup) or `offline` (Take offline) since v37: handle all five statuses; both re-send like
+  `failed`. `files_offline_at` hides every file and refuses sends and client writes; only Bring back online clears it.
+  The cleanup ships as a dry run: set `BUNNY_CLEANUP=on` only after reading a dry run's log on the NAS.
+  A photo library keeps one `publish_tag` for life: a new tag strands its unchanged originals in the old folder.
+  Removing a version's files goes through bunny-publish.js's `guard`, which holds a publish of it until done.
+  Never answer Bunny's refusal with a 5xx: the admin reads any 5xx as the server down and blocks writes.
+  A Storage delete ending in `/` is recursive: `deleteObject` refuses an empty path, so never build one that can be.
+  The detail of all this is `client-hub-docs/NAS-DELIVERABLES.md` (gitignored): update it with any change.
 
 ## Frontend traps
 

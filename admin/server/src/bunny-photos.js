@@ -10,7 +10,7 @@
  *   /<projectId>/<itemId>/<versionId>/600/<file>              the grid's size
  *   /<projectId>/<itemId>/<versionId>/2400/<file>             the lightbox's size
  * The originals' folder carries a random tag, kept per version in the row's
- * publish_tag: until Slice 9 signs Bunny's links they are public, and a client who
+ * publish_tag (the same tag every time the version is sent): until Slice 9 signs Bunny's links they are public, and a client who
  * sees a lightbox link must not reach the full-size original (the paid download,
  * C10/F3) by swapping `2400` for `original`. The client's reply leaves the original
  * out for the same reason: nothing in it is a download (C2).
@@ -323,7 +323,10 @@ function createPhotoPublisher(db, { bunny, nas, now = Date.now, sharpImpl, concu
         item_id: version.deliverable_id,
         source_path: version.source_path,
         storage_path: `${project.id}/${version.deliverable_id}/${version.id}`,
-        tag: crypto.randomBytes(12).toString('hex'),
+        // One tag for the version's life: a photo kept as it was isn't sent again, so its
+        // original stays where it went, and a new tag would leave it in a folder nothing
+        // names (cleanup, Slice 11, takes any other original-* folder as a stray).
+        tag: existing && existing.publish_tag ? existing.publish_tag : crypto.randomBytes(12).toString('hex'),
         done,
         total: photos.length,
         now: at,
