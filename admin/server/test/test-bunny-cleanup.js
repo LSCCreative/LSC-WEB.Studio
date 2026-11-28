@@ -44,6 +44,8 @@ const daysAgo = (n) => new Date(Date.now() - n * DAY).toISOString();
 const hub = {
   signingSecret: 'test-signing-secret', corsOrigins: ['https://lsccreative.studio'], publicBaseUrl: 'https://hub.example',
   appUrl: 'https://app.example/', portalUrl: 'https://lsccreative.studio/client-hub-app/', deliverablesDir: DIR, bunny: FAKE_BUNNY_SETTINGS,
+  // Every test signs a client in: more than the portal's 20 sign-ins in 10 minutes.
+  limits: { auth: { max: 1000, windowMs: 10 * 60 * 1000 } },
 };
 const BUNNY_HOSTS = [FAKE_BUNNY_SETTINGS.streamCdnHost, FAKE_BUNNY_SETTINGS.storageCdnHost];
 
@@ -317,11 +319,15 @@ test('Take offline waits while something is still going to Bunny', async () => {
   const j = await job();
   const v1 = await j.add();
   j.archive();
+  // Bunny still encoding it: a status read keeps it processing.
+  const video = bunny.state.videos.find((x) => x.guid === j.row(v1.id).bunny_video_id);
+  video.status = 3;
   db.prepare("UPDATE bunny_assets SET status = 'processing' WHERE version_id = ?").run(v1.id);
   const r = await j.offline();
   assert.equal(r.status, 409);
   assert.equal(r.body.error, 'bunny_busy');
   assert.equal(db.prepare('SELECT files_offline_at FROM projects WHERE id = ?').pluck().get(j.projectId), null);
+  video.status = 4;
   db.prepare("UPDATE bunny_assets SET status = 'ready' WHERE version_id = ?").run(v1.id);
 });
 
@@ -540,4 +546,138 @@ test('a storage folder delete never takes the zone root', async () => {
   const client = createBunny(FAKE_BUNNY_SETTINGS, { fetchImpl: bunny.fetchImpl });
   for (const p of ['', '/', '//']) await assert.rejects(client.deleteObject(p, { folder: true }), /root/);
   assert.ok(bunny.state.storage.size > 0, 'nothing was deleted');
+});
+
+/* ── The review's fixes (Bunny Slice 12) ── */
+
+/* A small photo library on the NAS, added to j's item and sent to Bunny. */
+async function photoLibrary(j) {
+  const folder = path.join(DIR, `Film${serial}`, `Stills ${crypto.randomBytes(3).toString('hex')}`);
+  fs.mkdirSync(folder, { recursive: true });
+  for (const name of ['a.jpg', 'b.jpg']) {
+    const img = sharp({ create: { width: 64, height: 48, channels: 3, background: { r: 60, g: 90, b: 120 } } });
+    fs.writeFileSync(path.join(folder, name), await img.jpeg().toBuffer());
+  }
+  const added = await on.call(`${j.studio}/versions?today=${TODAY}`, { method: 'POST', body: { path: path.relative(DIR, folder) }, cookie: on.admin });
+  const v = added.body.deliverables[0].versions.slice(-1)[0];
+  await on.call(`${j.studio}/versions/${v.id}/bunny`, { method: 'POST', body: {}, cookie: on.admin });
+  await on.publisher.photoJobs();
+  return { v, row: j.row(v.id, 'photos') };
+}
+
+test('another originals folder beside a library’s own is a stray once old; its own and a new one stay', async () => {
+  const j = await job();
+  const { row } = await photoLibrary(j);
+  assert.equal(row.status, 'ready');
+  const base = row.storage_path;
+  const put = (key, days) => bunny.state.storage.set(key, { bytes: Buffer.from('x'), length: 1, checksum: null, changedAt: daysAgo(days) });
+  put(`${base}/original-oldtag/a.jpg`, 100);
+  put(`${base}/original-newer/a.jpg`, 1);
+  ageStorage(`${base}/original-${row.publish_tag}/`, 100);
+  const result = await on.publisher.cleanup.run({ dryRun: false });
+  const mine = result.strays.filter((x) => x.what.includes(base));
+  assert.deepEqual(mine.map((x) => [x.what, x.removed]), [[`old originals ${base}/original-oldtag`, true]]);
+  assert.equal(storedUnder(`${base}/original-oldtag/`).length, 0);
+  assert.equal(storedUnder(`${base}/original-newer/`).length, 1, 'inside the window, so it stays');
+  assert.equal(storedUnder(`${base}/original-${row.publish_tag}/`).length, 2, 'the library’s own originals stay however old');
+});
+
+test('a send that starts while the cleanup is removing that version waits, then sends it afresh', async () => {
+  const j = await job();
+  const v1 = await j.add({ stage: 'draft' });
+  const v2 = await j.add({ stage: 'final' });
+  j.publishedAt(v1.id, daysAgo(120));
+  j.publishedAt(v2.id, daysAgo(100));
+  const oldVideo = j.row(v1.id).bunny_video_id;
+  const version = db.prepare('SELECT * FROM deliverable_versions WHERE id = ?').get(v1.id);
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(j.projectId);
+  const { file } = await on.publisher.check(version);
+  let sending = null;
+  // The moment the cleanup deletes v1's video, the studio sends v1 again.
+  bunny.state.failDelete = (what) => {
+    if (what === `video:${oldVideo}` && !sending) sending = on.publisher.publish(project, version, file);
+    return false;
+  };
+  try {
+    const result = await on.publisher.cleanup.run({ dryRun: false });
+    assert.ok(removedIds(result).includes(v1.id));
+  } finally {
+    bunny.state.failDelete = null;
+  }
+  assert.ok(sending, 'the send started mid-removal');
+  const sent = await sending;
+  await on.settled();
+  assert.equal(sent.body.status, 'ready', 'sent afresh once the removal was done, not answered from the old row');
+  const row = j.row(v1.id);
+  assert.equal(row.status, 'ready');
+  assert.notEqual(row.bunny_video_id, oldVideo);
+  assert.ok(hasVideo(row.bunny_video_id));
+});
+
+test('a Take offline that stopped partway can be finished, or brought back, after unarchiving', async () => {
+  const j = await job();
+  const v1 = await j.add();
+  j.archive();
+  const id = j.row(v1.id).bunny_video_id;
+  bunny.state.failDelete = (what) => what === `video:${id}`;
+  assert.match((await j.offline()).body.offline.error, /delete hiccup/);
+  bunny.state.failDelete = null;
+  j.unarchive();
+  const again = await j.offline();
+  assert.equal(again.status, 200, again.text);
+  assert.deepEqual(again.body.offline, { removed: 1, error: null });
+  assert.equal(j.row(v1.id).status, 'offline');
+  // A project never taken offline still has to be archived first.
+  const k = await job();
+  await k.add();
+  assert.equal((await k.offline()).body.error, 'not_archived');
+});
+
+test('Bring back online lists a version with no NAS file as refused, not as missing from the NAS', async () => {
+  const j = await job();
+  await j.add();
+  const now = nowIso();
+  const other = newId('dlv');
+  db.prepare(`INSERT INTO deliverables (id, project_id, position, title, stage, created_at, updated_at)
+              VALUES (?, ?, 2, 'Old hub film', 'final', ?, ?)`).run(other, j.projectId, now, now);
+  db.prepare(`INSERT INTO deliverable_versions (id, deliverable_id, project_id, n, stage, source_path, file_name, created_at, published_at, kind)
+              VALUES (?, ?, ?, 1, 'final', NULL, 'old.mp4', ?, ?, 'video')`).run(newId('ver'), other, j.projectId, now, now);
+  j.archive();
+  assert.equal((await j.offline()).status, 200);
+  const r = await j.online();
+  assert.equal(r.status, 200, r.text);
+  assert.deepEqual(r.body.online.missing, []);
+  assert.deepEqual(r.body.online.refused.map((x) => x.title), ['Old hub film']);
+  assert.match(r.body.online.refused[0].reason, /old Client Hub/);
+});
+
+test('a video row Bunny lost long ago doesn’t hold up Take offline', async () => {
+  const j = await job();
+  const v1 = await j.add();
+  j.archive();
+  db.prepare("UPDATE bunny_assets SET status = 'processing', bunny_video_id = NULL, publish_tag = 'lost-tag', updated_at = ? WHERE version_id = ? AND kind = 'video'")
+    .run(new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), v1.id);
+  const r = await j.offline();
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.body.offline.error, null);
+  assert.equal(j.row(v1.id).status, 'offline', 'read, failed by the unlisted limit, then taken offline');
+});
+
+test('while offline, the portal’s writes are refused even after unarchiving', async () => {
+  const j = await job();
+  const v1 = await j.add();
+  const note = await on.call(`/hub/projects/${j.projectId}/items/${j.item}/notes`, {
+    method: 'POST', body: { versionId: v1.id, text: 'Before it went offline' }, cookie: j.session,
+  });
+  assert.equal(note.status, 201, note.text);
+  j.archive();
+  assert.equal((await j.offline()).status, 200);
+  j.unarchive();
+  const post = (what, body) => on.call(`/hub/projects/${j.projectId}/items/${j.item}/${what}`, { method: 'POST', body, cookie: j.session });
+  for (const [what, body] of [['notes', { versionId: v1.id, text: 'Another' }], ['submit', { versionId: v1.id }], ['approve', { versionId: v1.id }]]) {
+    const r = await post(what, body);
+    assert.deepEqual([r.status, r.body.error], [409, 'files_offline'], what);
+  }
+  const del = await on.call(`/hub/projects/${j.projectId}/notes/${note.body.note.id}`, { method: 'DELETE', cookie: j.session });
+  assert.deepEqual([del.status, del.body.error], [409, 'files_offline']);
 });

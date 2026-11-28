@@ -1160,7 +1160,9 @@ function registerProjectRoutes(app, db, opts = {}) {
         // A 409, not a 503: the admin reads any 5xx as the server down (WORKING_NOTES).
         return res.status(409).json({ error: 'bunny_not_set_up', message: 'Bunny isn’t set up on this server, so there’s nothing to take offline.' });
       }
-      if (!p.archived_at) {
+      // Archived only, except to finish one that stopped partway: unarchiving keeps a
+      // project offline, so its Take offline again must still go.
+      if (!p.archived_at && !p.files_offline_at) {
         return res.status(409).json({ error: 'not_archived', message: 'Only an archived project’s files can be taken offline. Archive it first.' });
       }
       const result = await publisher.takeOffline(p);

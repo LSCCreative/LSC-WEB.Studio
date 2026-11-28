@@ -510,6 +510,8 @@ function createHubRouter(db, opts = {}) {
     const d = p && getItem.get(req.params.itemId, p.id);
     if (!d || d.not_needed_at) return refuseNote(res, 404, 'not_found') && null;
     if (p.archived_at) return refuseNote(res, 409, 'archived') && null;
+    // Taken offline (Bunny Slice 11), which unarchiving keeps: nothing to review until it's back.
+    if (p.files_offline_at) return refuseNote(res, 409, 'files_offline') && null;
     const v = newestPublishedOf.get(d.id);
     if (!v) return refuseNote(res, 404, 'not_found') && null;
     // A newer version arrived while the page was open: the client is told, and their text stays with them.
@@ -575,6 +577,7 @@ function createHubRouter(db, opts = {}) {
       .get(req.params.noteId, req.params.id, clientId);
     if (!n) return refuseNote(res, 404, 'not_found');
     if (n.submission_id) return refuseNote(res, 409, 'sent');
+    if (filesOffline.get(req.params.id)) return refuseNote(res, 409, 'files_offline');
     db.prepare('DELETE FROM client_notes WHERE id = ? AND submission_id IS NULL').run(n.id);
     return res.json({ ok: true });
   });

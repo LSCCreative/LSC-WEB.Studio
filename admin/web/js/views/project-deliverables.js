@@ -296,14 +296,15 @@ const ProjectDeliverables = (() => {
     let note;
     let act;
     const left = ctx.folder.project.filesOfflineLeft;
+    const onlineBtn = '<button type="button" class="btn btn-sm" id="dlv-online">Bring back online…</button>';
     if (off && (left || stillOnBunny())) {
       note = 'Taking these files offline stopped partway, so some are still on Bunny' + (left ? ' (' + sentence(left).replace(/\.$/, '') + ')' : '') +
-        '. The client already sees them as offline. Take offline again to finish.';
-      act = tip('dlv-offline', 'Take offline again…');
+        '. The client already sees them as offline. Take offline again to finish, or bring them back online.';
+      act = tip('dlv-offline', 'Take offline again…') + onlineBtn;
     } else if (off) {
-      note = 'Offline since ' + when(off) + '. The client sees “These files are offline. Ask us and we’ll put them back.” under Past projects. ' +
-        'The masters on the NAS are untouched.';
-      act = '<button type="button" class="btn btn-sm" id="dlv-online">Bring back online…</button>';
+      note = 'Offline since ' + when(off) + '. The client sees “These files are offline. Ask us and we’ll put them back.”' +
+        (filed() ? ' under Past projects' : '') + '. The masters on the NAS are untouched.';
+      act = onlineBtn;
     } else {
       note = 'The client still sees this project’s files under Past projects, streamed from Bunny.';
       act = tip('dlv-offline', 'Take offline…');
@@ -643,22 +644,25 @@ const ProjectDeliverables = (() => {
   /* A version whose files came off Bunny (Slice 11): the cleanup removed it long after
      a newer one replaced it, or the project was taken offline. */
   const REMOVED = {
-    expired: 'Taken off Bunny by the cleanup, a while after a newer version replaced it. The client sees it from the NAS.',
+    expired: 'Taken off Bunny by the cleanup, a while after a newer version replaced it.',
     offline: 'Taken offline with the project. Bring the files back online from the checklist.',
     // An older version Bring back online didn't resend (it sends only what the client is shown).
-    wasOffline: 'Taken off Bunny while the project was offline, and not sent back since: the client sees it from the NAS.',
+    wasOffline: 'Taken off Bunny while the project was offline, and not sent back since.',
   };
+  /* Said only of a version the client was given: one never published, they never see. */
+  const SEEN_FROM_NAS = ' The client sees it from the NAS.';
   /* What a removed row says, and whether it can be sent again: an offline one only once the project is back. */
-  function removedCopy(status) {
-    if (status === 'expired') return { note: REMOVED.expired, resend: true };
+  function removedCopy(status, v) {
+    const seen = v && v.publishedAt ? SEEN_FROM_NAS : '';
+    if (status === 'expired') return { note: REMOVED.expired + seen, resend: true };
     if (status !== 'offline') return null;
-    return offlineAt() ? { note: REMOVED.offline, resend: false } : { note: REMOVED.wasOffline, resend: true };
+    return offlineAt() ? { note: REMOVED.offline, resend: false } : { note: REMOVED.wasOffline + seen, resend: true };
   }
 
   /* A photo library's block: what Bunny has of it, n of total while it goes. */
   function photosBunnyCopy(b, v, can, sent, button) {
     const n = 'v' + v.n;
-    const removed = removedCopy(b.status);
+    const removed = removedCopy(b.status, v);
     if (removed) {
       return {
         chip: b.status === 'offline' && !offlineAt() ? BUNNY_CHIP.expired : BUNNY_CHIP[b.status],
@@ -728,7 +732,7 @@ const ProjectDeliverables = (() => {
         '</div></div>'
       );
     }
-    const removed = removedCopy(b.status);
+    const removed = removedCopy(b.status, v);
     if (removed) {
       note = removed.note;
       if (can && removed.resend) act = button('Send to Bunny again');

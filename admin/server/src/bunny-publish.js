@@ -128,8 +128,18 @@ function createBunnyPublisher(db, opts = {}) {
      once, and never a Take offline while a publish of the project is still going. */
   const projectOps = new Set();
   const publishing = (projectId) => [...publishesInFlight.values()].some((entry) => entry.projectId === projectId);
+  /* A version whose files the cleanup or Take offline is deleting, by id: a publish of
+     it waits for that to finish, then sends afresh, so a send never overlaps the deletes. */
+  const removals = new Map();
+  const guard = (versionId, fn) => {
+    const job = Promise.resolve().then(fn).finally(() => {
+      if (removals.get(versionId) === job) removals.delete(versionId);
+    });
+    removals.set(versionId, job);
+    return job;
+  };
   const cleanup = ready ? createBunnyCleanup(db, {
-    bunny, now, ...(opts.cleanup || {}), busy: (versionId) => publishesInFlight.has(versionId), projectBusy: publishing,
+    bunny, now, ...(opts.cleanup || {}), busy: (versionId) => publishesInFlight.has(versionId), projectBusy: publishing, guard,
   }) : null;
   if (photos && opts.resumePhotos !== false) setImmediate(() => photos.resume());
   if (masters && opts.resumePhotos !== false) setImmediate(() => masters.resume());
@@ -411,6 +421,8 @@ function createBunnyPublisher(db, opts = {}) {
    * The caller has already checked the version is this project's and passed check().
    */
   async function publish(project, version, file, { force = false } = {}) {
+    // Its files coming off Bunny right now (Slice 11): send once they're gone.
+    if (removals.has(version.id)) await removals.get(version.id).catch(() => null);
     if (version.kind === 'photos') {
       const body = await photos.publish(project, version, file.photos, { force });
       return { httpStatus: 200, body: { ...body, refused: false } };
@@ -557,6 +569,7 @@ function createBunnyPublisher(db, opts = {}) {
 
   /* What the client is shown of each needed item: its newest published version, when
      it has a NAS file a publish can send. */
+  const processingVideosIn = db.prepare("SELECT * FROM bunny_assets WHERE project_id = ? AND kind = 'video' AND status = 'processing'");
   const currentVersions = db.prepare(`
     SELECT v.*, d.title AS item_title FROM deliverable_versions v JOIN deliverables d ON d.id = v.deliverable_id
      WHERE d.project_id = ? AND d.not_needed_at IS NULL AND v.published_at IS NOT NULL AND v.kind IN ('video', 'photos')
@@ -596,7 +609,10 @@ function createBunnyPublisher(db, opts = {}) {
       try {
         const checked = await check(v);
         if (checked.refusal) {
-          notOnNas.push({ ...label, reason: checked.refusal[2] });
+          // Only a file or folder gone from the NAS is "missing"; anything else (an old
+          // hub link with no NAS file, the NAS dropping out) is its own refusal.
+          const gone = checked.refusal[1] === 'file_missing' || checked.refusal[1] === 'folder_missing';
+          (gone ? notOnNas : refused).push({ ...label, reason: checked.refusal[2] });
           return;
         }
         const { body } = await publish(project, v, checked.file, { force: false });
@@ -643,6 +659,9 @@ function createBunnyPublisher(db, opts = {}) {
       if (projectOps.has(project.id)) return { refusal: BUSY };
       projectOps.add(project.id);
       try {
+        // A video row left processing turns ready or failed only when someone reads
+        // it: read each now, so one Bunny lost long ago doesn't refuse this for ever.
+        for (const row of processingVideosIn.all(project.id)) await refresh(row);
         return await cleanup.takeOffline(project);
       } finally {
         projectOps.delete(project.id);

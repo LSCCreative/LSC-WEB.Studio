@@ -253,25 +253,18 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   storageUrl), as a reply is built; never store or compare a signed link (the email's set key uses `masterKey`).
   HLS needs the path form with a folder token, or segments 403. An emailed link is never a Bunny link: it is
   `/hub/download/…` (90 days, checked per click by `downloadRefusal`, which F3 extends).
-  Token Authentication is ON in both pull zones (2026-11-28): an unsigned Bunny link now 403s, so a key
-  missing from `.env` breaks playback and photos. Two storage zones exist: the old `clienthubdata`
-  (main host) and `lsc-client-media` (Sydney, `syd.storage.bunnycdn.com`); `BUNNY_STORAGE_PASSWORD` must be the
-  latter's, or every upload gets a 401.
-  The desktop publisher (`desktop-publisher/`, Slice 10) is a second client of these routes: `/api/login`,
-  `/api/session`, `GET /api/projects?stage=live`, the folder, `POST …/versions {path}`, `POST/GET …/bunny` and
-  `POST …/publish`. It reads `deliverables[].versions[]` (id, n, sourcePath, createdAt, publishedAt), `bunnyOn`,
-  `invite.firstPublish` and the bunny view's `status`/`refused`/`progress`. Renaming any of them breaks it
-  quietly; its models are `desktop-publisher/Sources/PublisherCore/Models.swift`.
-  Since v37 (Slice 11) a `bunny_assets` row can also be `expired` (the daily cleanup took its files off
-  Bunny) or `offline` (Take offline): neither plays, both are re-sent like `failed`, and a webhook about
-  their old video is ignored. Code that reads a row's status must handle all five. `projects.files_offline_at`
-  hides every file from the client (Bunny's and the NAS's) and refuses Send to Bunny and Publish; only
-  Bring back online clears it, not Unarchive. The cleanup never removes an item's newest or newest-published
-  version, and ships as a dry run: set `BUNNY_CLEANUP=on` only after reading a dry run's log.
-  `projects.files_offline_left` is set while a Take offline hasn't got everything off Bunny (the panel offers it
-  again); Take offline and Bring back online never run at once on one project (`projectOps` in bunny-publish.js).
-  A new route never answers an outside service's refusal (Bunny saying no) with a 5xx: the admin's
-  connection banner reads any 5xx as the server down and blocks every write.
+  Token auth is ON in both pull zones: a token key missing from `.env` breaks playback. `BUNNY_STORAGE_PASSWORD`
+  is `lsc-client-media`'s (Sydney host), not the old `clienthubdata`'s, or every upload 401s.
+  `desktop-publisher/` reads the folder reply and the bunny view (`PublisherCore/Models.swift`): renaming a field it
+  reads breaks it quietly.
+  Rows can be `expired` (cleanup) or `offline` (Take offline) since v37: handle all five statuses; both re-send like
+  `failed`. `files_offline_at` hides every file and refuses sends and client writes; only Bring back online clears it.
+  The cleanup ships as a dry run: set `BUNNY_CLEANUP=on` only after reading a dry run's log on the NAS.
+  A photo library keeps one `publish_tag` for life: a new tag strands its unchanged originals in the old folder.
+  Removing a version's files goes through bunny-publish.js's `guard`, which holds a publish of it until done.
+  Never answer Bunny's refusal with a 5xx: the admin reads any 5xx as the server down and blocks writes.
+  A Storage delete ending in `/` is recursive: `deleteObject` refuses an empty path, so never build one that can be.
+  The detail of all this is `client-hub-docs/NAS-DELIVERABLES.md` (gitignored): update it with any change.
 
 ## Frontend traps
 

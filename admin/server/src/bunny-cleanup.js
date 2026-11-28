@@ -58,11 +58,14 @@ const versionFolder = (row) => row.storage_path || `${row.project_id}/${row.item
  *   projectBusy(projectId) true while a publish of any of the project's versions is
  *                  running (bunny-publish.js also keeps Take offline and Bring back
  *                  online apart)
+ *   guard(versionId, fn) runs one version's removal; bunny-publish.js holds a publish
+ *                  of that version until it's done, so a send never overlaps the
+ *                  deletes (the rows are read again inside it)
  *   log            { info, error } (console)
  */
 function createBunnyCleanup(db, {
   bunny, now = Date.now, retentionDays = DEFAULT_RETENTION_DAYS, mode = 'dry', busy = () => false,
-  projectBusy = () => false, log = console,
+  projectBusy = () => false, guard = (versionId, fn) => fn(), log = console,
 } = {}) {
   const days = Number(retentionDays) > 0 ? Number(retentionDays) : DEFAULT_RETENTION_DAYS;
   const windowMs = days * DAY_MS;
@@ -80,6 +83,7 @@ function createBunnyCleanup(db, {
   const versionsOfItem = db.prepare('SELECT id, n, published_at, created_at FROM deliverable_versions WHERE deliverable_id = ? ORDER BY n');
   const approvedIn = db.prepare('SELECT version_id FROM client_approvals WHERE deliverable_id = ?').pluck();
   const projectRows = db.prepare(`SELECT * FROM bunny_assets WHERE project_id = ? AND status IN ${ON_BUNNY}`);
+  const versionRows = db.prepare('SELECT * FROM bunny_assets WHERE version_id = ? ORDER BY kind');
   const processingIn = db.prepare("SELECT COUNT(*) FROM bunny_assets WHERE project_id = ? AND status = 'processing'").pluck();
   const markRemoved = db.prepare(`
     UPDATE bunny_assets SET status = ?, removed_at = ?, error = NULL, progress_done = 0, updated_at = ?
@@ -162,18 +166,27 @@ function createBunnyCleanup(db, {
     return found ? [found.guid] : [];
   }
 
-  /* Takes one version's files off Bunny and marks its rows `status`. */
-  async function removeVersion(unit, status) {
-    for (const row of unit.rows) {
-      for (const id of await videoIdsOf(row)) await bunny.deleteVideo(id);
-    }
-    const stored = unit.rows.find((r) => r.kind === 'photos' || r.kind === 'master');
-    if (stored) await bunny.deleteObject(versionFolder(stored), { folder: true });
-    const at = isoNow();
-    db.transaction(() => {
-      markRemoved.run(status, at, at, unit.versionId);
-      dropPhotoFiles.run(unit.versionId);
-    })();
+  /* Takes one version's files off Bunny and marks its rows `status`. Answers false,
+     touching nothing, when a send of it started since the list was made: its rows
+     are read again inside the guard, which holds any new send until this is done. */
+  function removeVersion(unit, status) {
+    return guard(unit.versionId, async () => {
+      const rows = versionRows.all(unit.versionId);
+      if (busy(unit.versionId) || rows.some((r) => r.status === 'processing')) return false;
+      const live = rows.filter((r) => r.status === 'ready' || r.status === 'failed');
+      if (!live.length) return false;
+      for (const row of live) {
+        for (const id of await videoIdsOf(row)) await bunny.deleteVideo(id);
+      }
+      const stored = live.find((r) => r.kind === 'photos' || r.kind === 'master');
+      if (stored) await bunny.deleteObject(versionFolder(stored), { folder: true });
+      const at = isoNow();
+      db.transaction(() => {
+        markRemoved.run(status, at, at, unit.versionId);
+        dropPhotoFiles.run(unit.versionId);
+      })();
+      return true;
+    });
   }
 
   /* What nothing records any more, older than the window (see the top). Each is
@@ -218,6 +231,12 @@ function createBunnyCleanup(db, {
             found.push({ what: `old master ${base}/${e.name}`, remove: () => bunny.deleteObject(`${base}/${e.name}`, { folder: true }) });
           }
         } else {
+          // A library keeps one tag (bunny-photos.js), so another originals folder is
+          // one nothing names: from before that, or a row rebuilt.
+          for (const e of await bunny.listEntries(base)) {
+            if (!e.isDirectory || !e.name.startsWith('original-') || e.name === `original-${row.publish_tag}` || !older(e.changedAt)) continue;
+            found.push({ what: `old originals ${base}/${e.name}`, remove: () => bunny.deleteObject(`${base}/${e.name}`, { folder: true }) });
+          }
           const names = doneFiles.all(row.version_id);
           const wanted = {
             [`original-${row.publish_tag}`]: new Set(names),
@@ -253,7 +272,10 @@ function createBunnyCleanup(db, {
       for (const unit of dueVersions()) {
         const entry = { versionId: unit.versionId, projectId: unit.projectId, label: unit.label, reason: unit.reason, removed: false, error: null };
         try {
-          if (!dryRun) await removeVersion(unit, 'expired');
+          if (!dryRun && !(await removeVersion(unit, 'expired'))) {
+            log.info(`[bunny-cleanup] left ${unit.label} of project ${unit.projectId}: it’s being sent to Bunny again`);
+            continue;
+          }
           entry.removed = !dryRun;
           log.info(`[bunny-cleanup] ${verb} ${unit.label} of project ${unit.projectId}: ${unit.reason}`);
         } catch (err) {
@@ -330,8 +352,7 @@ function createBunnyCleanup(db, {
         byVersion.get(row.version_id).push(row);
       }
       for (const [versionId, rows] of byVersion) {
-        await removeVersion({ versionId, rows }, 'offline');
-        removed += 1;
+        if (await removeVersion({ versionId, rows }, 'offline')) removed += 1;
       }
       const c = collectionOf.get(project.id);
       if (c) {

@@ -1369,6 +1369,8 @@ function renderInvoiceRow(inv){
 /* Taken offline (Bunny Slice 11): the studio took an archived project's files off its
    delivery service. The project, its notes and approvals stay; the files come back on request. */
 const OFFLINE_WORDS = 'These files are offline. Ask us and we’ll put them back.';
+/* A write the server refused because the files went offline while the page was open. */
+const OFFLINE_CLOSED = 'These files were just taken offline, so this one is closed for now. Ask us and we’ll put them back.';
 function renderOfflineCanvas(){
   return `
       <div class="card pad offline-card" role="note">
@@ -1823,6 +1825,7 @@ function noteFailure(e){
   if(e.code === 'not_current') return 'There’s a newer version of this now. Copy your note, then reload the page to see the new version.';
   if(e.code === 'sent') return 'Your notes on this version have already been sent.';
   if(e.code === 'archived' || e.code === 'approved') return 'Notes are closed on this one.';
+  if(e.code === 'files_offline') return OFFLINE_CLOSED;
   if(e.code === 'too_many') return 'That’s a lot of notes. Send these to the studio first, then add more.';
   return 'Your note wasn’t saved. It’s still in the box, so try again.';
 }
@@ -2058,6 +2061,7 @@ function bindClientAsset(){
         sent: 'Your notes on this version were sent, so it waits for the next one.',
         approved: 'This was already approved.',
         archived: 'This project is closed, so nothing was approved.',
+        files_offline: OFFLINE_CLOSED,
         not_found: 'This isn’t up for review any more, so nothing was approved.',
       };
       if(Object.hasOwn(SETTLED, e.code)){
@@ -2089,10 +2093,12 @@ function bindClientAsset(){
       setState({ sending:false, sendModalAssetId:null, revisionOpen:false, pausedAt:null, pausedSeconds:null });
       toast('Your notes were sent to the studio.');
     } catch(e){
-      if(e.code === 'sent'){
-        // Sent already (another tab, or a retry): read the project again to show it.
+      if(e.code === 'sent' || e.code === 'files_offline'){
+        // Sent already (another tab, or a retry), or the studio took the files offline
+        // meanwhile: read the project again to show it as it is.
         delete state.cache[p.id];
         setState({ sending:false, sendModalAssetId:null });
+        if(e.code === 'files_offline') toast(OFFLINE_CLOSED);
         return route();
       }
       setState({ sending:false, sendError: e.code === 'preview' ? PREVIEW_REFUSED : e.status === 401
@@ -2280,7 +2286,7 @@ function bindAssetInteraction(a){
         await api('/hub/projects/' + encodeURIComponent(p.id) + '/notes/' + encodeURIComponent(id), { method:'DELETE' });
         a.comments = a.comments.filter(c => c.id !== id);
       } catch(e){
-        toast(e.code === 'preview' ? PREVIEW_REFUSED : e.status === 0 ? 'That note wasn’t removed: there’s no connection.' : e.code === 'sent' ? 'That note was already sent.' : 'That note wasn’t removed. Try again.');
+        toast(e.code === 'preview' ? PREVIEW_REFUSED : e.status === 0 ? 'That note wasn’t removed: there’s no connection.' : e.code === 'sent' ? 'That note was already sent.' : e.code === 'files_offline' ? OFFLINE_CLOSED : 'That note wasn’t removed. Try again.');
       }
       refreshAssetInteraction();
     };

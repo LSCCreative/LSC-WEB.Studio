@@ -619,6 +619,11 @@
 }
 .dlv-files .dlv-bunny-acts {
   margin-top: var(--space-5);
+  /* Take offline again and Bring back online sit side by side, wrapping on a phone. */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
 }
 .dlv-files-result {
   margin-top: var(--space-5);

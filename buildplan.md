@@ -351,3 +351,23 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       strings. Update `client-hub-docs/NAS-DELIVERABLES.md` (publishing, the tables, the
       webhook, signed links, retention), the admin's `.design/WORKING_NOTES.md` traps and
       `ROADMAP.md`, and any help copy. | Model: Opus 5.5 | Effort: Medium
+      **Started 2026-11-28.** Done: `client-hub-docs/NAS-DELIVERABLES.md` rewritten as built (it was still the
+      pre-merge NAS-link doc; gitignored, Drive only); two traps added to WORKING_NOTES (Storage's recursive
+      folder delete, where the as-built doc lives); help copy read, nothing stale.
+      Code review of the branch (9 findings) all fixed: a photo library keeps one originals tag, cleanup removals
+      guarded against a send, Take offline finishable after unarchiving, hub writes refused while offline, and
+      smaller fixes; 1210 tests. Criterion 7, pattern half:
+      no UUID/hex/secret-assignment/PEM/`.env` in the 400 tracked files (one hit, a public pull-zone host + video
+      id in scratchpad.md). **Left:**
+      - 7, value half: `key-scan.js` (scratchpad; prints names and paths only) reads the 1Password-mounted
+        `~/.config/lsc-billing/bunny.env` and checks every tracked file, `client-hub-app/`, `desktop-publisher/`
+        incl. `dist/LSC Publisher.app`, and the app's settings. It hung: 1Password was locked.
+      - Deploy Slice 11 first (NAS: v37 on a copy of the backup, `BUNNY_CLEANUP` unset = dry; then Pages).
+      - Live, on a test project: 3 (a photo folder to Edge Storage, grid/lightbox sizes); 4 (a Final's master,
+        the paid email's `/hub/download` redirect); 5 (renewal while playing); 2's re-send making no duplicate;
+        8 (an imported old-hub project still plays); Slice 11's dry-run log read, Take offline/Bring back online
+        on an archived test project.
+      - The user's devices: 1 on desktop Safari (also Slice 11's guardrail) and iPhone Safari (Slice 5 used Chrome
+        for iOS); 6 with the NAS share mounted on this Mac and LSC Publisher signed in to `app`.
+      - Not a criterion: `client-hub-docs/Bunny.Net Storage zone & Pull Zone Details.rtf` has key labels (likely
+        keys) in a Drive-synced folder; gitignored, but worth moving into 1Password and deleting.

@@ -227,10 +227,13 @@ test('publishing again sends nothing new; a changed folder is told, and a republ
   fs.rmSync(j.file('turned.jpg'));
   assert.equal((await j.status()).body.sourceChanged, true, 'the studio is told the folder moved on');
 
+  const firstTag = assetOf(j.versionId).publish_tag;
   const forced = await j.toBunny({ force: true });
   assert.deepEqual([forced.body.status, forced.body.progress], ['processing', { done: 1, total: 3 }], 'wide.jpg is kept as it was');
   await on.settled();
   const tag = assetOf(j.versionId).publish_tag;
+  assert.equal(tag, firstTag, 'the same originals folder, so the kept photo’s original is still in it');
+  assert.ok(stored(`${j.base}/original-${tag}/wide.jpg`), 'wide.jpg’s original is where the tag says');
   assert.deepEqual(putsSince(before).sort(), [
     `${j.base}/2400/new.jpg`, `${j.base}/2400/small.png.jpg`, `${j.base}/600/new.jpg`, `${j.base}/600/small.png.jpg`,
     `${j.base}/original-${tag}/new.jpg`, `${j.base}/original-${tag}/small.png`,
