@@ -304,12 +304,15 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
 
 ### Part E — Desktop publisher (merge task B5)
 
-- [ ] Slice 10: **[DESKTOP]** Still wanted (user, 2026-11-07). SwiftUI `MenuBarExtra` in
+- [x] Slice 10: **[DESKTOP]** Still wanted (user, 2026-11-07). SwiftUI `MenuBarExtra` in
       `desktop-publisher/`, no third-party deps. Signs in with the **billing account**
       (`/api` login, session cookie kept by URLSession, password never stored). Pick a
       project and deliverable from `/api`, drag a file: copy it onto the mounted NAS share
       if it isn't there, add it as a new version, publish, show progress. Holds no Bunny
       key. README with build/run steps. | Model: Opus 5.5 | Effort: High
+      **Done 2026-11-28 (not committed):** `desktop-publisher/` (`PublisherCore` + the SwiftUI app; README). No server change.
+      Every step is an existing `/api` route, so the server's checks stand; it never sends the portal invite. 27 Swift tests, 6 of them
+      end to end on `portal-api-fakebunny`. Not tried live (the NAS share wasn't mounted): acceptance criterion 6 is Slice 12's.
 
 ### Part F — Cost control & close-out (merge task B5)
 

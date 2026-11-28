@@ -257,6 +257,11 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   missing from `.env` breaks playback and photos. Two storage zones exist: the old `clienthubdata`
   (main host) and `lsc-client-media` (Sydney, `syd.storage.bunnycdn.com`); `BUNNY_STORAGE_PASSWORD` must be the
   latter's, or every upload gets a 401.
+  The desktop publisher (`desktop-publisher/`, Slice 10) is a second client of these routes: `/api/login`,
+  `/api/session`, `GET /api/projects?stage=live`, the folder, `POST …/versions {path}`, `POST/GET …/bunny` and
+  `POST …/publish`. It reads `deliverables[].versions[]` (id, n, sourcePath, createdAt, publishedAt), `bunnyOn`,
+  `invite.firstPublish` and the bunny view's `status`/`refused`/`progress`. Renaming any of them breaks it
+  quietly; its models are `desktop-publisher/Sources/PublisherCore/Models.swift`.
   A new route never answers an outside service's refusal (Bunny saying no) with a 5xx: the admin's
   connection banner reads any 5xx as the server down and blocks every write.
 
