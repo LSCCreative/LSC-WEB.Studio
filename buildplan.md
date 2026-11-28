@@ -359,10 +359,12 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
       smaller fixes; 1210 tests. Criterion 7, pattern half:
       no UUID/hex/secret-assignment/PEM/`.env` in the 400 tracked files (one hit, a public pull-zone host + video
       id in scratchpad.md). **Left:**
-      - 7, value half: `key-scan.js` (scratchpad; prints names and paths only) reads the 1Password-mounted
-        `~/.config/lsc-billing/bunny.env` and checks every tracked file, `client-hub-app/`, `desktop-publisher/`
-        incl. `dist/LSC Publisher.app`, and the app's settings. It hung: 1Password was locked.
-      - Deploy Slice 11 first (NAS: v37 on a copy of the backup, `BUNNY_CLEANUP` unset = dry; then Pages).
+      - 7, value half: **PASSED 2026-11-28.** `key-scan.js` read the 1Password-mounted `bunny.env` (5 secrets:
+        STORAGE_PASSWORD, STORAGE_TOKEN_KEY, STREAM_API_KEY, STREAM_READ_KEY, STREAM_TOKEN_KEY) and found none of
+        them in 408 files: every tracked file, `client-hub-app/`, `desktop-publisher/` incl. `dist/LSC Publisher.app`,
+        the app's settings and prefs. Criterion 7 done.
+      - Deploy Slice 11: **NAS done 2026-11-28** (`a7ad646`, v37 rehearsed on a backup copy, dry-run cleanup,
+        m6-checks ALL PASS; rollback `lsc-admin:pre-v37` / `app.prev-v37` / `pre-v37-20261128-173607.db`). Pages next.
       - Live, on a test project: 3 (a photo folder to Edge Storage, grid/lightbox sizes); 4 (a Final's master,
         the paid email's `/hub/download` redirect); 5 (renewal while playing); 2's re-send making no duplicate;
         8 (an imported old-hub project still plays); Slice 11's dry-run log read, Take offline/Bring back online
