@@ -316,7 +316,12 @@ and the 503 when Bunny keys are missing (so no crash loop on deploy).
 
 ### Part F — Cost control & close-out (merge task B5)
 
-- [ ] Slice 11: **[API + ADMIN + PORTAL]** Cleanup, plus Take offline.
+- [ ] Slice 11: **[API + ADMIN + PORTAL]** Cleanup, plus Take offline. **Built 2026-11-28, not deployed; only the
+      desktop Safari player check is left** (the guardrail; it needs the user's Safari, so it can go with Slice 12's):
+      schema v37, `src/bunny-cleanup.js`, routes `POST /api/projects/:id/files-offline|files-online`, the
+      Deliverables tab's Client's files panel, the portal's offline state, and the review's 9 fixes. 1204 server
+      tests (17 in `test-bunny-cleanup.js`); checked on scratch at 375 px and desktop; player contract re-run in
+      Chrome (desktop + 375 px). Cleanup ships as a dry run (`BUNNY_CLEANUP`).
       **Automatic cleanup** never removes what a client can still open. A daily
       in-process timer deletes only Bunny objects that no client reply refers to: versions
       replaced by a newer one more than `BUNNY_RETENTION_DAYS` (default 90) ago, and

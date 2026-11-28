@@ -262,6 +262,14 @@ reasoning lives in `Project build archive/` (read it only when an item here isn'
   `POST …/publish`. It reads `deliverables[].versions[]` (id, n, sourcePath, createdAt, publishedAt), `bunnyOn`,
   `invite.firstPublish` and the bunny view's `status`/`refused`/`progress`. Renaming any of them breaks it
   quietly; its models are `desktop-publisher/Sources/PublisherCore/Models.swift`.
+  Since v37 (Slice 11) a `bunny_assets` row can also be `expired` (the daily cleanup took its files off
+  Bunny) or `offline` (Take offline): neither plays, both are re-sent like `failed`, and a webhook about
+  their old video is ignored. Code that reads a row's status must handle all five. `projects.files_offline_at`
+  hides every file from the client (Bunny's and the NAS's) and refuses Send to Bunny and Publish; only
+  Bring back online clears it, not Unarchive. The cleanup never removes an item's newest or newest-published
+  version, and ships as a dry run: set `BUNNY_CLEANUP=on` only after reading a dry run's log.
+  `projects.files_offline_left` is set while a Take offline hasn't got everything off Bunny (the panel offers it
+  again); Take offline and Bring back online never run at once on one project (`projectOps` in bunny-publish.js).
   A new route never answers an outside service's refusal (Bunny saying no) with a 5xx: the admin's
   connection banner reads any 5xx as the server down and blocks every write.
 

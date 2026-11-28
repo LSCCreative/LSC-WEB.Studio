@@ -35,6 +35,8 @@ function main() {
   app.locals.deemedReminders.start();
   // The client's files, once paid and approved (C10): retries hourly.
   app.locals.filesRelease.start();
+  // Bunny cleanup (Slice 11): daily, a dry run unless BUNNY_CLEANUP=on.
+  if (app.locals.bunnyPublisher.cleanup) app.locals.bunnyPublisher.cleanup.start();
   console.log(`[mail] ${config.smtp.pass && config.mailFrom ? `connected as ${config.mailFrom}` : 'not set up (no SMTP key / MAIL_FROM)'}`);
   // Without it every email with a link fails with no_app_url (C7): say so at boot.
   if (!config.appUrl) console.log(`[mail] APP_URL ${process.env.APP_URL ? 'is not an http(s) address' : 'is not set'}: emails with a link will fail until it is`);

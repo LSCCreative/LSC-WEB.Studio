@@ -37,6 +37,7 @@ const { createDeliverables, VIDEO_EXTENSIONS } = require('./hub/deliverables');
 const { sha256Hex } = require('./hub/tokens');
 const { createPhotoPublisher } = require('./bunny-photos');
 const { createMasterPublisher } = require('./bunny-masters');
+const { createBunnyCleanup } = require('./bunny-cleanup');
 
 /* How long a publish may wait for Bunny to list the fetched video before it is
    failed. Without it a lost fetch job stays "processing" forever. */
@@ -67,6 +68,8 @@ const TRANSCODE_FAILED = 'Bunny couldn’t transcode the file. Check it plays, t
 const PULL_FAILED = 'Bunny couldn’t fetch the file from the NAS. Check hub-api is reachable, then send it to Bunny again.';
 const failReasonOf = (video) => (video.status === 6 ? PULL_FAILED : TRANSCODE_FAILED);
 const DELETED_ON_BUNNY = 'The video was deleted on Bunny. Send it to Bunny again.';
+/* A row with nothing playable on Bunny: publishing it again sends it afresh. */
+const GONE_OR_FAILED = new Set(['failed', 'expired', 'offline']);
 
 /* A webhook's Status (Bunny's docs, "Webhooks"), which is NOT the REST enum
    statusFromVideo reads: here 3 is finished and 4 one resolution done. What it
@@ -89,6 +92,7 @@ const WEBHOOK_STATUS = {
  * photoConcurrency, resumePhotos (false: a test starts them itself; masters too),
  * masterStallMs.
  *   onMasterReady    (projectId) a Final's master just landed on Bunny (Slice 8)
+ *   cleanup          { mode: 'dry'|'on'|'off', retentionDays } (Slice 11, bunny-cleanup.js)
  *
  * A photo library goes to Edge Storage instead (Slice 6, bunny-photos.js): check,
  * publish and status hand a `photos` version there, and photosOf gives the client's
@@ -116,6 +120,16 @@ function createBunnyPublisher(db, opts = {}) {
   const photos = ready ? createPhotoPublisher(db, { bunny, nas, now, concurrency: opts.photoConcurrency }) : null;
   const masters = ready ? createMasterPublisher(db, {
     bunny, nas, now, onReady: opts.onMasterReady, stallMs: opts.masterStallMs,
+  }) : null;
+  const publishesInFlight = new Map();
+  const collectionsInFlight = new Map();
+  /* The daily cleanup and Take offline (Slice 11): a version being published is left alone. */
+  /* Take offline and Bring back online, by project id, while one runs: never both at
+     once, and never a Take offline while a publish of the project is still going. */
+  const projectOps = new Set();
+  const publishing = (projectId) => [...publishesInFlight.values()].some((entry) => entry.projectId === projectId);
+  const cleanup = ready ? createBunnyCleanup(db, {
+    bunny, now, ...(opts.cleanup || {}), busy: (versionId) => publishesInFlight.has(versionId), projectBusy: publishing,
   }) : null;
   if (photos && opts.resumePhotos !== false) setImmediate(() => photos.resume());
   if (masters && opts.resumePhotos !== false) setImmediate(() => masters.resume());
@@ -192,9 +206,6 @@ function createBunnyPublisher(db, opts = {}) {
   const leadEstimateName = db.prepare(`
     SELECT name FROM estimates WHERE project_id = ? ORDER BY (status = 'accepted') DESC, created_at, id LIMIT 1
   `).pluck();
-
-  const publishesInFlight = new Map();
-  const collectionsInFlight = new Map();
 
   /* "<projectId> <name>": the id is what finds it again, the name is for a person
      looking in Bunny's dashboard. */
@@ -328,8 +339,9 @@ function createBunnyPublisher(db, opts = {}) {
 
   async function publishVideo(project, version, file, force) {
     const existing = getAsset.get(version.id, 'video');
-    // A failed row has nothing playable, so publishing again retries it.
-    if (existing && !force && existing.status !== 'failed') return refresh(existing);
+    // A failed row has nothing playable, so publishing again retries it, as it does
+    // one whose video was taken off Bunny (expired by cleanup, or offline, Slice 11).
+    if (existing && !force && !GONE_OR_FAILED.has(existing.status)) return refresh(existing);
 
     const base = {
       version_id: version.id,
@@ -372,7 +384,7 @@ function createBunnyPublisher(db, opts = {}) {
     } catch (err) {
       console.error('[bunny-publish] publish failed:', err.message);
       // A failed force must not overwrite a video that's still working.
-      if (existing && existing.status !== 'failed') {
+      if (existing && !GONE_OR_FAILED.has(existing.status)) {
         const kept = new Error(err.message);
         kept.keptExisting = true;
         throw kept;
@@ -414,6 +426,7 @@ function createBunnyPublisher(db, opts = {}) {
       const before = entry ? entry.promise.catch(() => null) : Promise.resolve();
       const mine = {
         force,
+        projectId: project.id,
         promise: before.then(() => publishVideo(project, version, file, force)).finally(() => {
           if (publishesInFlight.get(version.id) === mine) publishesInFlight.delete(version.id);
         }),
@@ -524,6 +537,9 @@ function createBunnyPublisher(db, opts = {}) {
       adoptWaiting();
       return 'unknown';
     }
+    // Its video was taken off Bunny on purpose (Slice 11): the deletion's own event,
+    // or a late one about it, changes nothing.
+    if (row.status === 'expired' || row.status === 'offline') return 'ignored';
     const stamp = typeof event.Timestamp === 'string' ? event.Timestamp.trim() : '';
     const at = Date.parse(/(?:[zZ]|[+-]\d\d:?\d\d)$/.test(stamp) || !stamp ? stamp : `${stamp}Z`);
     const eventAt = Number.isFinite(at) ? new Date(at).toISOString() : null;
@@ -537,6 +553,62 @@ function createBunnyPublisher(db, opts = {}) {
     }[meaning];
     setFromEvent.run(...next, eventAt || row.last_event_at, isoNow(), row.version_id, row.kind, videoId);
     return 'applied';
+  }
+
+  /* What the client is shown of each needed item: its newest published version, when
+     it has a NAS file a publish can send. */
+  const currentVersions = db.prepare(`
+    SELECT v.*, d.title AS item_title FROM deliverable_versions v JOIN deliverables d ON d.id = v.deliverable_id
+     WHERE d.project_id = ? AND d.not_needed_at IS NULL AND v.published_at IS NOT NULL AND v.kind IN ('video', 'photos')
+       AND v.n = (SELECT MAX(n) FROM deliverable_versions WHERE deliverable_id = d.id AND published_at IS NOT NULL)
+     ORDER BY d.position, d.created_at, d.id
+  `);
+
+  /**
+   * Bring back online (Slice 11): sends each current version to Bunny again from the
+   * NAS, then lifts the project's offline mark, so the client sees its files again
+   * (from the NAS until Bunny has each). Refused, with nothing changed, while the
+   * NAS can't be read: { refusal }. Otherwise { sent: [{ title, n }], missing:
+   * [{ title, n, fileName, reason }] }: missing is what isn't on the NAS any more,
+   * which the client can't be shown, and refused what Bunny said no to.
+   */
+  const BUSY = [409, 'bunny_busy', 'This project’s files are already being taken offline or brought back. Wait for that to finish.'];
+  async function bringOnline(project) {
+    if (projectOps.has(project.id)) return { refusal: BUSY };
+    projectOps.add(project.id);
+    try {
+      return await bringOnlineNow(project);
+    } finally {
+      projectOps.delete(project.id);
+    }
+  }
+  /* A refusal is a 409, never a 5xx: the admin reads any 5xx as the server down. */
+  async function bringOnlineNow(project) {
+    const health = await nas.health();
+    if (!health.ok) return { refusal: [409, 'nas_unreachable', 'The NAS’s deliverables folder can’t be read right now, so nothing was sent. Try again once it’s back.'] };
+    const sent = [];
+    const notOnNas = [];
+    const refused = [];
+    // Every version settles (sent, missing or refused) before the offline mark lifts,
+    // whatever one of them throws.
+    await Promise.all(currentVersions.all(project.id).map(async (v) => {
+      const label = { title: v.item_title || '', n: v.n, fileName: v.file_name || basename(v.source_path || '') };
+      try {
+        const checked = await check(v);
+        if (checked.refusal) {
+          notOnNas.push({ ...label, reason: checked.refusal[2] });
+          return;
+        }
+        const { body } = await publish(project, v, checked.file, { force: false });
+        if (body.refused) refused.push({ ...label, reason: body.error || 'Bunny refused it.' });
+        else sent.push(label);
+      } catch (err) {
+        refused.push({ ...label, reason: err.message });
+      }
+    }));
+    db.prepare('UPDATE projects SET files_offline_at = NULL, files_offline_left = NULL WHERE id = ?').run(project.id);
+    const byOrder = (a, b) => a.title.localeCompare(b.title) || a.n - b.n;
+    return { sent: sent.sort(byOrder), missing: notOnNas.sort(byOrder), refused: refused.sort(byOrder) };
   }
 
   return {
@@ -565,6 +637,18 @@ function createBunnyPublisher(db, opts = {}) {
     verifyDownload: (versionId, token, expires) => Boolean(signer) && signer.verifyPath(downloadSignedPath(versionId), token, expires),
     /** Where a download goes: the master on Bunny, signed for one download, or null. */
     downloadTarget: (versionId) => (masters ? masters.linkOf(versionId, { ttlSeconds: DOWNLOAD_REDIRECT_SECONDS }) : null),
+    /** The daily cleanup (Slice 11, bunny-cleanup.js), or null when Bunny is off. */
+    cleanup,
+    async takeOffline(project) {
+      if (projectOps.has(project.id)) return { refusal: BUSY };
+      projectOps.add(project.id);
+      try {
+        return await cleanup.takeOffline(project);
+      } finally {
+        projectOps.delete(project.id);
+      }
+    },
+    bringOnline,
     /** Every master job queued or running, done: for the tests. */
     masterJobs: () => (masters ? masters.idle() : Promise.resolve()),
     resumeMasters: () => (masters ? masters.resume() : Promise.resolve()),

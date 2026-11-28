@@ -155,6 +155,9 @@ function createHubRouter(db, opts = {}) {
      WHERE v.id = ? AND v.project_id = ? AND v.published_at IS NOT NULL AND d.not_needed_at IS NULL
   `);
 
+  /* Taken offline (Bunny Slice 11): the client is shown no file of it, Bunny's or the NAS's. */
+  const filesOffline = db.prepare('SELECT files_offline_at FROM projects WHERE id = ?').pluck();
+
   const getVersionSource = db.prepare('SELECT id, source_path FROM deliverable_versions WHERE id = ?');
   const findDeliverablePathByToken = db.prepare('SELECT relative_path, downloadable FROM deliverable_tokens WHERE token = ?');
 
@@ -452,10 +455,13 @@ function createHubRouter(db, opts = {}) {
       };
     }).filter(Boolean);
     const signed = appUrl ? signedQuote.get(project.id) : null;
+    // Offline, no version carries a link of any kind: the page says the files are offline.
+    const offline = Boolean(filesOffline.get(project.id));
     return res.json({
       ok: true,
       project: projectView(project, readChecklist(db, project.id), {
-        reviewOf: (v) => reviewOf(project.id, v, Boolean(req.portal.preview)),
+        filesOffline: offline,
+        reviewOf: (v) => (offline ? { type: 'offline' } : reviewOf(project.id, v, Boolean(req.portal.preview))),
         clientId: req.portal.client.id,
         invoices,
         agreement: signed ? { url: `${appUrl}c/#e/${signed.public_token}`, signedOn: sydneyDay(signed.signed_at) } : null,
@@ -675,7 +681,7 @@ function createHubRouter(db, opts = {}) {
     const notFound = () => res.status(404).json({ error: 'not_found' });
     const owned = ownsProject(req.portal.client.id, req.params.id);
     const v = owned && getPublishedVersion.get(req.params.versionId, req.params.id);
-    if (!v || !v.source_path) return notFound();
+    if (!v || !v.source_path || filesOffline.get(req.params.id)) return notFound();
     let relative = v.source_path;
     if (v.kind === 'photos') {
       const key = String(req.query.photo || '');
@@ -738,6 +744,8 @@ function createHubRouter(db, opts = {}) {
     if (!p) return [404, 'This file isn’t available any more. Ask the studio for a new link.'];
     // Lock downloads (F4) and the payment rule (F3) land here.
     if (p.downloads_locked === 1) return [403, 'Downloads for this project are paused. Contact the studio.'];
+    // Taken offline (Bunny Slice 11): the master is off Bunny until the studio brings it back.
+    if (p.files_offline_at) return [410, 'These files are offline. Ask us and we’ll put them back.'];
     return null;
   }
   const sayDownload = (res, status, text) => {

@@ -262,6 +262,8 @@ const ProjectCard = (() => {
       case 'deliverables_expected': return 'Said deliverables are expected after all';
       case 'archived': return 'Archived';
       case 'unarchived': return 'Unarchived, back in Complete';
+      case 'files_offline': return 'Client’s files taken offline' + (d.versions ? ' (' + d.versions + (d.versions === 1 ? ' version' : ' versions') + ' off Bunny)' : '');
+      case 'files_online': return 'Client’s files brought back online' + (d.missing ? ', ' + d.missing + ' not on the NAS' : '');
       case 'invoice_sent': return (d.by === 'hnry' ? (d.hnryNumber || d.number || 'Invoice') : (d.number || 'Invoice')) +
         (d.by === 'email' ? ' emailed' + (d.late ? ' late' : '') : d.by === 'link' ? ' sent by link' : d.by === 'hnry' ? ' sent from Hnry' : ' marked sent') +
         (C.isDate(d.dueAt) ? ', due ' + dayMonth(d.dueAt, today) : '');

@@ -600,3 +600,86 @@
 .dlv-deemed p { margin: 0; }
 .dlv-deemed.is-due .dlv-client-head { color: var(--color-status-warning-text); }
 .dlv-deemed .btn { margin-top: var(--space-2); }
+
+/* ── The client's files (Bunny Slice 11): Take offline / Bring back online on an
+   archived project. The explanation is a tooltip on the button's hover and focus
+   (and repeated in its dialog, since a phone has no hover). Escape hides it. */
+.dlv-files {
+  margin-bottom: var(--panel-gap);
+}
+.dlv-files .panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+.dlv-files .dlv-note {
+  margin: 0;
+  max-width: 68ch;
+}
+.dlv-files .dlv-bunny-acts {
+  margin-top: var(--space-5);
+}
+.dlv-files-result {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border-hairline);
+}
+.dlv-files-list {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-6);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+.dlv-files-list li + li {
+  margin-top: var(--space-1);
+}
+.dlv-tip-wrap {
+  position: relative;
+  display: inline-block;
+}
+.dlv-tip {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  bottom: calc(100% + var(--space-3));
+  width: min(360px, calc(100vw - 2 * var(--space-6)));
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-float);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-primary);
+  text-transform: none;
+  letter-spacing: normal;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 120ms ease, visibility 0s linear 120ms;
+  pointer-events: none;
+}
+.dlv-tip-wrap:hover .dlv-tip,
+.dlv-tip-wrap:focus-within .dlv-tip {
+  visibility: visible;
+  opacity: 1;
+  transition-delay: 0s;
+  pointer-events: auto;
+}
+.dlv-tip-wrap.is-hushed .dlv-tip {
+  visibility: hidden;
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dlv-tip { transition: none; }
+}
+/* Bridges the gap to the button, so moving the pointer onto the tip keeps it open. */
+.dlv-tip::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: var(--space-3);
+}
